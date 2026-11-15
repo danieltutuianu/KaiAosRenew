@@ -1,8 +1,26 @@
 # Changelog — KaiAosRenew
 
-Releases: always `dist\KaiAosRenew.zip` (no version in the filename; no version bump per pack).
+Format: Keep a Changelog. GitHub release notes are taken from the matching `## [X.Y.Z]` section.
 
-## Latest
+## [Unreleased]
+
+## [1.2.8] - 2026-11-15
+
+- Shared `updateFeed`: any GitHub poll loads latest server + client versions; server redistributes to all clients immediately
+- Footer Update on each side when the shared feed is newer than the local install
+- Optional Authenticode signing in `release.bat` via `CODESIGN_PFX` + `CODESIGN_PASSWORD`
+- Auto GitHub release notes extracted from this changelog (`tools/extract-changelog.ps1`)
+- Skip Velopack Portable.zip (`--noPortable`); versioned Setup filenames only
+- Client: after remote Update server, wait for reconnect and verify server version
+
+## [1.2.7] - 2026-11-15
+
+- Server / Client version labels in footer; Update button when a local Velopack update is available
+- Client can detect a newer server on GitHub and trigger `serverUpdate` (server self-updates and restarts)
+- No Portable assets on GitHub Releases; Setup.exe names include version
+- Check for updates at startup and every 6 hours (banner when Auto update is off)
+
+## [Earlier]
 
 - Notify client: Scan LAN manual, recent 3 hosts dropdown, EN/RO; server firewall hint when 0 clients
 - Notify server: Settings test tips to All clients or one client (VIN/Info/Warning/Error)
@@ -23,7 +41,6 @@ Releases: always `dist\KaiAosRenew.zip` (no version in the filename; no version 
 - Keys: copy icon ✓ feedback; Today filter; stronger new-VIN highlight; copy icon does not select row; tray shows only last VIN as Copy VIN
 - Keys: copy icon before each VIN (hidden if empty); no clipboard copy on row/VIN text click
 - Keys: fixed infinite SelectionChanged -> MainTabs_SelectionChanged -> RefreshKeysTab loop on row click; value-based list diffing; Win32 clipboard copy; Input-priority hang watchdog
-
 - Freeze fix: no theme re-apply / log rebuild on every window activation; log capped at 500 lines, async; UI hang watchdog writes %AppData%\KaiAosRenew\ui-hang.log
 - Keys: no VIN copy on whole-row click (clipboard was freezing UI); copy via VIN cell / button / Ctrl+C
 - Keys: ignore right-click; VIN cache avoids UI lock during refresh; skip no-op list/tray rebuilds
@@ -88,7 +105,7 @@ Releases: always `dist\KaiAosRenew.zip` (no version in the filename; no version 
 - Keys wording: BMW → BMW Server (column, status, detail, stall alert)
 - Tray menu: remove Run now (still available in the main window)
 
-## 1.1.0
+## [1.1.0]
 
 - Tabs Renew / KAI; system proxy under Save
 - BMW services monitor, Fix now / Stop (UAC), footer Services OK/FAIL
@@ -97,6 +114,6 @@ Releases: always `dist\KaiAosRenew.zip` (no version in the filename; no version 
 - About tab (CHANGELOG.md in-app) + tray About; pack.bat ZIP
 - Day/Night tab headers aligned and spaced
 
-## 1.0.0
+## [1.0.0]
 
 - Initial KAI AOS renew tray app (WebEAM health + Register, timer, themes, multilang)

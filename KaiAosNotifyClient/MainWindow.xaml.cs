@@ -110,6 +110,8 @@ namespace KaiAosNotifyClient
         private bool _hasServerFooter;
         private string _serverVersionFromFooter = "";
         private string _latestServerReleaseVer = "";
+        private string _feedServerVer = "";
+        private string _feedClientVer = "";
         private bool _serverUpdateCheckBusy;
         private bool _awaitingServerUpdateReconnect;
         private string _pendingServerUpdateVer = "";
@@ -465,7 +467,6 @@ namespace KaiAosNotifyClient
         private async void UpdatePeekTimer_Tick(object sender, EventArgs e)
         {
             await RunUpdateCheckAsync(false);
-            await CheckRemoteServerVersionAsync();
         }
 
         private async Task RunUpdateCheckAsync(bool autoApply)
@@ -478,10 +479,12 @@ namespace KaiAosNotifyClient
                 {
                     await UpdateService.CheckForUpdateAsync(this, true, true, ClientUiStrings.T);
                     ShowPendingUpdate(null);
-                    return;
                 }
-                var update = await UpdateService.PeekAsync();
-                ShowPendingUpdate(update);
+                else
+                {
+                    var update = await UpdateService.PeekAsync();
+                    ShowPendingUpdate(update);
+                }
             }
             catch
             {
@@ -491,6 +494,8 @@ namespace KaiAosNotifyClient
             {
                 _updateCheckBusy = false;
             }
+            try { await RefreshUpdateFeedAsync(true); }
+            catch { }
         }
 
         private void ShowPendingUpdate(UpdateInfo update)
@@ -537,34 +542,78 @@ namespace KaiAosNotifyClient
             }
         }
 
-        private async Task CheckRemoteServerVersionAsync()
+        private async Task RefreshUpdateFeedAsync(bool sendToServer)
         {
             if (_serverUpdateCheckBusy) return;
-            if (string.IsNullOrEmpty(_serverVersionFromFooter))
-            {
-                _latestServerReleaseVer = "";
-                RefreshServerUpdateUi();
-                return;
-            }
             _serverUpdateCheckBusy = true;
             try
             {
-                var latest = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ServerChannel);
-                if (!string.IsNullOrEmpty(latest)
-                    && UpdateService.IsNewerVersion(latest, _serverVersionFromFooter))
-                    _latestServerReleaseVer = latest;
-                else
-                    _latestServerReleaseVer = "";
-            }
-            catch
-            {
-                _latestServerReleaseVer = "";
+                string serverVer = "";
+                string clientVer = "";
+                try { serverVer = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ServerChannel) ?? ""; }
+                catch { serverVer = ""; }
+                try { clientVer = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ClientChannel) ?? ""; }
+                catch { clientVer = ""; }
+                _feedServerVer = serverVer;
+                _feedClientVer = clientVer;
+                RefreshServerUpdateFromFeed();
+                await ApplyFeedToSelfAsync();
+                if (sendToServer)
+                    SendUpdateFeed();
             }
             finally
             {
                 _serverUpdateCheckBusy = false;
-                RefreshServerUpdateUi();
             }
+        }
+
+        private void ApplyCachedFeedVersions(string serverVer, string clientVer)
+        {
+            _feedServerVer = serverVer ?? "";
+            _feedClientVer = clientVer ?? "";
+            RefreshServerUpdateFromFeed();
+            var ignore = ApplyFeedToSelfAsync();
+        }
+
+        private async Task ApplyFeedToSelfAsync()
+        {
+            if (string.IsNullOrWhiteSpace(_feedClientVer)) return;
+            if (!UpdateService.IsNewerVersion(_feedClientVer, VersionDisplay)) return;
+            try
+            {
+                var update = await UpdateService.PeekAsync();
+                if (update != null)
+                    ShowPendingUpdate(update);
+            }
+            catch { }
+        }
+
+        private void SendUpdateFeed()
+        {
+            if (_client == null || !_client.IsConnected) return;
+            if (string.IsNullOrEmpty(_feedServerVer) && string.IsNullOrEmpty(_feedClientVer)) return;
+            try
+            {
+                _client.Send(new NotifyMessage
+                {
+                    Kind = "updateFeed",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = NotifyMessage.EncodeUpdateFeed(_feedServerVer, _feedClientVer)
+                });
+            }
+            catch { }
+        }
+
+        private void RefreshServerUpdateFromFeed()
+        {
+            if (!string.IsNullOrEmpty(_feedServerVer)
+                && !string.IsNullOrEmpty(_serverVersionFromFooter)
+                && UpdateService.IsNewerVersion(_feedServerVer, _serverVersionFromFooter))
+                _latestServerReleaseVer = _feedServerVer;
+            else
+                _latestServerReleaseVer = "";
+            RefreshServerUpdateUi();
         }
 
         private void RefreshServerUpdateUi()
@@ -632,7 +681,7 @@ namespace KaiAosNotifyClient
         {
             if (!_awaitingServerUpdateReconnect) return;
             SetConnStatus(ClientUiStrings.T("UpdateServerVerifying"));
-            await CheckRemoteServerVersionAsync();
+            await RefreshUpdateFeedAsync(true);
             if (!_awaitingServerUpdateReconnect) return;
 
             var expected = _pendingServerUpdateVer ?? "";
@@ -670,6 +719,8 @@ namespace KaiAosNotifyClient
                     ShowPendingUpdate(update);
                 else
                     ShowPendingUpdate(null);
+                try { await RefreshUpdateFeedAsync(true); }
+                catch { }
             }
             catch (Exception ex)
             {
@@ -1868,6 +1919,7 @@ namespace KaiAosNotifyClient
                 }
                 UpdateAosControlsEnabled();
                 RefreshTrayStatus();
+                SendUpdateFeed();
             }));
         }
 
@@ -1911,6 +1963,15 @@ namespace KaiAosNotifyClient
             if (kind == "footer")
             {
                 ApplyServerFooter(msg.Text);
+                RefreshTrayStatus();
+                return;
+            }
+            if (kind == "updatefeed")
+            {
+                string serverVer;
+                string clientVer;
+                if (NotifyMessage.TryParseUpdateFeed(msg.Text, out serverVer, out clientVer))
+                    ApplyCachedFeedVersions(serverVer, clientVer);
                 RefreshTrayStatus();
                 return;
             }
@@ -2835,10 +2896,20 @@ namespace KaiAosNotifyClient
             {
                 var finish = FinishServerUpdateReconnectAsync();
             }
-            else if (!string.Equals(raw, prevServerVer, StringComparison.Ordinal)
-                || string.IsNullOrEmpty(_latestServerReleaseVer))
+            else if (!string.Equals(raw, prevServerVer, StringComparison.Ordinal))
             {
-                var ignore = CheckRemoteServerVersionAsync();
+                if (string.IsNullOrEmpty(_feedServerVer) && string.IsNullOrEmpty(_feedClientVer))
+                {
+                    var ignore = RefreshUpdateFeedAsync(true);
+                }
+                else
+                {
+                    RefreshServerUpdateFromFeed();
+                }
+            }
+            else
+            {
+                RefreshServerUpdateFromFeed();
             }
             var cdMode = FooterPart(parts, 13);
             var cdText = FooterPart(parts, 14);

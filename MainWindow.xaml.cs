@@ -132,6 +132,8 @@ namespace KaiAosRenew
         private readonly DispatcherTimer _updatePeekTimer = new DispatcherTimer();
         private UpdateInfo _pendingUpdate;
         private bool _updateCheckBusy;
+        private string _feedServerVer = "";
+        private string _feedClientVer = "";
         private DateTime _lastKeys403RemediateUtc = DateTime.MinValue;
         private string _lastKeys403RemediateKey;
         private string _pending403RetryVin;
@@ -2602,10 +2604,12 @@ namespace KaiAosRenew
                     // Silent apply if available (restarts). One GitHub hit — no second peek.
                     await UpdateService.CheckForUpdateAsync(this, true, true, UiStrings.T);
                     ShowPendingUpdate(null);
-                    return;
                 }
-                var update = await UpdateService.PeekAsync();
-                ShowPendingUpdate(update);
+                else
+                {
+                    var update = await UpdateService.PeekAsync();
+                    ShowPendingUpdate(update);
+                }
             }
             catch
             {
@@ -2615,6 +2619,78 @@ namespace KaiAosRenew
             {
                 _updateCheckBusy = false;
             }
+            try { await RefreshUpdateFeedAsync(); }
+            catch { }
+        }
+
+        private async Task RefreshUpdateFeedAsync()
+        {
+            string serverVer = "";
+            string clientVer = "";
+            try { serverVer = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ServerChannel) ?? ""; }
+            catch { serverVer = ""; }
+            try { clientVer = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ClientChannel) ?? ""; }
+            catch { clientVer = ""; }
+            _feedServerVer = serverVer;
+            _feedClientVer = clientVer;
+            await ApplyFeedToSelfAsync();
+            BroadcastUpdateFeed();
+        }
+
+        private async Task ApplyFeedToSelfAsync()
+        {
+            if (string.IsNullOrWhiteSpace(_feedServerVer)) return;
+            if (!UpdateService.IsNewerVersion(_feedServerVer, AppVersionDisplay)) return;
+            try
+            {
+                var update = await UpdateService.PeekAsync();
+                if (update != null)
+                    ShowPendingUpdate(update);
+            }
+            catch { }
+        }
+
+        private void BroadcastUpdateFeed()
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled) return;
+            if (!NotifyServer.Instance.IsRunning) return;
+            if (string.IsNullOrEmpty(_feedServerVer) && string.IsNullOrEmpty(_feedClientVer)) return;
+            BroadcastNotify(new NotifyMessage
+            {
+                Kind = "updateFeed",
+                Level = "info",
+                Title = "KAI - AOS Renew",
+                Text = NotifyMessage.EncodeUpdateFeed(_feedServerVer, _feedClientVer)
+            });
+        }
+
+        private void SendUpdateFeedTo(int clientId)
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled) return;
+            if (!NotifyServer.Instance.IsRunning) return;
+            if (string.IsNullOrEmpty(_feedServerVer) && string.IsNullOrEmpty(_feedClientVer)) return;
+            try
+            {
+                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                {
+                    Kind = "updateFeed",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = NotifyMessage.EncodeUpdateFeed(_feedServerVer, _feedClientVer)
+                });
+            }
+            catch { }
+        }
+
+        private async Task HandleInboundUpdateFeedAsync(string text)
+        {
+            string serverVer;
+            string clientVer;
+            if (!NotifyMessage.TryParseUpdateFeed(text, out serverVer, out clientVer)) return;
+            _feedServerVer = serverVer ?? "";
+            _feedClientVer = clientVer ?? "";
+            await ApplyFeedToSelfAsync();
+            BroadcastUpdateFeed();
         }
 
         private void ShowPendingUpdate(UpdateInfo update)
@@ -2679,6 +2755,7 @@ namespace KaiAosRenew
                     ShowPendingUpdate(update);
                 else
                     ShowPendingUpdate(null);
+                await RefreshUpdateFeedAsync();
             }
             catch (Exception ex)
             {
@@ -3212,6 +3289,11 @@ namespace KaiAosRenew
                 BeginServerUpdateFromClient(clientId);
                 return;
             }
+            if (kind == "updatefeed")
+            {
+                var ignore = HandleInboundUpdateFeedAsync(msg.Text);
+                return;
+            }
         }
 
         private async void BeginServerUpdateFromClient(int clientId)
@@ -3528,6 +3610,7 @@ namespace KaiAosRenew
                 SendActivitySyncTo(idCopy);
                 SendAosSyncTo(idCopy);
                 SendKaiSyncTo(idCopy);
+                SendUpdateFeedTo(idCopy);
             }));
             try
             {

@@ -24,6 +24,8 @@ _gen*
 **/settings.xml
 **/credentials*
 **/secrets*
+*.pfx
+*.p12
 
 # OS
 Thumbs.db

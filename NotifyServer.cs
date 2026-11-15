@@ -626,6 +626,27 @@ namespace KaiAosRenew
             return sb.ToString();
         }
 
+        public static string EncodeUpdateFeed(string serverVer, string clientVer)
+        {
+            return (serverVer ?? "") + "\u001f" + (clientVer ?? "");
+        }
+
+        public static bool TryParseUpdateFeed(string text, out string serverVer, out string clientVer)
+        {
+            serverVer = "";
+            clientVer = "";
+            if (text == null) return false;
+            var i = text.IndexOf('\u001f');
+            if (i < 0)
+            {
+                serverVer = text;
+                return true;
+            }
+            serverVer = text.Substring(0, i);
+            clientVer = i + 1 < text.Length ? text.Substring(i + 1) : "";
+            return true;
+        }
+
         public static string EncodeAosSync(int intervalHours, string email, string password)
         {
             var sb = new StringBuilder();

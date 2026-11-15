@@ -89,8 +89,37 @@ vpk download github --repoUrl %REPO% -c server-win-x86 -o "%VELO_SERVER%" 2>nul
 echo Downloading previous client releases for delta (ok to fail on first ship)...
 vpk download github --repoUrl %REPO% -c client-win-x86 -o "%VELO_CLIENT%" 2>nul
 
+REM Optional Authenticode signing (OV/EV from DigiCert/Sectigo/SSL.com etc.).
+REM Self-signed does NOT clear SmartScreen. Prefer EV for instant reputation.
+REM   set CODESIGN_PFX=C:\absolute\path\to\codesign.pfx
+REM   set CODESIGN_PASSWORD=...
+REM Never commit the PFX or password.
+set "SIGN_ENABLED="
+set "SIGN_PARAMS="
+if defined CODESIGN_PFX if defined CODESIGN_PASSWORD (
+  if exist "!CODESIGN_PFX!" (
+    set "SIGN_ENABLED=1"
+    set "SIGN_PARAMS=/fd sha256 /td sha256 /f !CODESIGN_PFX! /p !CODESIGN_PASSWORD! /tr http://timestamp.digicert.com /td sha256"
+    echo Signing enabled: !CODESIGN_PFX!
+  ) else (
+    echo CODESIGN_PFX not found: !CODESIGN_PFX!
+    exit /b 1
+  )
+) else (
+  echo Signing skipped ^(no CODESIGN_PFX / CODESIGN_PASSWORD^)
+)
+
+set "NOTES=%DIST%\release-notes.md"
+echo Extracting CHANGELOG notes for !SERVER_VER!...
+powershell -NoProfile -File "%ROOT%tools\extract-changelog.ps1" -Version !SERVER_VER! -OutFile "%NOTES%"
+if errorlevel 1 exit /b 1
+
 echo Packing server...
-vpk pack -u KaiAosRenew -v !SERVER_VER! -p "%PACK_SERVER%" -e "KAI - AOS Renew.exe" -c server-win-x86 --packTitle "KAI - AOS Renew" -o "%VELO_SERVER%" --noPortable
+if defined SIGN_ENABLED (
+  vpk pack -u KaiAosRenew -v !SERVER_VER! -p "%PACK_SERVER%" -e "KAI - AOS Renew.exe" -c server-win-x86 --packTitle "KAI - AOS Renew" -o "%VELO_SERVER%" --noPortable --releaseNotes "%NOTES%" --signParams "!SIGN_PARAMS!"
+) else (
+  vpk pack -u KaiAosRenew -v !SERVER_VER! -p "%PACK_SERVER%" -e "KAI - AOS Renew.exe" -c server-win-x86 --packTitle "KAI - AOS Renew" -o "%VELO_SERVER%" --noPortable --releaseNotes "%NOTES%"
+)
 if errorlevel 1 exit /b 1
 
 REM Version Setup filename (Velopack omits version; nupkgs already have it).
@@ -98,7 +127,11 @@ call :RenameVersionedAsset "%VELO_SERVER%" "KaiAosRenew-server-win-x86-Setup.exe
 if errorlevel 1 exit /b 1
 
 echo Packing client...
-vpk pack -u KaiAosNotifyClient -v !CLIENT_VER! -p "%PACK_CLIENT%" -e "KAI - AOS Renew - Client.exe" -c client-win-x86 --packTitle "KAI - AOS Renew - Client" -o "%VELO_CLIENT%" --noPortable
+if defined SIGN_ENABLED (
+  vpk pack -u KaiAosNotifyClient -v !CLIENT_VER! -p "%PACK_CLIENT%" -e "KAI - AOS Renew - Client.exe" -c client-win-x86 --packTitle "KAI - AOS Renew - Client" -o "%VELO_CLIENT%" --noPortable --releaseNotes "%NOTES%" --signParams "!SIGN_PARAMS!"
+) else (
+  vpk pack -u KaiAosNotifyClient -v !CLIENT_VER! -p "%PACK_CLIENT%" -e "KAI - AOS Renew - Client.exe" -c client-win-x86 --packTitle "KAI - AOS Renew - Client" -o "%VELO_CLIENT%" --noPortable --releaseNotes "%NOTES%"
+)
 if errorlevel 1 exit /b 1
 
 call :RenameVersionedAsset "%VELO_CLIENT%" "KaiAosNotifyClient-client-win-x86-Setup.exe" "KaiAosNotifyClient-!CLIENT_VER!-client-win-x86-Setup.exe" "assets.client-win-x86.json"
@@ -119,6 +152,12 @@ if errorlevel 1 exit /b 1
 echo Uploading client assets onto same release...
 vpk upload github --repoUrl %REPO% --token "!GH_TOKEN!" -o "%VELO_CLIENT%" -c client-win-x86 --merge --publish --tag v!SERVER_VER!
 if errorlevel 1 exit /b 1
+
+echo Setting GitHub release notes from CHANGELOG...
+gh release edit v!SERVER_VER! --notes-file "%NOTES%"
+if errorlevel 1 (
+  echo Warning: gh release edit failed; release assets are still uploaded.
+)
 
 echo.
 echo Release done: %REPO%/releases/tag/v!SERVER_VER!
