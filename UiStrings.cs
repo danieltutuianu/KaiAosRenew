@@ -31,6 +31,8 @@ namespace KaiAosRenew
             Maps["zh"] = Zh();
         }
 
+        public static string Language { get { return _lang; } }
+
         public static void SetLanguage(string code)
         {
             if (string.IsNullOrWhiteSpace(code))
@@ -310,6 +312,9 @@ namespace KaiAosRenew
                 "LogSuccess", "Success",
                 "LogWarning", "Warning",
                 "LogError", "Error",
+                "LogKeyReader", "KeyReader",
+                "KeyReaderBinUpdated", "KeyReader: keyreader.bin updated",
+                "KeyReaderLogMissing", "KeyReader: log folder not found: {0}",
                 "FailsCount", " ({0})",
                 "CheckToken", "Check token",
                 "StartTimer", "Start timer",
@@ -620,6 +625,9 @@ namespace KaiAosRenew
                 "LogSuccess", "OK",
                 "LogWarning", "Warning",
                 "LogError", "Eroare",
+                "LogKeyReader", "KeyReader",
+                "KeyReaderBinUpdated", "KeyReader: keyreader.bin actualizat",
+                "KeyReaderLogMissing", "KeyReader: folder log negăsit: {0}",
                 "FailsCount", " ({0})",
                 "CheckToken", "Verifică token",
                 "StartTimer", "Pornește timer",

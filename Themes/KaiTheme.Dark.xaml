@@ -18,6 +18,10 @@
   <Color x:Key="WarnBannerBgColor">#FF4A3F1F</Color>
   <Color x:Key="WarnBannerFgColor">#FFF0D78A</Color>
   <Color x:Key="PanelMutedBgColor">#FF33302A</Color>
+  <Color x:Key="ListSelectionColor">#FF3D4F63</Color>
+  <Color x:Key="ListHoverColor">#FF333A42</Color>
+  <Color x:Key="KeysNewVinHighlightColor">#FF4A3F1F</Color>
+  <Color x:Key="KeysNewVinBorderColor">#FFE0B040</Color>
 
   <SolidColorBrush x:Key="WindowBgBrush" Color="{StaticResource WindowBgColor}" />
   <SolidColorBrush x:Key="ContentBgBrush" Color="{StaticResource ContentBgColor}" />
@@ -33,6 +37,10 @@
   <SolidColorBrush x:Key="WarnBannerBgBrush" Color="{StaticResource WarnBannerBgColor}" />
   <SolidColorBrush x:Key="WarnBannerFgBrush" Color="{StaticResource WarnBannerFgColor}" />
   <SolidColorBrush x:Key="PanelMutedBgBrush" Color="{StaticResource PanelMutedBgColor}" />
+  <SolidColorBrush x:Key="ListSelectionBrush" Color="{StaticResource ListSelectionColor}" />
+  <SolidColorBrush x:Key="ListHoverBrush" Color="{StaticResource ListHoverColor}" />
+  <SolidColorBrush x:Key="KeysNewVinHighlightBrush" Color="{StaticResource KeysNewVinHighlightColor}" />
+  <SolidColorBrush x:Key="KeysNewVinBorderBrush" Color="{StaticResource KeysNewVinBorderColor}" />
 
   <FontFamily x:Key="KaiFont">Segoe UI</FontFamily>
 
@@ -271,8 +279,8 @@
     </Setter>
   </Style>
 
-  <Style TargetType="ListViewItem">
-    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+  <Style x:Key="KaiListViewItem" TargetType="ListViewItem">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="Padding" Value="2,1" />
@@ -291,23 +299,26 @@
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-              <Setter TargetName="Bd" Property="Background" Value="#FF333A42" />
+              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ListHoverBrush}" />
             </Trigger>
             <Trigger Property="IsSelected" Value="True">
-              <Setter TargetName="Bd" Property="Background" Value="#FF3D4F63" />
+              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ListSelectionBrush}" />
+              <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
             </Trigger>
             <MultiTrigger>
               <MultiTrigger.Conditions>
                 <Condition Property="IsSelected" Value="True" />
                 <Condition Property="IsMouseOver" Value="True" />
               </MultiTrigger.Conditions>
-              <Setter TargetName="Bd" Property="Background" Value="#FF465A70" />
+              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ListSelectionBrush}" />
             </MultiTrigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>
     </Setter>
   </Style>
+
+  <Style TargetType="ListViewItem" BasedOn="{StaticResource KaiListViewItem}" />
 
   <Style x:Key="BeigeButton" TargetType="Button">
     <Setter Property="FontFamily" Value="{StaticResource KaiFont}" />

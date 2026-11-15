@@ -54,8 +54,6 @@ namespace KaiAosNotifyClient
 
         // Keys VIN highlight (simplified port from server)
         private const double KeysHighlightSeconds = 20;
-        private static readonly SolidColorBrush KeysNewVinHighlightBrush =
-            new SolidColorBrush(Color.FromRgb(0xF9, 0xC2, 0x4A));
         private readonly DispatcherTimer _keysHighlightTimer = new DispatcherTimer();
         private string _keysHighlightVin;
         private ListViewItem _keysHighlightedItem;
@@ -167,7 +165,6 @@ namespace KaiAosNotifyClient
             _servicesBlinkTimer.Tick += ServicesBlinkTimer_Tick;
             _alertBlinkTimer.Interval = TimeSpan.FromMilliseconds(450);
             _alertBlinkTimer.Tick += AlertBlinkTimer_Tick;
-            if (KeysNewVinHighlightBrush.CanFreeze) KeysNewVinHighlightBrush.Freeze();
             _keysHighlightTimer.Tick += KeysHighlightTimer_Tick;
             _kaiBusyTimer.Interval = TimeSpan.FromSeconds(30);
             _kaiBusyTimer.Tick += KaiBusyTimer_Tick;
@@ -185,6 +182,7 @@ namespace KaiAosNotifyClient
                 if (AboutVersionText != null)
                     AboutVersionText.Text = string.Format(ClientUiStrings.T("Version"), VersionDisplay);
                 InitKeysFilterCombo();
+                LoadKeysHistory();
                 if (KeysEventsList != null)
                     KeysEventsList.ItemsSource = _keyRows;
                 if (ActivityList != null)
@@ -1695,10 +1693,11 @@ namespace KaiAosNotifyClient
 
         private void ApplyKeySync(string text)
         {
-            _keyAllRows.Clear();
+            if (string.IsNullOrWhiteSpace(text))
+                return; // keep persisted history on empty sync / disconnect
             var rows = NotifyMessage.ParseKeySync(text);
             // Backward compat: old vinSync was comma-separated VINs only
-            if (rows.Count == 0 && !string.IsNullOrWhiteSpace(text) && text.IndexOf('|') < 0)
+            if (rows.Count == 0 && text.IndexOf('|') < 0)
             {
                 var parts = text.Split(',');
                 var now = DateTime.Now;
@@ -1706,13 +1705,12 @@ namespace KaiAosNotifyClient
                 {
                     var vin = (part ?? "").Trim();
                     if (string.IsNullOrEmpty(vin)) continue;
-                    _keyAllRows.Add(new ClientKeyRow
+                    UpsertKeyRowCore(new ClientKeyRow
                     {
                         DetectedLocal = now,
                         Vin = vin,
                         Status = "Waiting"
                     });
-                    if (_keyAllRows.Count >= 10) break;
                 }
             }
             else
@@ -1720,12 +1718,53 @@ namespace KaiAosNotifyClient
                 foreach (var row in rows)
                 {
                     if (row == null) continue;
-                    _keyAllRows.Add(row);
+                    UpsertKeyRowCore(row);
                 }
             }
+            SortAndTrimKeyRows();
+            PersistKeysHistory();
             _lastVin = _keyAllRows.Count > 0 ? _keyAllRows[0].Vin : null;
             ApplyKeysFilter();
+            UpdateKeysTodayBadge();
             UpdateKeysAlert();
+        }
+
+        private void LoadKeysHistory()
+        {
+            try
+            {
+                var loaded = ClientKeyHistory.Load();
+                _keyAllRows.Clear();
+                foreach (var row in loaded)
+                {
+                    if (row == null) continue;
+                    _keyAllRows.Add(row);
+                }
+                SortAndTrimKeyRows();
+                _lastVin = _keyAllRows.Count > 0 ? _keyAllRows[0].Vin : null;
+                ApplyKeysFilter();
+                UpdateKeysAlert();
+            }
+            catch { }
+        }
+
+        private void PersistKeysHistory()
+        {
+            try { ClientKeyHistory.Save(_keyAllRows); }
+            catch { }
+        }
+
+        private void SortAndTrimKeyRows()
+        {
+            _keyAllRows.Sort((a, b) =>
+            {
+                if (a == null && b == null) return 0;
+                if (a == null) return 1;
+                if (b == null) return -1;
+                return b.DetectedLocal.CompareTo(a.DetectedLocal);
+            });
+            while (_keyAllRows.Count > ClientKeyHistory.MaxEvents)
+                _keyAllRows.RemoveAt(_keyAllRows.Count - 1);
         }
 
         private void ApplyActivitySync(string text)
@@ -1806,7 +1845,8 @@ namespace KaiAosNotifyClient
                     new LangItem { Code = "info", Name = TL("LogInfo", "Info") },
                     new LangItem { Code = "success", Name = TL("LogSuccess", "Success") },
                     new LangItem { Code = "warning", Name = TL("LogWarning", "Warning") },
-                    new LangItem { Code = "error", Name = TL("LogError", "Error") }
+                    new LangItem { Code = "error", Name = TL("LogError", "Error") },
+                    new LangItem { Code = "keyreader", Name = TL("LogKeyReader", "KeyReader") }
                 };
                 LogFilterCombo.SelectedValue = string.IsNullOrEmpty(prev) ? "all" : prev;
                 if (LogFilterCombo.SelectedValue == null)
@@ -1833,6 +1873,11 @@ namespace KaiAosNotifyClient
         {
             var row = item as ActivityRow;
             if (row == null) return false;
+            if (string.Equals(_activityFilter, "keyreader", StringComparison.OrdinalIgnoreCase))
+            {
+                var t = row.Text ?? "";
+                return t.StartsWith("KeyReader:", StringComparison.OrdinalIgnoreCase);
+            }
             if (string.IsNullOrEmpty(_activityFilter) || _activityFilter == "all") return true;
             return string.Equals(row.LevelText, _activityFilter, StringComparison.OrdinalIgnoreCase);
         }
@@ -2012,9 +2057,16 @@ namespace KaiAosNotifyClient
             _keysHighlightVin = vin;
             if (resetDeadline || _keysHighlightUntilUtc < DateTime.UtcNow)
                 _keysHighlightUntilUtc = DateTime.UtcNow.AddSeconds(KeysHighlightSeconds);
-            lvi.Background = KeysNewVinHighlightBrush;
-            lvi.BorderBrush = KeysNewVinHighlightBrush;
+            var highlight = TryFindResource("KeysNewVinHighlightBrush") as Brush;
+            var border = TryFindResource("KeysNewVinBorderBrush") as Brush ?? highlight;
+            if (highlight != null)
+                lvi.Background = highlight;
+            if (border != null)
+                lvi.BorderBrush = border;
             lvi.BorderThickness = new Thickness(3, 0, 0, 0);
+            var fg = TryFindResource("TextPrimaryBrush") as Brush;
+            if (fg != null)
+                lvi.Foreground = fg;
             ScheduleKeysHighlightTimer();
         }
 
@@ -2183,6 +2235,16 @@ namespace KaiAosNotifyClient
 
         private void UpsertKeyRow(ClientKeyRow row)
         {
+            UpsertKeyRowCore(row);
+            SortAndTrimKeyRows();
+            PersistKeysHistory();
+            ApplyKeysFilter();
+            UpdateKeysTodayBadge();
+            UpdateKeysAlert();
+        }
+
+        private void UpsertKeyRowCore(ClientKeyRow row)
+        {
             if (row == null || string.IsNullOrEmpty(row.Vin)) return;
             for (var i = _keyAllRows.Count - 1; i >= 0; i--)
             {
@@ -2190,11 +2252,6 @@ namespace KaiAosNotifyClient
                     _keyAllRows.RemoveAt(i);
             }
             _keyAllRows.Insert(0, row);
-            while (_keyAllRows.Count > 10)
-                _keyAllRows.RemoveAt(_keyAllRows.Count - 1);
-            ApplyKeysFilter();
-            UpdateKeysTodayBadge();
-            UpdateKeysAlert();
         }
 
         private void KeysVinCopyIcon_Loaded(object sender, RoutedEventArgs e)
@@ -2211,7 +2268,15 @@ namespace KaiAosNotifyClient
         {
             if (btn == null) return;
             var row = btn.DataContext as ClientKeyRow;
-            btn.ToolTip = ClientUiStrings.T("CopyVin");
+            var tipText = ClientUiStrings.T("CopyVin");
+            var tip = btn.ToolTip as ToolTip;
+            if (tip != null)
+            {
+                var tb = tip.Content as TextBlock;
+                if (tb != null) tb.Text = tipText;
+            }
+            else
+                btn.ToolTip = tipText;
             btn.Visibility = (row != null && !string.IsNullOrEmpty(row.Vin))
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -2627,6 +2692,8 @@ namespace KaiAosNotifyClient
         private void ExitApp()
         {
             _exitRequested = true;
+            try { PersistKeysHistory(); }
+            catch { }
             try
             {
                 CaptureConnectionFields();

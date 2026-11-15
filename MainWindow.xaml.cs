@@ -104,6 +104,7 @@ namespace KaiAosRenew
         private bool _pendingLockRegisterAfter;
         private bool _pendingStartTimerOnSuccess;
         private readonly KeyActivityMonitor _keyMonitor = new KeyActivityMonitor();
+        private readonly KeyReaderLogTailer _keyReaderLogTailer = new KeyReaderLogTailer();
         private readonly DispatcherTimer _keysRefreshTimer = new DispatcherTimer();
         private readonly DispatcherTimer _keysHighlightTimer = new DispatcherTimer();
         private bool _keysAlert;
@@ -133,8 +134,6 @@ namespace KaiAosRenew
         private bool _keysRetryBusy;
         private static readonly SolidColorBrush KeysSearchHitBrush =
             new SolidColorBrush(Color.FromArgb(0xFF, 0xF9, 0xE2, 0xA8));
-        private static readonly SolidColorBrush KeysNewVinHighlightBrush =
-            new SolidColorBrush(Color.FromRgb(0xF9, 0xC2, 0x4A));
         private static readonly SolidColorBrush KeysCopyOkBrush =
             new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
         private const string KeysCopyGlyph = "\uE8C8";
@@ -144,7 +143,6 @@ namespace KaiAosRenew
         {
             InitializeComponent();
             if (KeysSearchHitBrush.CanFreeze) KeysSearchHitBrush.Freeze();
-            if (KeysNewVinHighlightBrush.CanFreeze) KeysNewVinHighlightBrush.Freeze();
             if (KeysCopyOkBrush.CanFreeze) KeysCopyOkBrush.Freeze();
 
             InitLanguageCombo();
@@ -195,6 +193,7 @@ namespace KaiAosRenew
             NotifyServer.Instance.MessageFromClient += OnNotifyMessageFromClient;
             ApplyNotifyServerFromSettings();
             _keyMonitor.Start(OnKeyActivityChanged);
+            StartKeyReaderLogTailer();
             StartUiHangWatchdog();
             AppendLog(UiStrings.T("Ready"));
         }
@@ -400,7 +399,8 @@ namespace KaiAosRenew
                 new LangItem { Name = UiStrings.T("LogInfo"), Code = "info" },
                 new LangItem { Name = UiStrings.T("LogSuccess"), Code = "success" },
                 new LangItem { Name = UiStrings.T("LogWarning"), Code = "warning" },
-                new LangItem { Name = UiStrings.T("LogError"), Code = "error" }
+                new LangItem { Name = UiStrings.T("LogError"), Code = "error" },
+                new LangItem { Name = UiStrings.T("LogKeyReader"), Code = "keyreader" }
             };
             LogFilterCombo.SelectedValue = selected;
         }
@@ -1201,6 +1201,8 @@ namespace KaiAosRenew
                 return;
             }
 
+            StartKeyReaderLogTailer(paths);
+
             if (!syncPickup || string.IsNullOrEmpty(paths.DataBin) || _settings == null)
                 return;
             try
@@ -1213,6 +1215,64 @@ namespace KaiAosRenew
                 ApplyKeysMonitorSettings();
             }
             catch { }
+        }
+
+        private void StartKeyReaderLogTailer()
+        {
+            DesktopKeyReaderReg.Paths paths = null;
+            try { paths = DesktopKeyReaderReg.ReadAbsolute(); }
+            catch { }
+            StartKeyReaderLogTailer(paths);
+        }
+
+        private void StartKeyReaderLogTailer(DesktopKeyReaderReg.Paths paths)
+        {
+            if (paths == null)
+            {
+                try { paths = DesktopKeyReaderReg.ReadAbsolute(); }
+                catch { paths = null; }
+            }
+            var logDir = paths != null ? paths.LogPath : null;
+            var dataBin = paths != null ? paths.DataBin : null;
+            if (KeyReaderLogPathBox != null && !string.IsNullOrWhiteSpace(KeyReaderLogPathBox.Text))
+                logDir = KeyReaderLogPathBox.Text.Trim();
+            if (KeyReaderDataBinBox != null && !string.IsNullOrWhiteSpace(KeyReaderDataBinBox.Text))
+                dataBin = KeyReaderDataBinBox.Text.Trim();
+            try
+            {
+                _keyReaderLogTailer.Start(logDir, dataBin, OnKeyReaderActivityLine);
+            }
+            catch (Exception ex)
+            {
+                AppendLog("KeyReader: tailer start failed: " + ex.Message, LogLevel.Warning);
+            }
+        }
+
+        private void OnKeyReaderActivityLine(string text, KeyReaderActivityKind kind)
+        {
+            LogLevel level;
+            switch (kind)
+            {
+                case KeyReaderActivityKind.Success:
+                    level = LogLevel.Success;
+                    break;
+                case KeyReaderActivityKind.Warning:
+                    level = LogLevel.Warning;
+                    break;
+                case KeyReaderActivityKind.Error:
+                    level = LogLevel.Error;
+                    break;
+                case KeyReaderActivityKind.Verbose:
+                    level = LogLevel.Verbose;
+                    break;
+                default:
+                    level = LogLevel.Info;
+                    break;
+            }
+            if (kind == KeyReaderActivityKind.Verbose)
+                AppendLog(text, level, true);
+            else
+                AppendLog(text, level);
         }
 
         private void KeyReaderPaths_LostFocus(object sender, RoutedEventArgs e)
@@ -1517,7 +1577,15 @@ namespace KaiAosRenew
         {
             if (btn == null) return;
             var ev = btn.DataContext as KeyActivityEvent;
-            btn.ToolTip = UiStrings.T("KeysCopyVin");
+            var tipText = UiStrings.T("KeysCopyVin");
+            var tip = btn.ToolTip as ToolTip;
+            if (tip != null)
+            {
+                var tb = tip.Content as TextBlock;
+                if (tb != null) tb.Text = tipText;
+            }
+            else
+                btn.ToolTip = tipText;
             btn.Visibility = (ev != null && !string.IsNullOrEmpty(ev.Vin))
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -2246,9 +2314,16 @@ namespace KaiAosRenew
             _keysHighlightVin = vin;
             if (resetDeadline || _keysHighlightUntilUtc < DateTime.UtcNow)
                 _keysHighlightUntilUtc = DateTime.UtcNow.AddSeconds(KeysHighlightSeconds);
-            lvi.Background = KeysNewVinHighlightBrush;
-            lvi.BorderBrush = KeysNewVinHighlightBrush;
+            var highlight = TryFindResource("KeysNewVinHighlightBrush") as Brush;
+            var border = TryFindResource("KeysNewVinBorderBrush") as Brush ?? highlight;
+            if (highlight != null)
+                lvi.Background = highlight;
+            if (border != null)
+                lvi.BorderBrush = border;
             lvi.BorderThickness = new Thickness(3, 0, 0, 0);
+            var fg = TryFindResource("TextPrimaryBrush") as Brush;
+            if (fg != null)
+                lvi.Foreground = fg;
             ScheduleKeysHighlightTimer();
         }
 
@@ -3546,6 +3621,8 @@ namespace KaiAosRenew
             try { _keysHighlightTimer.Stop(); }
             catch { }
             try { _keyMonitor.Dispose(); }
+            catch { }
+            try { _keyReaderLogTailer.Dispose(); }
             catch { }
             try { NotifyServer.Instance.ClientConnected -= OnNotifyClientConnected; }
             catch { }
@@ -6160,8 +6237,7 @@ namespace KaiAosRenew
                 if (LogBox != null && TabActivity != null && TabActivity.IsSelected)
                     LogBox.ScrollToEnd();
             }
-            if (resolved != LogLevel.Verbose)
-                BroadcastActivityEntry(entry);
+            BroadcastActivityEntry(entry);
         }
 
         private static LogLevel InferLogLevel(string line, bool verboseOnly)
@@ -6190,6 +6266,11 @@ namespace KaiAosRenew
 
         private bool ShouldShowLogEntry(LogEntry entry)
         {
+            if (_logFilter == "keyreader")
+            {
+                var t = entry.Text ?? "";
+                return t.StartsWith("KeyReader:", StringComparison.OrdinalIgnoreCase);
+            }
             if (entry.Level == LogLevel.Verbose)
                 return _settings != null && _settings.LogVerbose && _logFilter == "all";
             if (_logFilter == "all") return true;
@@ -6222,7 +6303,7 @@ namespace KaiAosRenew
         }
 
         private const int MaxLogBlocks = 500;
-        private const int ActivitySyncMax = 150;
+        private const int ActivitySyncMax = 500;
 
         private static string LogLevelWireName(LogLevel level)
         {
@@ -6278,7 +6359,7 @@ namespace KaiAosRenew
                 for (var i = 0; i < _logEntries.Count; i++)
                 {
                     var e = _logEntries[i];
-                    if (e == null || e.Level == LogLevel.Verbose) continue;
+                    if (e == null) continue;
                     list.Add(new ActivityWireRow
                     {
                         At = e.Time,

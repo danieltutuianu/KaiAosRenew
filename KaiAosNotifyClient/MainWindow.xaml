@@ -76,7 +76,7 @@
                       ScrollViewer.VerticalScrollBarVisibility="Auto"
                       ScrollViewer.HorizontalScrollBarVisibility="Auto">
               <ListView.ItemContainerStyle>
-                <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource KaiListViewItem}">
                   <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                   <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                   <Setter Property="ToolTip" Value="{Binding RowToolTip}" />
@@ -107,13 +107,28 @@
                           <Button Padding="0" Margin="0,0,4,0" Width="18" Height="18"
                                   FontFamily="Segoe MDL2 Assets" FontSize="11" Content="&#xE8C8;"
                                   Cursor="Hand" Focusable="False"
-                                  Foreground="{DynamicResource TextPrimaryBrush}"
                                   Background="Transparent" BorderThickness="0"
-                                  ToolTip="Copy VIN"
                                   Loaded="KeysVinCopyIcon_Loaded"
                                   DataContextChanged="KeysVinCopyIcon_DataContextChanged"
                                   PreviewMouseLeftButtonDown="KeysVinCopyIcon_PreviewMouseLeftButtonDown"
-                                  Click="KeysVinCopyIcon_Click" />
+                                  Click="KeysVinCopyIcon_Click">
+                            <Button.Style>
+                              <Style TargetType="Button">
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True">
+                                    <Setter Property="Foreground" Value="Black" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Button.Style>
+                            <Button.ToolTip>
+                              <ToolTip Foreground="Black" Background="#FFF7F7F7" BorderBrush="#FFABABAB" BorderThickness="1"
+                                       Padding="6,4">
+                                <TextBlock Text="Copy VIN" Foreground="Black" />
+                              </ToolTip>
+                            </Button.ToolTip>
+                          </Button>
                           <TextBlock Text="{Binding VinText}" VerticalAlignment="Center" />
                         </StackPanel>
                       </DataTemplate>
@@ -236,7 +251,7 @@
             <DockPanel Margin="0,0,0,4" LastChildFill="False">
               <TextBlock x:Name="ActivitySection" Style="{DynamicResource SectionText}" Text="Server activity log:" VerticalAlignment="Center" />
               <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                <ComboBox x:Name="LogFilterCombo" Width="110" Margin="0,0,10,0" VerticalAlignment="Center"
+                <ComboBox x:Name="LogFilterCombo" Width="130" Margin="0,0,10,0" VerticalAlignment="Center"
                           Style="{DynamicResource KaiComboBox}"
                           DisplayMemberPath="Name" SelectedValuePath="Code"
                           SelectionChanged="LogFilter_SelectionChanged" />
@@ -251,7 +266,7 @@
                       ScrollViewer.VerticalScrollBarVisibility="Auto"
                       ScrollViewer.HorizontalScrollBarVisibility="Auto">
               <ListView.ItemContainerStyle>
-                <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource KaiListViewItem}">
                   <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                   <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                   <Style.Triggers>

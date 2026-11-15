@@ -74,6 +74,7 @@
     </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="ClientSettings.cs" />
+    <Compile Include="ClientKeyHistory.cs" />
     <Compile Include="ClientUiStrings.cs" />
     <Compile Include="ClientThemeManager.cs" />
     <Compile Include="LanServerDiscovery.cs" />

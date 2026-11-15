@@ -89,6 +89,8 @@
     <Compile Include="UiStrings.cs" />
     <Compile Include="KaiDiag.cs" />
     <Compile Include="KeyActivityMonitor.cs" />
+    <Compile Include="KeyReaderLogTailer.cs" />
+    <Compile Include="KeyReaderLogLocalize.cs" />
     <Compile Include="KeyUploadProbe.cs" />
     <Compile Include="NotifyServer.cs" />
     <Compile Include="DesktopKeyReaderReg.cs" />
