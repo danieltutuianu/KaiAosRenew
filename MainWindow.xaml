@@ -855,9 +855,17 @@
                      FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
                      VerticalAlignment="Center" />
         </StackPanel>
-        <TextBlock x:Name="VersionText" Text="Version 1.0"
-                   FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
-                   HorizontalAlignment="Right" VerticalAlignment="Center" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <TextBlock x:Name="VersionText" Text="Server version: 1.0"
+                     FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                     VerticalAlignment="Center" />
+          <TextBlock x:Name="UpdateAvailableText" Text=""
+                     FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                     VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed" />
+          <Button x:Name="FooterUpdateBtn" Content="Update" FontSize="11"
+                  Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center"
+                  Visibility="Collapsed" Click="FooterUpdate_Click" />
+        </StackPanel>
         </Grid>
         <Grid Grid.Row="1">
           <TextBlock x:Name="RegisterAgeText"

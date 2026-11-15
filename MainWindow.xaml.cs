@@ -15,6 +15,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using Velopack;
 using WinForms = System.Windows.Forms;
 using Drawing = System.Drawing;
 using DiagProcess = System.Diagnostics.Process;
@@ -128,6 +129,9 @@ namespace KaiAosRenew
         private Button _keysCopyFeedbackBtn;
         private readonly DispatcherTimer _keysCopyFeedbackTimer = new DispatcherTimer();
         private readonly DispatcherTimer _intervalDebounceTimer = new DispatcherTimer();
+        private readonly DispatcherTimer _updatePeekTimer = new DispatcherTimer();
+        private UpdateInfo _pendingUpdate;
+        private bool _updateCheckBusy;
         private DateTime _lastKeys403RemediateUtc = DateTime.MinValue;
         private string _lastKeys403RemediateKey;
         private string _pending403RetryVin;
@@ -174,6 +178,8 @@ namespace KaiAosRenew
             _keysCopyFeedbackTimer.Tick += KeysCopyFeedbackTimer_Tick;
             _intervalDebounceTimer.Interval = TimeSpan.FromMilliseconds(500);
             _intervalDebounceTimer.Tick += IntervalDebounceTimer_Tick;
+            _updatePeekTimer.Interval = TimeSpan.FromHours(6);
+            _updatePeekTimer.Tick += UpdatePeekTimer_Tick;
 
             InitTray();
             LoadSettingsToUi();
@@ -463,6 +469,11 @@ namespace KaiAosRenew
             }
             if (CheckForUpdatesBtn != null)
                 CheckForUpdatesBtn.Content = UiStrings.T("CheckForUpdates");
+            if (FooterUpdateBtn != null)
+                FooterUpdateBtn.Content = UiStrings.T("Update");
+            if (_pendingUpdate != null && UpdateAvailableText != null)
+                UpdateAvailableText.Text = string.Format(UiStrings.T("UpdateAvailableShort"),
+                    UpdateService.FormatUpdateVersion(_pendingUpdate));
             if (SectionConfigText != null) SectionConfigText.Text = UiStrings.T("SectionConfig");
             if (ConfigPathLabel != null) ConfigPathLabel.Text = UiStrings.T("ConfigPath");
             if (BrowseBtn != null) BrowseBtn.Content = UiStrings.T("Browse");
@@ -2558,7 +2569,7 @@ namespace KaiAosRenew
 
         private void MaybeCheckForUpdatesOnStart()
         {
-            if (_settings == null || !_settings.AutoUpdate || _updateCheckStarted) return;
+            if (_updateCheckStarted) return;
             ContentRendered += OnContentRenderedForUpdateCheck;
         }
 
@@ -2569,11 +2580,85 @@ namespace KaiAosRenew
             _updateCheckStarted = true;
             try { await System.Threading.Tasks.Task.Delay(1500); }
             catch { }
+            var autoApply = _settings != null && _settings.AutoUpdate;
+            await RunUpdateCheckAsync(autoApply);
+            try { _updatePeekTimer.Start(); }
+            catch { }
+        }
+
+        private async void UpdatePeekTimer_Tick(object sender, EventArgs e)
+        {
+            await RunUpdateCheckAsync(false);
+        }
+
+        private async Task RunUpdateCheckAsync(bool autoApply)
+        {
+            if (_updateCheckBusy) return;
+            _updateCheckBusy = true;
             try
             {
-                await UpdateService.CheckForUpdateAsync(this, true, true, UiStrings.T);
+                if (autoApply)
+                {
+                    // Silent apply if available (restarts). One GitHub hit — no second peek.
+                    await UpdateService.CheckForUpdateAsync(this, true, true, UiStrings.T);
+                    ShowPendingUpdate(null);
+                    return;
+                }
+                var update = await UpdateService.PeekAsync();
+                ShowPendingUpdate(update);
             }
-            catch { }
+            catch
+            {
+                ShowPendingUpdate(null);
+            }
+            finally
+            {
+                _updateCheckBusy = false;
+            }
+        }
+
+        private void ShowPendingUpdate(UpdateInfo update)
+        {
+            _pendingUpdate = update;
+            if (update == null)
+            {
+                if (UpdateAvailableText != null)
+                    UpdateAvailableText.Visibility = Visibility.Collapsed;
+                if (FooterUpdateBtn != null)
+                    FooterUpdateBtn.Visibility = Visibility.Collapsed;
+                return;
+            }
+            var ver = UpdateService.FormatUpdateVersion(update);
+            if (UpdateAvailableText != null)
+            {
+                UpdateAvailableText.Text = string.Format(UiStrings.T("UpdateAvailableShort"), ver);
+                UpdateAvailableText.Visibility = Visibility.Visible;
+            }
+            if (FooterUpdateBtn != null)
+            {
+                FooterUpdateBtn.Content = UiStrings.T("Update");
+                FooterUpdateBtn.Visibility = Visibility.Visible;
+                FooterUpdateBtn.IsEnabled = true;
+            }
+        }
+
+        private async void FooterUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pendingUpdate == null) return;
+            if (FooterUpdateBtn != null) FooterUpdateBtn.IsEnabled = false;
+            try
+            {
+                await UpdateService.ApplyUpdateAsync(this, _pendingUpdate, UiStrings.T, true);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(UiStrings.T("UpdateFailed"), ex.Message),
+                    UiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                if (FooterUpdateBtn != null) FooterUpdateBtn.IsEnabled = true;
+            }
         }
 
         private void AutoUpdate_Changed(object sender, RoutedEventArgs e)
@@ -2588,8 +2673,12 @@ namespace KaiAosRenew
             if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = false;
             try
             {
-                // Manual check always prompts; Auto update silent path is startup-only.
-                await UpdateService.CheckForUpdateAsync(this, false, false, UiStrings.T);
+                // Manual check always prompts; keep banner if user declines.
+                var update = await UpdateService.CheckForUpdateAsync(this, false, false, UiStrings.T);
+                if (update != null)
+                    ShowPendingUpdate(update);
+                else
+                    ShowPendingUpdate(null);
             }
             catch (Exception ex)
             {
@@ -3084,7 +3173,7 @@ namespace KaiAosRenew
                 ServicesFooterText != null ? (ServicesFooterText.Text ?? "") : "",
                 regMain ?? "",
                 regFail ?? "",
-                VersionText != null ? (VersionText.Text ?? "") : "",
+                AppVersionDisplay ?? "",
                 tip ?? "",
                 ThemeManager.IsNight ? "night" : "day",
                 authCooldownMode,
@@ -3117,6 +3206,38 @@ namespace KaiAosRenew
             {
                 RunAosCmdFromClient(clientId, msg.Text);
                 return;
+            }
+            if (kind == "serverupdate")
+            {
+                BeginServerUpdateFromClient(clientId);
+                return;
+            }
+        }
+
+        private async void BeginServerUpdateFromClient(int clientId)
+        {
+            try
+            {
+                var mgr = UpdateService.CreateManager();
+                if (!mgr.IsInstalled)
+                {
+                    SendAosAck(clientId, false, UiStrings.T("UpdateNotInstalled"));
+                    return;
+                }
+                var update = await UpdateService.PeekAsync();
+                if (update == null)
+                {
+                    SendAosAck(clientId, false, UiStrings.T("UpdateNone"));
+                    return;
+                }
+                // Ack before restart so the client clears the wait UI.
+                SendAosAck(clientId, true, "serverUpdate " + UpdateService.FormatUpdateVersion(update));
+                await UpdateService.ApplyUpdateAsync(this, update, UiStrings.T, false);
+            }
+            catch (Exception ex)
+            {
+                try { SendAosAck(clientId, false, ex.Message ?? "Update failed"); }
+                catch { }
             }
         }
 

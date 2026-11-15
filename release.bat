@@ -93,8 +93,19 @@ echo Packing server...
 vpk pack -u KaiAosRenew -v !SERVER_VER! -p "%PACK_SERVER%" -e "KAI - AOS Renew.exe" -c server-win-x86 --packTitle "KAI - AOS Renew" -o "%VELO_SERVER%"
 if errorlevel 1 exit /b 1
 
+REM Version Setup/Portable filenames (Velopack omits version; nupkgs already have it).
+call :RenameVersionedAsset "%VELO_SERVER%" "KaiAosRenew-server-win-x86-Setup.exe" "KaiAosRenew-!SERVER_VER!-server-win-x86-Setup.exe" "assets.server-win-x86.json"
+if errorlevel 1 exit /b 1
+call :RenameVersionedAsset "%VELO_SERVER%" "KaiAosRenew-server-win-x86-Portable.zip" "KaiAosRenew-!SERVER_VER!-server-win-x86-Portable.zip" "assets.server-win-x86.json"
+if errorlevel 1 exit /b 1
+
 echo Packing client...
 vpk pack -u KaiAosNotifyClient -v !CLIENT_VER! -p "%PACK_CLIENT%" -e "KAI - AOS Renew - Client.exe" -c client-win-x86 --packTitle "KAI - AOS Renew - Client" -o "%VELO_CLIENT%"
+if errorlevel 1 exit /b 1
+
+call :RenameVersionedAsset "%VELO_CLIENT%" "KaiAosNotifyClient-client-win-x86-Setup.exe" "KaiAosNotifyClient-!CLIENT_VER!-client-win-x86-Setup.exe" "assets.client-win-x86.json"
+if errorlevel 1 exit /b 1
+call :RenameVersionedAsset "%VELO_CLIENT%" "KaiAosNotifyClient-client-win-x86-Portable.zip" "KaiAosNotifyClient-!CLIENT_VER!-client-win-x86-Portable.zip" "assets.client-win-x86.json"
 if errorlevel 1 exit /b 1
 
 set "GH_TOKEN="
@@ -115,5 +126,36 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo Release done: %REPO%/releases/tag/v!SERVER_VER!
-echo Install from Setup.exe on that release, then test Auto update.
+echo Install from the versioned Setup.exe on that release, then test Auto update.
 endlocal
+exit /b 0
+
+:RenameVersionedAsset
+REM %1=dir  %2=oldName  %3=newName  %4=assetsJsonName
+set "RADIR=%~1"
+set "RAOLD=%~2"
+set "RANEW=%~3"
+set "RAJSON=%~4"
+if not exist "%RADIR%\%RAOLD%" (
+  echo Missing asset to rename: %RADIR%\%RAOLD%
+  exit /b 1
+)
+if exist "%RADIR%\%RANEW%" del /F /Q "%RADIR%\%RANEW%" >nul 2>&1
+move /Y "%RADIR%\%RAOLD%" "%RADIR%\%RANEW%" >nul
+if errorlevel 1 (
+  echo Failed to rename %RAOLD% to %RANEW%
+  exit /b 1
+)
+if exist "%RADIR%\%RAJSON%" (
+  powershell -NoProfile -Command ^
+    "$p=Join-Path '%RADIR%' '%RAJSON%';" ^
+    "$c=[IO.File]::ReadAllText($p);" ^
+    "$c=$c.Replace('%RAOLD%','%RANEW%');" ^
+    "[IO.File]::WriteAllText($p,$c)"
+  if errorlevel 1 (
+    echo Failed to patch %RAJSON% for %RANEW%
+    exit /b 1
+  )
+)
+echo Renamed %RAOLD% -^> %RANEW%
+exit /b 0

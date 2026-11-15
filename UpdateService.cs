@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Threading.Tasks;
 using System.Windows;
 using Velopack;
@@ -12,13 +13,159 @@ namespace KaiAosRenew
     internal static class UpdateService
     {
         public const string RepoUrl = "https://github.com/danieltutuianu/KaiAosRenew";
+        public const string ServerChannel = "server-win-x86";
+        public const string ClientChannel = "client-win-x86";
+
+        public static UpdateManager CreateManager()
+        {
+            return new UpdateManager(new GithubSource(RepoUrl, null, false));
+        }
+
+        /// <summary>
+        /// Check only — no download. Returns null if installed build is current or not installed.
+        /// </summary>
+        public static async Task<UpdateInfo> PeekAsync()
+        {
+            var mgr = CreateManager();
+            if (!mgr.IsInstalled)
+                return null;
+            return await mgr.CheckForUpdatesAsync().ConfigureAwait(true);
+        }
+
+        /// <summary>
+        /// Latest Full package version on a Velopack channel feed (does not compare to local install).
+        /// Used by the client to detect a newer server release on GitHub.
+        /// </summary>
+        public static async Task<string> PeekLatestChannelVersionAsync(string channel)
+        {
+            if (string.IsNullOrWhiteSpace(channel))
+                return null;
+            try
+            {
+                var url = RepoUrl.TrimEnd('/') + "/releases/latest/download/releases." + channel.Trim() + ".json";
+                string json;
+                using (var wc = new WebClient())
+                {
+                    wc.Headers[HttpRequestHeader.UserAgent] = "KaiAosRenew-UpdateCheck";
+                    json = await wc.DownloadStringTaskAsync(url).ConfigureAwait(true);
+                }
+                if (string.IsNullOrWhiteSpace(json))
+                    return null;
+                var feed = VelopackAssetFeed.FromJson(json);
+                if (feed == null || feed.Assets == null || feed.Assets.Length == 0)
+                    return null;
+                string bestFull = null;
+                Version bestFullVer = null;
+                string bestAny = null;
+                Version bestAnyVer = null;
+                foreach (var asset in feed.Assets)
+                {
+                    if (asset == null || asset.Version == null) continue;
+                    Version parsed;
+                    if (!TryParseVersion(asset.Version.ToString(), out parsed))
+                        continue;
+                    if (bestAnyVer == null || parsed > bestAnyVer)
+                    {
+                        bestAnyVer = parsed;
+                        bestAny = FormatVersion(parsed);
+                    }
+                    var typeName = asset.Type.ToString();
+                    if (string.Equals(typeName, "Full", StringComparison.OrdinalIgnoreCase)
+                        && (bestFullVer == null || parsed > bestFullVer))
+                    {
+                        bestFullVer = parsed;
+                        bestFull = FormatVersion(parsed);
+                    }
+                }
+                return bestFull ?? bestAny;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static bool IsNewerVersion(string candidate, string current)
+        {
+            Version c;
+            Version cur;
+            if (!TryParseVersion(candidate, out c) || !TryParseVersion(current, out cur))
+                return false;
+            return c > cur;
+        }
+
+        public static bool TryParseVersion(string text, out Version version)
+        {
+            version = null;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            var s = text.Trim();
+            // Strip pre-release / metadata: 1.2.5-beta+meta
+            var cut = s.IndexOfAny(new[] { '-', '+' });
+            if (cut > 0) s = s.Substring(0, cut);
+            var parts = s.Split('.');
+            if (parts.Length < 2 || parts.Length > 4) return false;
+            try
+            {
+                version = new Version(s);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static string FormatVersion(Version v)
+        {
+            if (v == null) return "?";
+            if (v.Build < 0) return v.Major + "." + v.Minor;
+            if (v.Revision < 0 || v.Revision == 0)
+                return v.Major + "." + v.Minor + "." + v.Build;
+            return v.Major + "." + v.Minor + "." + v.Build + "." + v.Revision;
+        }
+
+        public static string FormatUpdateVersion(UpdateInfo update)
+        {
+            if (update == null || update.TargetFullRelease == null)
+                return "?";
+            return update.TargetFullRelease.Version.ToString();
+        }
+
+        /// <summary>
+        /// Download and apply a previously peeked update (footer Update button).
+        /// </summary>
+        public static async Task ApplyUpdateAsync(
+            Window owner,
+            UpdateInfo update,
+            Func<string, string> t,
+            bool prompt)
+        {
+            if (t == null) t = key => key;
+            if (update == null) return;
+
+            var versionText = FormatUpdateVersion(update);
+            if (prompt)
+            {
+                var msg = string.Format(t("UpdateAvailable"), versionText);
+                var result = owner != null
+                    ? MessageBox.Show(owner, msg, t("CheckForUpdates"), MessageBoxButton.YesNo, MessageBoxImage.Question)
+                    : MessageBox.Show(msg, t("CheckForUpdates"), MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result != MessageBoxResult.Yes)
+                    return;
+            }
+
+            var mgr = CreateManager();
+            await mgr.DownloadUpdatesAsync(update).ConfigureAwait(true);
+            mgr.ApplyUpdatesAndRestart(update);
+        }
 
         /// <summary>
         /// Check for updates. When <paramref name="silent"/> is true, applies without prompts
         /// (used at startup when Auto update is on). When false (manual button), prompts only if
         /// <paramref name="autoApplyWithoutPrompt"/> is false.
+        /// Returns the UpdateInfo if an update exists (even after declining prompt), else null.
         /// </summary>
-        public static async Task CheckForUpdateAsync(
+        public static async Task<UpdateInfo> CheckForUpdateAsync(
             Window owner,
             bool silent,
             bool autoApplyWithoutPrompt,
@@ -27,12 +174,12 @@ namespace KaiAosRenew
             if (t == null) t = key => key;
             try
             {
-                var mgr = new UpdateManager(new GithubSource(RepoUrl, null, false));
+                var mgr = CreateManager();
                 if (!mgr.IsInstalled)
                 {
                     if (!silent)
                         Show(owner, t("UpdateNotInstalled"), t("CheckForUpdates"));
-                    return;
+                    return null;
                 }
 
                 var update = await mgr.CheckForUpdatesAsync().ConfigureAwait(true);
@@ -40,12 +187,10 @@ namespace KaiAosRenew
                 {
                     if (!silent)
                         Show(owner, t("UpdateNone"), t("CheckForUpdates"));
-                    return;
+                    return null;
                 }
 
-                var versionText = update.TargetFullRelease != null
-                    ? update.TargetFullRelease.Version.ToString()
-                    : "?";
+                var versionText = FormatUpdateVersion(update);
                 var applySilent = silent || autoApplyWithoutPrompt;
                 if (!applySilent)
                 {
@@ -54,11 +199,12 @@ namespace KaiAosRenew
                         ? MessageBox.Show(owner, msg, t("CheckForUpdates"), MessageBoxButton.YesNo, MessageBoxImage.Question)
                         : MessageBox.Show(msg, t("CheckForUpdates"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (result != MessageBoxResult.Yes)
-                        return;
+                        return update;
                 }
 
                 await mgr.DownloadUpdatesAsync(update).ConfigureAwait(true);
                 mgr.ApplyUpdatesAndRestart(update);
+                return update;
             }
             catch (Exception ex)
             {
@@ -67,6 +213,7 @@ namespace KaiAosRenew
                     var msg = string.Format(t("UpdateFailed"), ex.Message);
                     Show(owner, msg, t("CheckForUpdates"));
                 }
+                return null;
             }
         }
 

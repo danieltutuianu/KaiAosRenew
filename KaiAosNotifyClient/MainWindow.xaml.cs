@@ -18,6 +18,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using KaiAosRenew;
+using Velopack;
 using WinForms = System.Windows.Forms;
 
 namespace KaiAosNotifyClient
@@ -107,6 +108,13 @@ namespace KaiAosNotifyClient
         private string _lastVin;
         private string _trayStatus = "Offline";
         private bool _hasServerFooter;
+        private string _serverVersionFromFooter = "";
+        private string _latestServerReleaseVer = "";
+        private bool _serverUpdateCheckBusy;
+        private readonly DispatcherTimer _updatePeekTimer = new DispatcherTimer();
+        private UpdateInfo _pendingUpdate;
+        private bool _updateCheckBusy;
+        private bool _updateCheckStarted;
         private Brush _footerOk = FooterOkDay;
         private Brush _footerError = FooterErrorDay;
         private Brush _footerStopped = FooterStoppedDay;
@@ -172,6 +180,8 @@ namespace KaiAosNotifyClient
             _keysHighlightTimer.Tick += KeysHighlightTimer_Tick;
             _kaiBusyTimer.Interval = TimeSpan.FromSeconds(120);
             _kaiBusyTimer.Tick += KaiBusyTimer_Tick;
+            _updatePeekTimer.Interval = TimeSpan.FromHours(6);
+            _updatePeekTimer.Tick += UpdatePeekTimer_Tick;
             ApplyAppIcon();
             try
             {
@@ -180,7 +190,7 @@ namespace KaiAosNotifyClient
                 ApplyLanguageToUi();
                 ApplyConnectionUi();
                 LoadSettingsToUi();
-                VersionText.Text = string.Format(ClientUiStrings.T("Version"), VersionDisplay);
+                RefreshVersionLabel();
                 if (AboutTitleText != null)
                     AboutTitleText.Text = ClientUiStrings.T("AppTitle");
                 if (AboutVersionText != null)
@@ -322,6 +332,16 @@ namespace KaiAosNotifyClient
                 AutoUpdateCheck.ToolTip = ClientUiStrings.T("TipAutoUpdate");
             }
             if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.Content = ClientUiStrings.T("CheckForUpdates");
+            if (FooterUpdateBtn != null) FooterUpdateBtn.Content = ClientUiStrings.T("Update");
+            if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.Content = ClientUiStrings.T("UpdateServer");
+            if (_pendingUpdate != null && UpdateAvailableText != null)
+                UpdateAvailableText.Text = string.Format(ClientUiStrings.T("UpdateAvailableShort"),
+                    UpdateService.FormatUpdateVersion(_pendingUpdate));
+            if (!string.IsNullOrEmpty(_latestServerReleaseVer) && ServerUpdateAvailableText != null)
+                ServerUpdateAvailableText.Text = string.Format(
+                    ClientUiStrings.T("UpdateServerAvailableShort"), _latestServerReleaseVer);
+            RefreshVersionLabel();
+            RefreshServerUpdateUi();
             if (KeysSettingsGroup != null) KeysSettingsGroup.Header = ClientUiStrings.T("TabKeys");
             if (VinTipDurationLabel != null) VinTipDurationLabel.Text = ClientUiStrings.T("VinTipDuration");
             if (ShowVinTipsCheck != null) ShowVinTipsCheck.Content = ClientUiStrings.T("ShowVinTips");
@@ -421,12 +441,9 @@ namespace KaiAosNotifyClient
             MaybeCheckForUpdatesOnStart();
         }
 
-        private bool _updateCheckStarted;
-
         private void MaybeCheckForUpdatesOnStart()
         {
-            if (_settings == null || !_settings.AutoUpdate || _updateCheckStarted) return;
-            // After first paint so a slow GitHub check never leaves a blank shell.
+            if (_updateCheckStarted) return;
             ContentRendered += OnContentRenderedForUpdateCheck;
         }
 
@@ -437,11 +454,173 @@ namespace KaiAosNotifyClient
             _updateCheckStarted = true;
             try { await Task.Delay(1500); }
             catch { }
+            var autoApply = _settings != null && _settings.AutoUpdate;
+            await RunUpdateCheckAsync(autoApply);
+            try { _updatePeekTimer.Start(); }
+            catch { }
+        }
+
+        private async void UpdatePeekTimer_Tick(object sender, EventArgs e)
+        {
+            await RunUpdateCheckAsync(false);
+            await CheckRemoteServerVersionAsync();
+        }
+
+        private async Task RunUpdateCheckAsync(bool autoApply)
+        {
+            if (_updateCheckBusy) return;
+            _updateCheckBusy = true;
             try
             {
-                await KaiAosRenew.UpdateService.CheckForUpdateAsync(this, true, true, ClientUiStrings.T);
+                if (autoApply)
+                {
+                    await UpdateService.CheckForUpdateAsync(this, true, true, ClientUiStrings.T);
+                    ShowPendingUpdate(null);
+                    return;
+                }
+                var update = await UpdateService.PeekAsync();
+                ShowPendingUpdate(update);
             }
-            catch { }
+            catch
+            {
+                ShowPendingUpdate(null);
+            }
+            finally
+            {
+                _updateCheckBusy = false;
+            }
+        }
+
+        private void ShowPendingUpdate(UpdateInfo update)
+        {
+            _pendingUpdate = update;
+            if (update == null)
+            {
+                if (UpdateAvailableText != null)
+                    UpdateAvailableText.Visibility = Visibility.Collapsed;
+                if (FooterUpdateBtn != null)
+                    FooterUpdateBtn.Visibility = Visibility.Collapsed;
+                return;
+            }
+            var ver = UpdateService.FormatUpdateVersion(update);
+            if (UpdateAvailableText != null)
+            {
+                UpdateAvailableText.Text = string.Format(ClientUiStrings.T("UpdateAvailableShort"), ver);
+                UpdateAvailableText.Visibility = Visibility.Visible;
+            }
+            if (FooterUpdateBtn != null)
+            {
+                FooterUpdateBtn.Content = ClientUiStrings.T("Update");
+                FooterUpdateBtn.Visibility = Visibility.Visible;
+                FooterUpdateBtn.IsEnabled = true;
+            }
+        }
+
+        private async void FooterUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pendingUpdate == null) return;
+            if (FooterUpdateBtn != null) FooterUpdateBtn.IsEnabled = false;
+            try
+            {
+                await UpdateService.ApplyUpdateAsync(this, _pendingUpdate, ClientUiStrings.T, true);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(ClientUiStrings.T("UpdateFailed"), ex.Message),
+                    ClientUiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                if (FooterUpdateBtn != null) FooterUpdateBtn.IsEnabled = true;
+            }
+        }
+
+        private async Task CheckRemoteServerVersionAsync()
+        {
+            if (_serverUpdateCheckBusy) return;
+            if (string.IsNullOrEmpty(_serverVersionFromFooter))
+            {
+                _latestServerReleaseVer = "";
+                RefreshServerUpdateUi();
+                return;
+            }
+            _serverUpdateCheckBusy = true;
+            try
+            {
+                var latest = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ServerChannel);
+                if (!string.IsNullOrEmpty(latest)
+                    && UpdateService.IsNewerVersion(latest, _serverVersionFromFooter))
+                    _latestServerReleaseVer = latest;
+                else
+                    _latestServerReleaseVer = "";
+            }
+            catch
+            {
+                _latestServerReleaseVer = "";
+            }
+            finally
+            {
+                _serverUpdateCheckBusy = false;
+                RefreshServerUpdateUi();
+            }
+        }
+
+        private void RefreshServerUpdateUi()
+        {
+            var show = !string.IsNullOrEmpty(_latestServerReleaseVer)
+                && !string.IsNullOrEmpty(_serverVersionFromFooter)
+                && UpdateService.IsNewerVersion(_latestServerReleaseVer, _serverVersionFromFooter);
+            if (ServerUpdateAvailableText != null)
+            {
+                if (show)
+                {
+                    ServerUpdateAvailableText.Text = string.Format(
+                        ClientUiStrings.T("UpdateServerAvailableShort"), _latestServerReleaseVer);
+                    ServerUpdateAvailableText.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    ServerUpdateAvailableText.Visibility = Visibility.Collapsed;
+                }
+            }
+            if (FooterServerUpdateBtn != null)
+            {
+                FooterServerUpdateBtn.Content = ClientUiStrings.T("UpdateServer");
+                FooterServerUpdateBtn.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                FooterServerUpdateBtn.IsEnabled = true;
+            }
+        }
+
+        private void FooterServerUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_latestServerReleaseVer)) return;
+            if (_client == null || !_client.IsConnected)
+            {
+                MessageBox.Show(this, ClientUiStrings.T("UpdateServerSendFail"),
+                    ClientUiStrings.T("UpdateServer"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            var msg = string.Format(ClientUiStrings.T("UpdateServerConfirm"), _latestServerReleaseVer);
+            var result = MessageBox.Show(this, msg, ClientUiStrings.T("UpdateServer"),
+                MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes) return;
+
+            if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = false;
+            var ok = _client.Send(new NotifyMessage
+            {
+                Kind = "serverUpdate",
+                Level = "info",
+                Title = "KAI - AOS Renew - Client",
+                Text = _latestServerReleaseVer ?? ""
+            });
+            if (!ok)
+            {
+                if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = true;
+                MessageBox.Show(this, ClientUiStrings.T("UpdateServerSendFail"),
+                    ClientUiStrings.T("UpdateServer"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            BeginAosAckWait();
         }
 
         private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
@@ -449,8 +628,11 @@ namespace KaiAosNotifyClient
             if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = false;
             try
             {
-                // Manual check always prompts; Auto update silent path is startup-only.
-                await KaiAosRenew.UpdateService.CheckForUpdateAsync(this, false, false, ClientUiStrings.T);
+                var update = await UpdateService.CheckForUpdateAsync(this, false, false, ClientUiStrings.T);
+                if (update != null)
+                    ShowPendingUpdate(update);
+                else
+                    ShowPendingUpdate(null);
             }
             catch (Exception ex)
             {
@@ -460,6 +642,20 @@ namespace KaiAosNotifyClient
             finally
             {
                 if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = true;
+            }
+        }
+
+        private void RefreshVersionLabel()
+        {
+            if (VersionText == null) return;
+            if (!string.IsNullOrEmpty(_serverVersionFromFooter))
+            {
+                VersionText.Text = string.Format(
+                    ClientUiStrings.T("VersionWithServer"), VersionDisplay, _serverVersionFromFooter);
+            }
+            else
+            {
+                VersionText.Text = string.Format(ClientUiStrings.T("Version"), VersionDisplay);
             }
         }
 
@@ -1185,6 +1381,7 @@ namespace KaiAosNotifyClient
         {
             CancelAosAckWait();
             SetKaiBusy(false);
+            if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = true;
             var level = (msg.Level ?? "").Trim().ToLowerInvariant();
             var text = msg.Text ?? "";
             if (level == "error")
@@ -1199,12 +1396,19 @@ namespace KaiAosNotifyClient
             UpdateAosSyncStatus();
             if (!string.IsNullOrEmpty(text) && !string.Equals(text, "OK", StringComparison.OrdinalIgnoreCase))
                 AppendActivityRow(null, "success", "AOS: " + text);
+            // Server is applying update + restart — hide the server-update CTA until reconnect.
+            if (!string.IsNullOrEmpty(text) && text.IndexOf("serverUpdate", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                _latestServerReleaseVer = "";
+                RefreshServerUpdateUi();
+            }
         }
 
         private void AosAckTimer_Tick(object sender, EventArgs e)
         {
             CancelAosAckWait();
             _aosDirty = true;
+            if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = true;
             UpdateAosSyncStatus();
             AppendActivityRow(null, "error", ClientUiStrings.T("AosSyncTimeout"));
             JumpToActivityWithAlert();
@@ -2537,8 +2741,10 @@ namespace KaiAosNotifyClient
                 AuthGuardsFooterText.ToolTip = null;
             }
             RefreshAuthGuardsPanel(false, "", false, "", "");
-            if (VersionText != null)
-                VersionText.Text = string.Format(ClientUiStrings.T("Version"), VersionDisplay);
+            _serverVersionFromFooter = "";
+            _latestServerReleaseVer = "";
+            RefreshVersionLabel();
+            RefreshServerUpdateUi();
         }
 
         private void ApplyServerFooter(string text)
@@ -2567,9 +2773,19 @@ namespace KaiAosNotifyClient
                 var tip = FooterPart(parts, 11);
                 RegisterAgeText.ToolTip = tip.Length == 0 ? null : tip;
             }
-            var version = FooterPart(parts, 10);
-            if (VersionText != null && version.Length > 0)
-                VersionText.Text = version;
+            var prevServerVer = _serverVersionFromFooter ?? "";
+            var raw = (FooterPart(parts, 10) ?? "").Trim();
+            // Strip legacy "Version X" / "Server version: X" if an old server still sends a label.
+            var colon = raw.LastIndexOf(':');
+            if (colon >= 0 && colon + 1 < raw.Length)
+                raw = raw.Substring(colon + 1).Trim();
+            _serverVersionFromFooter = raw;
+            RefreshVersionLabel();
+            if (!string.Equals(raw, prevServerVer, StringComparison.Ordinal)
+                || string.IsNullOrEmpty(_latestServerReleaseVer))
+            {
+                var ignore = CheckRemoteServerVersionAsync();
+            }
             var cdMode = FooterPart(parts, 13);
             var cdText = FooterPart(parts, 14);
             var blMode = FooterPart(parts, 15);
