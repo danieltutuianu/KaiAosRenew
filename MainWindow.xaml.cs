@@ -196,7 +196,37 @@ namespace KaiAosRenew
             _keyMonitor.Start(OnKeyActivityChanged);
             StartKeyReaderLogTailer();
             StartUiHangWatchdog();
+            StartShowWindowListener();
             AppendLog(UiStrings.T("Ready"));
+        }
+
+        /// <summary>
+        /// Pin/taskbar second instance signals Local\KaiAosRenew.ShowWindow; restore without relying on HWND alone.
+        /// </summary>
+        private void StartShowWindowListener()
+        {
+            var ev = Program.ShowWindowEvent;
+            if (ev == null) return;
+            var dispatcher = Dispatcher;
+            var t = new System.Threading.Thread(delegate()
+            {
+                while (!_exitRequested)
+                {
+                    try
+                    {
+                        if (!ev.WaitOne(500)) continue;
+                        try
+                        {
+                            dispatcher.BeginInvoke(new Action(ShowFromTray));
+                        }
+                        catch { return; }
+                    }
+                    catch { return; }
+                }
+            });
+            t.IsBackground = true;
+            t.Name = "KaiAosRenew.ShowWindow";
+            t.Start();
         }
 
         private void StartUiHangWatchdog()

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Microsoft.Win32;
 
 namespace KaiAosRenew
@@ -27,7 +28,13 @@ namespace KaiAosRenew
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
         [DllImport("user32.dll")]
+        private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
         private static extern bool IsWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetParent(IntPtr hWnd);
 
         [DllImport("user32.dll")]
         private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
@@ -174,45 +181,71 @@ namespace KaiAosRenew
         }
 
         /// <summary>
-        /// Activate existing instance (tray/pin second launch). Same strategy as the client:
-        /// find HWND, send WM_SHOWME, restore — return true if HWND exists (do not fail on
-        /// SendMessageTimeout==0, or Program.Main will kill the tray instance).
+        /// Activate existing instance (tray/pin second launch).
+        /// 1) Signal named EventWaitHandle (works even when HWND is hidden / hard to find).
+        /// 2) Find HWND and PostMessage WM_SHOWME + ShowWindow.
+        /// Returns true if another process exists or HWND/event signaling succeeded.
         /// </summary>
         public static bool TryActivateOtherInstance()
         {
+            var signaled = SignalShowWindowEvent();
+            var otherAlive = OtherKaiAosRenewProcessExists();
+
             try
             {
                 var h = FindOtherInstanceHwnd();
-                if (h == IntPtr.Zero || !IsWindow(h))
-                    return false;
-
-                // Prefer titled main window — reject untitled junk HWNDs (white square).
-                var len = GetWindowTextLength(h);
-                if (len > 0)
+                if (h != IntPtr.Zero && IsWindow(h))
                 {
-                    var sb = new System.Text.StringBuilder(len + 1);
-                    GetWindowText(h, sb, sb.Capacity);
-                    if (!IsMainWindowTitle(sb.ToString()))
-                        return false;
+                    // Async — do not block if the UI thread is busy; ShowFromTray still runs via event.
+                    PostMessage(h, Program.WmShowMe, IntPtr.Zero, IntPtr.Zero);
+                    ShowWindow(h, SwRestore);
+                    SetForegroundWindow(h);
+                    return true;
                 }
-                else
+            }
+            catch { }
+
+            return signaled || otherAlive;
+        }
+
+        public static bool SignalShowWindowEvent()
+        {
+            try
+            {
+                using (var ev = EventWaitHandle.OpenExisting(Program.ShowWindowEventName))
                 {
-                    return false;
+                    ev.Set();
+                    return true;
                 }
-
-                IntPtr result;
-                SendMessageTimeout(
-                    h, Program.WmShowMe, IntPtr.Zero, IntPtr.Zero,
-                    SmtoAbortIfHung | SmtoBlock, 1500, out result);
-
-                ShowWindow(h, SwRestore);
-                SetForegroundWindow(h);
-                return true;
             }
             catch
             {
                 return false;
             }
+        }
+
+        public static bool OtherKaiAosRenewProcessExists()
+        {
+            try
+            {
+                var current = Process.GetCurrentProcess();
+                foreach (var p in Process.GetProcessesByName(current.ProcessName))
+                {
+                    try
+                    {
+                        if (p.Id != current.Id)
+                            return true;
+                    }
+                    catch { }
+                    finally
+                    {
+                        try { p.Dispose(); }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+            return false;
         }
 
         public static void PostShowMessageToOtherInstance()
@@ -258,6 +291,7 @@ namespace KaiAosRenew
                 {
                     if (p.Id == current.Id) continue;
                     targetPid = p.Id;
+                    // MainWindowHandle is often Zero while the app is Hide()'d in the tray.
                     if (p.MainWindowHandle != IntPtr.Zero && IsWindow(p.MainWindowHandle))
                         return p.MainWindowHandle;
                     break;
@@ -269,33 +303,35 @@ namespace KaiAosRenew
             }
             if (targetPid == 0) return IntPtr.Zero;
 
-            IntPtr found = IntPtr.Zero;
             IntPtr titled = IntPtr.Zero;
+            IntPtr anyTop = IntPtr.Zero;
             EnumWindows(delegate(IntPtr hwnd, IntPtr lParam)
             {
                 uint pid;
                 GetWindowThreadProcessId(hwnd, out pid);
                 if ((int)pid != targetPid) return true;
                 if (!IsWindow(hwnd)) return true;
+                // Skip child windows; owned top-level (ShowInTaskbar=false) still has GetParent==0.
+                if (GetParent(hwnd) != IntPtr.Zero) return true;
 
                 var len = GetWindowTextLength(hwnd);
-                if (len <= 0) return true;
-                var sb = new System.Text.StringBuilder(len + 1);
-                GetWindowText(hwnd, sb, sb.Capacity);
-                var title = sb.ToString();
-                if (IsMainWindowTitle(title))
+                if (len > 0)
                 {
-                    titled = hwnd;
-                    return false;
+                    var sb = new System.Text.StringBuilder(len + 1);
+                    GetWindowText(hwnd, sb, sb.Capacity);
+                    if (IsMainWindowTitle(sb.ToString()))
+                    {
+                        titled = hwnd;
+                        return false;
+                    }
                 }
-                if (found == IntPtr.Zero)
-                    found = hwnd;
+                if (anyTop == IntPtr.Zero)
+                    anyTop = hwnd;
                 return true;
             }, IntPtr.Zero);
 
-            // Prefer titled window; never return untitled junk for activation.
             if (titled != IntPtr.Zero) return titled;
-            return IntPtr.Zero;
+            return anyTop;
         }
     }
 }

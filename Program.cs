@@ -11,7 +11,12 @@ namespace KaiAosRenew
     internal static class Program
     {
         public const int WmShowMe = 0x0400 + 77; // WM_USER + 77
+        public const string ShowWindowEventName = @"Local\KaiAosRenew.ShowWindow";
         private static Mutex _mutex;
+        private static EventWaitHandle _showWindowEvent;
+
+        /// <summary>Owned by the running UI instance; second launches Set() this to restore from tray.</summary>
+        public static EventWaitHandle ShowWindowEvent { get { return _showWindowEvent; } }
 
         [STAThread]
         private static void Main(string[] args)
@@ -71,35 +76,21 @@ namespace KaiAosRenew
             _mutex = new Mutex(true, @"Local\KaiAosRenew.SingleInstance", out created);
             if (!created)
             {
-                if (NativeMethods.TryActivateOtherInstance())
-                    return;
+                // Pin/taskbar second launch: ask the tray instance to show, then exit.
+                // Never kill the live tray process — that looked like "close and reopen in tray".
+                NativeMethods.TryActivateOtherInstance();
+                return;
+            }
 
-                // Zombie / white-square: kill stuck instance and take ownership.
-                NativeMethods.TerminateOtherKaiAosRenewProcesses();
-                try
-                {
-                    if (_mutex != null)
-                    {
-                        _mutex.Dispose();
-                        _mutex = null;
-                    }
-                }
-                catch { }
-
-                // Brief wait for OS to release abandoned mutex name.
-                Thread.Sleep(400);
-                _mutex = new Mutex(true, @"Local\KaiAosRenew.SingleInstance", out created);
-                if (!created)
-                {
-                    // Still blocked — give up activating; avoid two UIs fighting.
-                    try
-                    {
-                        if (NativeMethods.TryActivateOtherInstance())
-                            return;
-                    }
-                    catch { }
-                    return;
-                }
+            try
+            {
+                bool eventCreated;
+                _showWindowEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowWindowEventName, out eventCreated);
+            }
+            catch
+            {
+                try { _showWindowEvent = new EventWaitHandle(false, EventResetMode.AutoReset); }
+                catch { _showWindowEvent = null; }
             }
 
             try
@@ -117,6 +108,12 @@ namespace KaiAosRenew
             }
             finally
             {
+                if (_showWindowEvent != null)
+                {
+                    try { _showWindowEvent.Dispose(); }
+                    catch { }
+                    _showWindowEvent = null;
+                }
                 if (_mutex != null)
                 {
                     try { _mutex.ReleaseMutex(); }
