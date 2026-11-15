@@ -23,8 +23,18 @@
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <TextBlock x:Name="TitleText" Text="KAI - AOS Renew - Client" Style="{DynamicResource TitleText}"
-                 VerticalAlignment="Center" />
+      <Grid VerticalAlignment="Center">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="TitleText" Grid.Column="0" Text="KAI - AOS Renew - Client"
+                   Style="{DynamicResource TitleText}" VerticalAlignment="Bottom" />
+        <TextBlock x:Name="DebugModeText" Grid.Column="1" Text="" Margin="12,0,0,3" FontSize="13"
+                   FontWeight="SemiBold" Foreground="{DynamicResource StatusErrorBrush}"
+                   Cursor="Hand" VerticalAlignment="Bottom" Visibility="Collapsed"
+                   MouseLeftButtonDown="DebugModeText_MouseLeftButtonDown" />
+      </Grid>
 
       <Grid x:Name="MainContentHost" Grid.Row="1" Margin="0,12,0,0">
       <TabControl x:Name="MainTabs" Background="{DynamicResource WindowBgBrush}"
@@ -136,7 +146,7 @@
                   </GridViewColumn>
                   <GridViewColumn x:Name="KeysColPaint" Header="Color" Width="60"
                                   DisplayMemberBinding="{Binding PaintText}" />
-                  <GridViewColumn x:Name="KeysColUpholstery" Header="Upholstery" Width="70"
+                  <GridViewColumn x:Name="KeysColUpholstery" Header="Upholstery" Width="95"
                                   DisplayMemberBinding="{Binding UpholsteryText}" />
                   <GridViewColumn x:Name="KeysColILevel" Header="I-level" Width="130"
                                   DisplayMemberBinding="{Binding ILevelText}" />
@@ -574,7 +584,8 @@
             <TextBlock x:Name="AboutTitleText" Text="KAI - AOS Renew - Client" Style="{DynamicResource SectionText}"
                        Margin="0,0,0,4" />
             <TextBlock x:Name="AboutVersionText" Text="" FontSize="12"
-                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,8" />
+                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,8"
+                       Cursor="Hand" MouseLeftButtonDown="AboutVersionText_MouseLeftButtonDown" />
             <TextBlock x:Name="AboutChangelogLabel" Text="CHANGELOG.md" Style="{DynamicResource SectionText}"
                        Margin="0,8,0,6" />
           </StackPanel>
@@ -635,28 +646,26 @@
                        FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
                        VerticalAlignment="Center" />
           </StackPanel>
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+        </Grid>
+        <Grid Grid.Row="1">
+          <TextBlock x:Name="RegisterAgeText"
+                     FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                     VerticalAlignment="Center" HorizontalAlignment="Left" Text="" />
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
             <TextBlock x:Name="VersionText" Text="Client version: 1.0"
                        FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
                        VerticalAlignment="Center" />
             <TextBlock x:Name="UpdateAvailableText" Text=""
                        FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
                        VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed" />
-            <Button x:Name="FooterUpdateBtn" Content="Update" FontSize="11"
-                    Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center"
-                    Visibility="Collapsed" Click="FooterUpdate_Click" />
+            <Button x:Name="FooterUpdateBtn" Content="Update" Style="{DynamicResource FooterUpdateButton}"
+                    VerticalAlignment="Center" Visibility="Collapsed" Click="FooterUpdate_Click" />
             <TextBlock x:Name="ServerUpdateAvailableText" Text=""
                        FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
                        VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed" />
-            <Button x:Name="FooterServerUpdateBtn" Content="Update server" FontSize="11"
-                    Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center"
-                    Visibility="Collapsed" Click="FooterServerUpdate_Click" />
+            <Button x:Name="FooterServerUpdateBtn" Content="Update server" Style="{DynamicResource FooterUpdateButton}"
+                    VerticalAlignment="Center" Visibility="Collapsed" Click="FooterServerUpdate_Click" />
           </StackPanel>
-        </Grid>
-        <Grid Grid.Row="1">
-          <TextBlock x:Name="RegisterAgeText"
-                     FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
-                     VerticalAlignment="Center" HorizontalAlignment="Left" Text="" />
           <TextBlock x:Name="AuthGuardsFooterText"
                      FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
                      VerticalAlignment="Center" HorizontalAlignment="Right" Text=""

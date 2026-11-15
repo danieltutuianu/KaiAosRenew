@@ -27,6 +27,8 @@ namespace KaiAosNotifyClient
         public string Language { get; set; }
         /// <summary>system | day | night</summary>
         public string Theme { get; set; }
+        /// <summary>Force Update UI / debug banner until explicitly turned off.</summary>
+        public bool DebugMode { get; set; }
         /// <summary>Newest first, max 3, semicolon-separated in registry.</summary>
         public List<string> RecentHosts { get; private set; }
 
@@ -108,6 +110,7 @@ namespace KaiAosNotifyClient
                     s.ShowVinTips = ReadBool(key, "ShowVinTips", true);
                     s.AutoCopyVin = ReadBool(key, "AutoCopyVin", false);
                     s.ShowAlertTips = ReadBool(key, "ShowAlertTips", true);
+                    s.DebugMode = ReadBool(key, "DebugMode", false);
                     var host = key.GetValue("Host") as string;
                     var port = key.GetValue("Port") as string;
                     if (!string.IsNullOrWhiteSpace(host)) s.Host = host.Trim();
@@ -152,6 +155,7 @@ namespace KaiAosNotifyClient
                     key.SetValue("ShowVinTips", ShowVinTips ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("AutoCopyVin", AutoCopyVin ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("ShowAlertTips", ShowAlertTips ? 1 : 0, RegistryValueKind.DWord);
+                    key.SetValue("DebugMode", DebugMode ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("VinTipSeconds", VinTipSeconds, RegistryValueKind.DWord);
                     key.SetValue("OfflineMinutes", OfflineMinutes, RegistryValueKind.DWord);
                     key.SetValue("Host", Host ?? "", RegistryValueKind.String);

@@ -12,6 +12,7 @@ namespace KaiAosNotifyClient
     {
         private static ToastWindow _current;
         private readonly DispatcherTimer _closeTimer;
+        private readonly bool _sticky;
         private Action _action;
 
         private ToastWindow(string title, string text, string level, string actionLabel, Action action, int durationSeconds)
@@ -29,6 +30,7 @@ namespace KaiAosNotifyClient
             FontFamily = new FontFamily("Segoe UI");
 
             _action = action;
+            _sticky = durationSeconds < 0;
             var hasAction = !string.IsNullOrEmpty(actionLabel) && action != null;
 
             Color accent;
@@ -144,8 +146,11 @@ namespace KaiAosNotifyClient
                     Close();
                 };
                 textPanel.Children.Add(btn);
-                MouseEnter += delegate { if (_closeTimer != null && _closeTimer.IsEnabled) _closeTimer.Stop(); };
-                MouseLeave += delegate { if (_closeTimer != null && !_closeTimer.IsEnabled) _closeTimer.Start(); };
+                if (!_sticky)
+                {
+                    MouseEnter += delegate { if (_closeTimer != null && _closeTimer.IsEnabled) _closeTimer.Stop(); };
+                    MouseLeave += delegate { if (_closeTimer != null && !_closeTimer.IsEnabled) _closeTimer.Start(); };
+                }
             }
 
             Grid.SetColumn(textPanel, 2);
@@ -155,22 +160,32 @@ namespace KaiAosNotifyClient
             border.Child = root;
             Content = border;
 
-            MouseLeftButtonUp += delegate(object s, MouseButtonEventArgs e)
+            if (!_sticky)
             {
-                if (e.OriginalSource is Button) return;
-                Close();
-            };
+                MouseLeftButtonUp += delegate(object s, MouseButtonEventArgs e)
+                {
+                    if (e.OriginalSource is Button) return;
+                    Close();
+                };
+            }
 
-            var seconds = durationSeconds;
-            if (seconds <= 0) seconds = hasAction ? 8 : 4;
-            if (seconds < 3) seconds = 3;
-            if (seconds > 60) seconds = 60;
-            _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
-            _closeTimer.Tick += delegate
+            if (_sticky)
             {
-                _closeTimer.Stop();
-                Close();
-            };
+                _closeTimer = new DispatcherTimer();
+            }
+            else
+            {
+                var seconds = durationSeconds;
+                if (seconds <= 0) seconds = hasAction ? 8 : 4;
+                if (seconds < 3) seconds = 3;
+                if (seconds > 60) seconds = 60;
+                _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
+                _closeTimer.Tick += delegate
+                {
+                    _closeTimer.Stop();
+                    Close();
+                };
+            }
         }
 
         protected override void OnContentRendered(EventArgs e)
@@ -180,7 +195,7 @@ namespace KaiAosNotifyClient
             Left = work.Right - Width - 12;
             Top = work.Bottom - ActualHeight - 12;
             if (Top < work.Top) Top = work.Top + 12;
-            if (!_closeTimer.IsEnabled) _closeTimer.Start();
+            if (!_sticky && !_closeTimer.IsEnabled) _closeTimer.Start();
         }
 
         protected override void OnClosed(EventArgs e)
@@ -190,6 +205,12 @@ namespace KaiAosNotifyClient
             if (ReferenceEquals(_current, this))
                 _current = null;
             base.OnClosed(e);
+        }
+
+        /// <summary>Sticky tip: stays until the user clicks OK (no auto-close).</summary>
+        public static void ShowSticky(string title, string text, string level)
+        {
+            ShowTip(title, text, level, "OK", () => { }, -1);
         }
 
         public static void ShowTip(string title, string text, string level, string actionLabel, Action action, int seconds)

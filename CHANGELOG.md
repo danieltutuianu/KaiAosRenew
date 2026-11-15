@@ -4,6 +4,16 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.10] - 2026-11-15
+
+- AOS validation on server and client: empty email/password, `@` / no mid-spaces, interval 1–168, host/port on Connect
+- Red border + focus on invalid fields; blocked Save/Force Register tooltips while busy or updating
+- Credentials-change confirm before Force Register; aosApply can pass force flag; busy/updating gates
+- On reconnect, client requests `aosSyncReq` + `updateFeedReq` (server peeks feed fresh)
+- Client LostFocus no longer MessageBox-loops on empty AOS fields (modal only on explicit Save)
+- Debug Mode (About version triple-click), sticky register/token balloons, Activity Registration filter + renew.log seed
+- Check browser password works with empty email; wider Upholstery column; footer version on row 2
+
 ## [1.2.9] - 2026-11-15
 
 - Broadcast `serverUpdating` to all clients before self-update (countdown, Activity log); `serverUpdateFailed` on error

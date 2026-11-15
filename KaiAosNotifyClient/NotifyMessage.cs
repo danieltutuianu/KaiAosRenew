@@ -72,20 +72,29 @@ namespace KaiAosNotifyClient
             return true;
         }
 
-        public static string EncodeAosSync(int intervalHours, string email, string password)
+        public static string EncodeAosSync(int intervalHours, string email, string password, bool? forceRegister = null)
         {
             var sb = new StringBuilder();
             sb.Append(intervalHours < 1 ? 1 : intervalHours);
             sb.Append('|').Append(EscPipe(email ?? ""));
             sb.Append('|').Append(EscPipe(password ?? ""));
+            if (forceRegister.HasValue)
+                sb.Append('|').Append(forceRegister.Value ? "1" : "0");
             return sb.ToString();
         }
 
         public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password)
         {
+            bool? unused;
+            return TryParseAosSync(text, out intervalHours, out email, out password, out unused);
+        }
+
+        public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password, out bool? forceRegister)
+        {
             intervalHours = 1;
             email = "";
             password = "";
+            forceRegister = null;
             if (string.IsNullOrWhiteSpace(text)) return false;
             var parts = SplitPipe(text);
             if (parts.Count < 3) return false;
@@ -95,6 +104,12 @@ namespace KaiAosNotifyClient
             intervalHours = h;
             email = parts[1] ?? "";
             password = parts[2] ?? "";
+            if (parts.Count >= 4)
+            {
+                var f = (parts[3] ?? "").Trim();
+                if (f == "1") forceRegister = true;
+                else if (f == "0") forceRegister = false;
+            }
             return true;
         }
 

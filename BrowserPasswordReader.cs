@@ -22,6 +22,7 @@ namespace KaiAosRenew
         {
             public bool Found { get; set; }
             public string SourceUrl { get; set; }
+            public string Username { get; set; }
             public string BrowserName { get; set; }
             /// <summary>Local time when password was last modified/used in the browser, if known.</summary>
             public DateTime? LastSavedLocal { get; set; }
@@ -35,6 +36,7 @@ namespace KaiAosRenew
         private sealed class Candidate
         {
             public string SourceUrl;
+            public string Username;
             public string BrowserName;
             public string UserDataDir;
             public byte[] PasswordBlob;
@@ -48,16 +50,14 @@ namespace KaiAosRenew
             public string UserDataDir;
         }
 
+        /// <summary>
+        /// Finds *.bmwgroup.com login metadata. When email is empty, any username matches
+        /// (most recently used/modified across Chrome/Edge/Brave/Opera/Vivaldi/Chromium).
+        /// </summary>
         public static Result TryFindBmwAosLoginMeta(string email)
         {
             var result = new Result();
-            if (string.IsNullOrWhiteSpace(email))
-            {
-                result.Error = "Email is empty.";
-                return result;
-            }
-
-            email = email.Trim();
+            email = string.IsNullOrWhiteSpace(email) ? "" : email.Trim();
             var candidates = new List<Candidate>();
             var errors = new List<string>();
             var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -81,7 +81,9 @@ namespace KaiAosRenew
             {
                 result.Error = errors.Count > 0
                     ? string.Join(" ", errors.ToArray())
-                    : "No *.bmwgroup.com login found in Chrome/Edge/Brave/Opera/Vivaldi for this email.";
+                    : (email.Length == 0
+                        ? "No *.bmwgroup.com login found in Chrome/Edge/Brave/Opera/Vivaldi."
+                        : "No *.bmwgroup.com login found in Chrome/Edge/Brave/Opera/Vivaldi for this email.");
                 return result;
             }
 
@@ -89,6 +91,7 @@ namespace KaiAosRenew
             var best = candidates[0];
             result.Found = true;
             result.SourceUrl = best.SourceUrl;
+            result.Username = best.Username;
             result.BrowserName = best.BrowserName;
             result.LastSavedLocal = best.LastSavedLocal;
             TryDecryptCandidate(best, result);
@@ -205,6 +208,66 @@ namespace KaiAosRenew
                 return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Picks a Chromium-family browser for opening the password manager:
+        /// HTTPS default if supported and installed, else first installed known browser.
+        /// </summary>
+        public static string TryResolvePreferredBrowserName()
+        {
+            var preferred = MapDefaultHttpsProgIdToBrowserName();
+            if (!string.IsNullOrEmpty(preferred) && BrowserExeExists(preferred))
+                return preferred;
+
+            string[] fallback =
+            {
+                "Edge", "Chrome", "Brave", "Opera", "Opera GX", "Vivaldi", "Chromium"
+            };
+            for (var i = 0; i < fallback.Length; i++)
+            {
+                if (BrowserExeExists(fallback[i]))
+                    return fallback[i];
+            }
+            return null;
+        }
+
+        private static bool BrowserExeExists(string browserName)
+        {
+            string exe, url;
+            return TryGetPasswordManagerLaunch(browserName, out exe, out url)
+                && !string.IsNullOrEmpty(exe)
+                && File.Exists(exe);
+        }
+
+        private static string MapDefaultHttpsProgIdToBrowserName()
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice", false))
+                {
+                    if (key == null) return null;
+                    var progId = key.GetValue("ProgId") as string;
+                    if (string.IsNullOrWhiteSpace(progId)) return null;
+                    progId = progId.Trim();
+                    if (progId.IndexOf("Chrome", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return "Chrome";
+                    if (progId.IndexOf("MSEdge", StringComparison.OrdinalIgnoreCase) >= 0
+                        || progId.IndexOf("Edge", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return "Edge";
+                    if (progId.IndexOf("Brave", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return "Brave";
+                    if (progId.IndexOf("Opera", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return "Opera";
+                    if (progId.IndexOf("Vivaldi", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return "Vivaldi";
+                    if (progId.IndexOf("Chromium", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return "Chromium";
+                }
+            }
+            catch { }
+            return null;
         }
 
         public static bool TryOpenPasswordManager(string browserName, out string error)
@@ -495,7 +558,8 @@ namespace KaiAosRenew
                                 var user = reader.IsDBNull(1) ? "" : reader.GetString(1);
                                 if (!IsBmwGroupHost(origin))
                                     continue;
-                                if (!string.Equals(user.Trim(), email, StringComparison.OrdinalIgnoreCase))
+                                if (!string.IsNullOrWhiteSpace(email)
+                                    && !string.Equals(user.Trim(), email, StringComparison.OrdinalIgnoreCase))
                                     continue;
 
                                 long mod = 0, used = 0;
@@ -512,6 +576,7 @@ namespace KaiAosRenew
                                 candidates.Add(new Candidate
                                 {
                                     SourceUrl = origin,
+                                    Username = user,
                                     BrowserName = browserName,
                                     UserDataDir = userDataDir,
                                     PasswordBlob = blob,

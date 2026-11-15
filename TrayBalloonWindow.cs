@@ -16,6 +16,7 @@ namespace KaiAosRenew
     {
         private static TrayBalloonWindow _current;
         private readonly DispatcherTimer _closeTimer;
+        private readonly bool _sticky;
         private readonly bool _hasAction;
         private readonly bool _hasBodyActivate;
         private Action _action;
@@ -44,6 +45,7 @@ namespace KaiAosRenew
 
             _action = action;
             _onBodyActivate = onBodyActivate;
+            _sticky = durationSeconds < 0;
             _hasAction = !string.IsNullOrEmpty(actionLabel) && action != null;
             _hasBodyActivate = onBodyActivate != null;
 
@@ -168,23 +170,30 @@ namespace KaiAosRenew
 
             MouseLeftButtonUp += Balloon_MouseLeftButtonUp;
             MouseDoubleClick += Balloon_MouseDoubleClick;
-            if (_hasAction || _hasBodyActivate)
+            if (!_sticky && (_hasAction || _hasBodyActivate))
             {
                 MouseEnter += delegate { PauseCloseTimer(); };
                 MouseLeave += delegate { ResumeCloseTimer(); };
             }
 
-            var seconds = durationSeconds;
-            if (seconds <= 0)
-                seconds = _hasAction ? 8 : 4;
-            if (seconds < 3) seconds = 3;
-            if (seconds > 60) seconds = 60;
-            _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
-            _closeTimer.Tick += delegate
+            if (_sticky)
             {
-                _closeTimer.Stop();
-                Close();
-            };
+                _closeTimer = new DispatcherTimer();
+            }
+            else
+            {
+                var seconds = durationSeconds;
+                if (seconds <= 0)
+                    seconds = _hasAction ? 8 : 4;
+                if (seconds < 3) seconds = 3;
+                if (seconds > 60) seconds = 60;
+                _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
+                _closeTimer.Tick += delegate
+                {
+                    _closeTimer.Stop();
+                    Close();
+                };
+            }
         }
 
         private void ActionButton_Click(object sender, RoutedEventArgs e)
@@ -201,6 +210,7 @@ namespace KaiAosRenew
 
         private void Balloon_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
+            if (_sticky) return;
             if (e.OriginalSource is Button || IsDescendantOfButton(e.OriginalSource as DependencyObject))
                 return;
             e.Handled = true;
@@ -215,6 +225,7 @@ namespace KaiAosRenew
 
         private void Balloon_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
+            if (_sticky) return;
             if (e.OriginalSource is Button || IsDescendantOfButton(e.OriginalSource as DependencyObject))
                 return;
             // When double-click can navigate, ignore single click so the second click can land.
@@ -241,6 +252,7 @@ namespace KaiAosRenew
 
         private void ResumeCloseTimer()
         {
+            if (_sticky) return;
             if (_closeTimer != null && !_closeTimer.IsEnabled)
                 _closeTimer.Start();
         }
@@ -249,7 +261,7 @@ namespace KaiAosRenew
         {
             base.OnContentRendered(e);
             PositionNearTray();
-            if (!_closeTimer.IsEnabled)
+            if (!_sticky && !_closeTimer.IsEnabled)
                 _closeTimer.Start();
         }
 
@@ -285,6 +297,12 @@ namespace KaiAosRenew
             Action action)
         {
             ShowTip(title, text, icon, actionLabel, action, 0, null);
+        }
+
+        /// <summary>Sticky tip: stays until the user clicks OK (no auto-close).</summary>
+        public static void ShowSticky(string title, string text, WinForms.ToolTipIcon icon)
+        {
+            ShowTip(title, text, icon, "OK", () => { }, -1, null);
         }
 
         public static void ShowTip(

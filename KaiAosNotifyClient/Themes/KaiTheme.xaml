@@ -384,6 +384,49 @@
     </Setter>
   </Style>
 
+  <Style x:Key="FooterUpdateButton" TargetType="Button">
+    <Setter Property="FontFamily" Value="{StaticResource KaiFont}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="Padding" Value="8,1" />
+    <Setter Property="Margin" Value="8,0,0,0" />
+    <Setter Property="MinHeight" Value="20" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="UseLayoutRounding" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Outer" BorderBrush="#FF8B1A1A" BorderThickness="1" Background="#FFC62828" SnapsToDevicePixels="True" CornerRadius="2">
+            <Border x:Name="Inner" BorderThickness="0" Padding="{TemplateBinding Padding}" Background="#FFC62828" CornerRadius="2">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                RecognizesAccessKey="True" />
+            </Border>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Outer" Property="Background" Value="#FFD32F2F" />
+              <Setter TargetName="Inner" Property="Background" Value="#FFD32F2F" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Outer" Property="Background" Value="#FFB71C1C" />
+              <Setter TargetName="Inner" Property="Background" Value="#FFB71C1C" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="Outer" Property="Background" Value="#FF9E9E9E" />
+              <Setter TargetName="Inner" Property="Background" Value="#FF9E9E9E" />
+              <Setter TargetName="Outer" Property="BorderBrush" Value="#FF757575" />
+              <Setter Property="Foreground" Value="#FFE0E0E0" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <Style TargetType="TabItem">
     <Setter Property="Margin" Value="0,0,8,0" />
     <Setter Property="Padding" Value="14,6" />

@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,6 +40,10 @@ namespace KaiAosNotifyClient
         private bool _servicesFail;
         private bool _servicesBlinkOn = true;
         private readonly DispatcherTimer _servicesBlinkTimer = new DispatcherTimer();
+        private string _registerAgeBlinkKey;
+        private bool _registerAgeBlinkOn = true;
+        private int _registerAgeBlinkTicksLeft;
+        private readonly DispatcherTimer _registerAgeBlinkTimer = new DispatcherTimer();
 
         // Activity log filter
         private string _activityFilter = "all";
@@ -76,6 +81,11 @@ namespace KaiAosNotifyClient
         private bool _loadingAosUi;
         private bool _aosDirty;
         private bool _aosAwaitingAck;
+        private bool _aosApplyInFlight;
+        private DateTime _aosSaveClickUtc = DateTime.MinValue;
+        private string _lastSyncedEmail = "";
+        private string _lastSyncedPass = "";
+        private bool _explicitAosSave;
         private readonly DispatcherTimer _aosAckTimer = new DispatcherTimer();
         private bool _activityAlert;
         private bool _authGuardsBlinkOn = true;
@@ -121,6 +131,10 @@ namespace KaiAosNotifyClient
         private bool _updateCheckStarted;
         private bool _clientUpdateBusy;
         private System.Drawing.Icon _outdatedIcon;
+        private bool _debugMode;
+        private string _debugTokenModeKey;
+        private int _aboutVersionClicks;
+        private DateTime _aboutVersionClickUtc = DateTime.MinValue;
         private Brush _footerOk = FooterOkDay;
         private Brush _footerError = FooterErrorDay;
         private Brush _footerStopped = FooterStoppedDay;
@@ -181,6 +195,8 @@ namespace KaiAosNotifyClient
             _authGuardsBlinkTimer.Tick += AuthGuardsBlinkTimer_Tick;
             _servicesBlinkTimer.Interval = TimeSpan.FromMilliseconds(500);
             _servicesBlinkTimer.Tick += ServicesBlinkTimer_Tick;
+            _registerAgeBlinkTimer.Interval = TimeSpan.FromMilliseconds(450);
+            _registerAgeBlinkTimer.Tick += RegisterAgeBlinkTimer_Tick;
             _alertBlinkTimer.Interval = TimeSpan.FromMilliseconds(450);
             _alertBlinkTimer.Tick += AlertBlinkTimer_Tick;
             _keysHighlightTimer.Tick += KeysHighlightTimer_Tick;
@@ -215,6 +231,8 @@ namespace KaiAosNotifyClient
                 UpdateAosSyncStatus();
                 UpdateAosControlsEnabled();
                 RefreshAuthGuardsPanel(false, "", false, "", "");
+                _debugMode = _settings != null && _settings.DebugMode;
+                ApplyDebugModeUi();
                 if (MainTabs != null)
                 {
                     MainTabs.SelectionChanged += MainTabs_SelectionChanged;
@@ -340,6 +358,8 @@ namespace KaiAosNotifyClient
             if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.Content = ClientUiStrings.T("CheckForUpdates");
             if (_pendingUpdate != null)
                 ShowPendingUpdate(_pendingUpdate);
+            else if (_debugMode)
+                ShowForcedDebugClientUpdateUi();
             else if (FooterUpdateBtn != null)
                 FooterUpdateBtn.Content = ClientUiStrings.T("Update");
             RefreshVersionLabel();
@@ -364,6 +384,11 @@ namespace KaiAosNotifyClient
             if (AboutTitleText != null) AboutTitleText.Text = ClientUiStrings.T("AppTitle");
             if (AboutVersionText != null)
                 AboutVersionText.Text = string.Format(ClientUiStrings.T("Version"), VersionDisplay);
+            if (DebugModeText != null)
+            {
+                DebugModeText.Text = ClientUiStrings.T("DebugModeOn");
+                DebugModeText.Visibility = _debugMode ? Visibility.Visible : Visibility.Collapsed;
+            }
             if (AboutChangelogLabel != null)
                 AboutChangelogLabel.Text = ClientUiStrings.T("AboutChangelogLabel");
             if (_aboutVisible)
@@ -491,6 +516,7 @@ namespace KaiAosNotifyClient
             if (autoApply && peeked != null && !_clientUpdateBusy)
             {
                 _clientUpdateBusy = true;
+                UpdateAosControlsEnabled();
                 try
                 {
                     SendClientUpdating(UpdateService.FormatUpdateVersion(peeked));
@@ -503,6 +529,7 @@ namespace KaiAosNotifyClient
                 finally
                 {
                     _clientUpdateBusy = false;
+                    UpdateAosControlsEnabled();
                 }
             }
         }
@@ -512,6 +539,11 @@ namespace KaiAosNotifyClient
             _pendingUpdate = update;
             if (update == null)
             {
+                if (_debugMode)
+                {
+                    ShowForcedDebugClientUpdateUi();
+                    return;
+                }
                 if (UpdateAvailableText != null)
                     UpdateAvailableText.Visibility = Visibility.Collapsed;
                 if (FooterUpdateBtn != null)
@@ -525,8 +557,8 @@ namespace KaiAosNotifyClient
             var ver = UpdateService.FormatUpdateVersion(update);
             if (UpdateAvailableText != null)
             {
-                UpdateAvailableText.Text = string.Format(ClientUiStrings.T("UpdateAvailableShort"), ver);
-                UpdateAvailableText.Visibility = Visibility.Visible;
+                UpdateAvailableText.Text = "";
+                UpdateAvailableText.Visibility = Visibility.Collapsed;
             }
             if (FooterUpdateBtn != null)
             {
@@ -538,21 +570,102 @@ namespace KaiAosNotifyClient
             RefreshTrayOutdatedIcon();
         }
 
+        private void ShowForcedDebugClientUpdateUi()
+        {
+            var ver = !string.IsNullOrEmpty(_feedClientVer) ? _feedClientVer : VersionDisplay;
+            if (UpdateAvailableText != null)
+            {
+                UpdateAvailableText.Text = "";
+                UpdateAvailableText.Visibility = Visibility.Collapsed;
+            }
+            if (FooterUpdateBtn != null)
+            {
+                FooterUpdateBtn.Content = string.Format(ClientUiStrings.T("UpdateClientBtn"), ver);
+                FooterUpdateBtn.ToolTip = string.Format(ClientUiStrings.T("UpdateChannelTooltip"), UpdateService.ClientChannel);
+                FooterUpdateBtn.Visibility = Visibility.Visible;
+                FooterUpdateBtn.IsEnabled = !_clientUpdateBusy;
+            }
+            RefreshTrayOutdatedIcon();
+        }
+
+        private void AboutVersionText_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            var now = DateTime.UtcNow;
+            if ((now - _aboutVersionClickUtc).TotalSeconds > 2)
+                _aboutVersionClicks = 0;
+            _aboutVersionClickUtc = now;
+            _aboutVersionClicks++;
+            if (_aboutVersionClicks < 3) return;
+            _aboutVersionClicks = 0;
+            _debugMode = !_debugMode;
+            PersistDebugMode();
+            ApplyDebugModeUi();
+        }
+
+        private void DebugModeText_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (!_debugMode) return;
+            _debugMode = false;
+            PersistDebugMode();
+            ApplyDebugModeUi();
+        }
+
+        private void PersistDebugMode()
+        {
+            if (_settings == null) return;
+            _settings.DebugMode = _debugMode;
+            try { _settings.Save(); }
+            catch { }
+        }
+
+        private void ApplyDebugModeUi()
+        {
+            if (DebugModeText != null)
+            {
+                DebugModeText.Text = ClientUiStrings.T("DebugModeOn");
+                DebugModeText.Visibility = _debugMode ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (_debugMode)
+            {
+                ShowForcedDebugClientUpdateUi();
+                ShowForcedDebugServerUpdateUi();
+            }
+            else
+            {
+                ShowPendingUpdate(_pendingUpdate);
+                RefreshServerUpdateFromFeed();
+            }
+        }
+
         private async void FooterUpdate_Click(object sender, RoutedEventArgs e)
         {
-            if (_pendingUpdate == null || _clientUpdateBusy) return;
-            var ver = UpdateService.FormatUpdateVersion(_pendingUpdate);
+            if (_clientUpdateBusy) return;
+            var update = _pendingUpdate;
+            if (update == null)
+            {
+                try { update = await UpdateService.PeekAsync(); }
+                catch { update = null; }
+                if (update == null)
+                {
+                    MessageBox.Show(this, ClientUiStrings.T("UpdateNone"),
+                        ClientUiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                ShowPendingUpdate(update);
+            }
+            var ver = UpdateService.FormatUpdateVersion(update);
             var confirm = string.Format(ClientUiStrings.T("UpdateAvailable"), ver);
             var result = MessageBox.Show(this, confirm, ClientUiStrings.T("CheckForUpdates"),
                 MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (result != MessageBoxResult.Yes) return;
 
             _clientUpdateBusy = true;
+            UpdateAosControlsEnabled();
             if (FooterUpdateBtn != null) FooterUpdateBtn.IsEnabled = false;
             try
             {
                 SendClientUpdating(ver);
-                await UpdateService.ApplyUpdateAsync(this, _pendingUpdate, ClientUiStrings.T, false);
+                await UpdateService.ApplyUpdateAsync(this, update, ClientUiStrings.T, false);
             }
             catch (Exception ex)
             {
@@ -563,7 +676,8 @@ namespace KaiAosNotifyClient
             finally
             {
                 _clientUpdateBusy = false;
-                if (FooterUpdateBtn != null && _pendingUpdate != null)
+                UpdateAosControlsEnabled();
+                if (FooterUpdateBtn != null && (_pendingUpdate != null || _debugMode))
                     FooterUpdateBtn.IsEnabled = true;
             }
         }
@@ -663,6 +777,38 @@ namespace KaiAosNotifyClient
             catch { }
         }
 
+        private void RequestAosSync()
+        {
+            if (_client == null || !_client.IsConnected) return;
+            try
+            {
+                _client.Send(new NotifyMessage
+                {
+                    Kind = "aosSyncReq",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = ""
+                });
+            }
+            catch { }
+        }
+
+        private void RequestUpdateFeed()
+        {
+            if (_client == null || !_client.IsConnected) return;
+            try
+            {
+                _client.Send(new NotifyMessage
+                {
+                    Kind = "updateFeedReq",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = ""
+                });
+            }
+            catch { }
+        }
+
         private void RefreshServerUpdateFromFeed()
         {
             if (!string.IsNullOrEmpty(_feedServerVer)
@@ -676,22 +822,19 @@ namespace KaiAosNotifyClient
 
         private void RefreshServerUpdateUi()
         {
+            if (_debugMode && !_awaitingServerUpdateReconnect)
+            {
+                ShowForcedDebugServerUpdateUi();
+                return;
+            }
             var show = !_awaitingServerUpdateReconnect
                 && !string.IsNullOrEmpty(_latestServerReleaseVer)
                 && !string.IsNullOrEmpty(_serverVersionFromFooter)
                 && UpdateService.IsNewerVersion(_latestServerReleaseVer, _serverVersionFromFooter);
             if (ServerUpdateAvailableText != null)
             {
-                if (show)
-                {
-                    ServerUpdateAvailableText.Text = string.Format(
-                        ClientUiStrings.T("UpdateServerAvailableShort"), _latestServerReleaseVer);
-                    ServerUpdateAvailableText.Visibility = Visibility.Visible;
-                }
-                else
-                {
-                    ServerUpdateAvailableText.Visibility = Visibility.Collapsed;
-                }
+                ServerUpdateAvailableText.Text = "";
+                ServerUpdateAvailableText.Visibility = Visibility.Collapsed;
             }
             if (FooterServerUpdateBtn != null)
             {
@@ -703,6 +846,31 @@ namespace KaiAosNotifyClient
                     : null;
                 FooterServerUpdateBtn.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
                 FooterServerUpdateBtn.IsEnabled = show;
+            }
+            RefreshTrayOutdatedIcon();
+        }
+
+        private void ShowForcedDebugServerUpdateUi()
+        {
+            var ver = !string.IsNullOrEmpty(_feedServerVer)
+                ? _feedServerVer
+                : (!string.IsNullOrEmpty(_latestServerReleaseVer)
+                    ? _latestServerReleaseVer
+                    : (!string.IsNullOrEmpty(_serverVersionFromFooter) ? _serverVersionFromFooter : "?"));
+            if (string.IsNullOrEmpty(_latestServerReleaseVer) && !string.IsNullOrEmpty(ver) && ver != "?")
+                _latestServerReleaseVer = ver;
+            if (ServerUpdateAvailableText != null)
+            {
+                ServerUpdateAvailableText.Text = "";
+                ServerUpdateAvailableText.Visibility = Visibility.Collapsed;
+            }
+            if (FooterServerUpdateBtn != null)
+            {
+                FooterServerUpdateBtn.Content = string.Format(ClientUiStrings.T("UpdateServerBtn"), ver);
+                FooterServerUpdateBtn.ToolTip = string.Format(
+                    ClientUiStrings.T("UpdateChannelTooltip"), UpdateService.ServerChannel);
+                FooterServerUpdateBtn.Visibility = Visibility.Visible;
+                FooterServerUpdateBtn.IsEnabled = true;
             }
             RefreshTrayOutdatedIcon();
         }
@@ -724,6 +892,7 @@ namespace KaiAosNotifyClient
             }
             SetConnStatus(ClientUiStrings.T("ServerRestarting"));
             RefreshTrayOutdatedIcon();
+            UpdateAosControlsEnabled();
         }
 
         private void HandleServerUpdateFailed(string error)
@@ -736,6 +905,7 @@ namespace KaiAosNotifyClient
                 string.Format(ClientUiStrings.T("UpdateServerFailed"), detail));
             JumpToActivityWithAlert();
             RefreshServerUpdateFromFeed();
+            UpdateAosControlsEnabled();
         }
 
         private void FooterServerUpdate_Click(object sender, RoutedEventArgs e)
@@ -1503,21 +1673,46 @@ namespace KaiAosNotifyClient
         private void UpdateAosControlsEnabled()
         {
             var on = _client != null && _client.IsConnected;
-            if (AosIntervalBox != null) AosIntervalBox.IsEnabled = on;
-            if (AosEmailBox != null) AosEmailBox.IsEnabled = on;
-            if (AosPasswordBox != null) AosPasswordBox.IsEnabled = on;
-            if (AosPasswordPlainBox != null) AosPasswordPlainBox.IsEnabled = on;
-            if (AosShowPasswordCheck != null) AosShowPasswordCheck.IsEnabled = on;
-            if (AosSaveBtn != null) AosSaveBtn.IsEnabled = on;
+            var updating = _awaitingServerUpdateReconnect || _clientUpdateBusy;
+            var busy = _aosAwaitingAck || _kaiBusy;
+            if (AosIntervalBox != null) AosIntervalBox.IsEnabled = on && !updating;
+            if (AosEmailBox != null) AosEmailBox.IsEnabled = on && !updating;
+            if (AosPasswordBox != null) AosPasswordBox.IsEnabled = on && !updating;
+            if (AosPasswordPlainBox != null) AosPasswordPlainBox.IsEnabled = on && !updating;
+            if (AosShowPasswordCheck != null) AosShowPasswordCheck.IsEnabled = on && !updating;
+
+            // Save stays clickable offline (offline modal). Disabled while updating or awaiting ack.
+            string saveTip = null;
+            var saveOn = true;
+            if (updating) { saveOn = false; saveTip = "TipAosUpdating"; }
+            else if (_aosAwaitingAck) { saveOn = false; saveTip = "TipAosBusy"; }
+            SetActionEnabled(AosSaveBtn, saveOn, saveTip);
+
+            string cmdTip = null;
+            var cmdOn = on && !updating && !busy;
+            if (!on) cmdTip = "TipAosOffline";
+            else if (updating) cmdTip = "TipAosUpdating";
+            else if (busy) cmdTip = "TipAosBusy";
+
+            SetActionEnabled(AosCheckTokenBtn, cmdOn, cmdTip);
+            SetActionEnabled(AosStartTimerBtn, cmdOn, cmdTip);
+            SetActionEnabled(AosStopTimerBtn, cmdOn, cmdTip);
+            SetActionEnabled(ForceRegisterBtn, cmdOn, cmdTip, "TipForceRegister");
+            SetActionEnabled(KaiRefreshBtn, cmdOn, cmdTip);
+            SetActionEnabled(KaiFixServicesBtn, on && !updating && !_kaiBusy,
+                !on ? "TipAosOffline" : (updating ? "TipAosUpdating" : (_kaiBusy ? "TipAosBusy" : null)));
+            SetActionEnabled(KaiStopServicesBtn, on && !updating && !_kaiBusy,
+                !on ? "TipAosOffline" : (updating ? "TipAosUpdating" : (_kaiBusy ? "TipAosBusy" : null)));
+
             if (AosCheckBrowserPassBtn != null) AosCheckBrowserPassBtn.IsEnabled = true;
-            if (AosCheckTokenBtn != null) AosCheckTokenBtn.IsEnabled = on;
-            if (AosStartTimerBtn != null) AosStartTimerBtn.IsEnabled = on;
-            if (AosStopTimerBtn != null) AosStopTimerBtn.IsEnabled = on;
-            if (ForceRegisterBtn != null) ForceRegisterBtn.IsEnabled = on;
             if (AosOpenBmwBtn != null) AosOpenBmwBtn.IsEnabled = true;
-            if (KaiRefreshBtn != null) KaiRefreshBtn.IsEnabled = on;
-            if (KaiFixServicesBtn != null) KaiFixServicesBtn.IsEnabled = on && !_kaiBusy;
-            if (KaiStopServicesBtn != null) KaiStopServicesBtn.IsEnabled = on && !_kaiBusy;
+
+            if (FooterServerUpdateBtn != null && (updating || (_aosAwaitingAck || _kaiBusy)))
+            {
+                SetActionEnabled(FooterServerUpdateBtn, false,
+                    updating ? "TipAosUpdating" : "TipAosBusy");
+            }
+
             UpdateKeysRetryButton();
         }
 
@@ -1553,6 +1748,8 @@ namespace KaiAosNotifyClient
                 if (AosIntervalBox != null) AosIntervalBox.Text = hours.ToString();
                 if (AosEmailBox != null) AosEmailBox.Text = email ?? "";
                 SetAosPasswordUi(password ?? "");
+                _lastSyncedEmail = (email ?? "").Trim();
+                _lastSyncedPass = (password ?? "").Trim();
                 _aosDirty = false;
                 CancelAosAckWait();
                 UpdateAosSyncStatus();
@@ -1585,6 +1782,8 @@ namespace KaiAosNotifyClient
                 return;
             }
             _aosDirty = false;
+            _lastSyncedEmail = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
+            _lastSyncedPass = (GetAosPasswordUi() ?? "").Trim();
             UpdateAosSyncStatus();
             if (!string.IsNullOrEmpty(text) && !string.Equals(text, "OK", StringComparison.OrdinalIgnoreCase)
                 && text.IndexOf("serverUpdate", StringComparison.OrdinalIgnoreCase) < 0)
@@ -1615,12 +1814,14 @@ namespace KaiAosNotifyClient
             _aosAwaitingAck = false;
             try { _aosAckTimer.Stop(); }
             catch { }
+            UpdateAosControlsEnabled();
         }
 
         private void BeginAosAckWait()
         {
             _aosAwaitingAck = true;
             UpdateAosSyncStatus();
+            UpdateAosControlsEnabled();
             try
             {
                 _aosAckTimer.Stop();
@@ -1677,31 +1878,200 @@ namespace KaiAosNotifyClient
             if (AosPasswordPlainBox != null) AosPasswordPlainBox.Text = password;
         }
 
+        private void MarkFieldInvalid(Control c)
+        {
+            if (c == null) return;
+            var brush = TryFindResource("StatusErrorBrush") as Brush;
+            if (brush == null) brush = Brushes.IndianRed;
+            c.BorderBrush = brush;
+            c.BorderThickness = new Thickness(2);
+        }
+
+        private void ClearFieldInvalid(Control c)
+        {
+            if (c == null) return;
+            c.ClearValue(Control.BorderBrushProperty);
+            c.ClearValue(Control.BorderThicknessProperty);
+        }
+
+        private void ClearAosFieldInvalidHighlights()
+        {
+            ClearFieldInvalid(AosEmailBox);
+            ClearFieldInvalid(AosPasswordBox);
+            ClearFieldInvalid(AosPasswordPlainBox);
+            ClearFieldInvalid(AosIntervalBox);
+            ClearFieldInvalid(HostCombo);
+            ClearFieldInvalid(PortBox);
+        }
+
+        private bool ShowAosFieldError(string msgKey, Control focusField, bool showUi)
+        {
+            var msg = ClientUiStrings.T(msgKey);
+            ClearAosFieldInvalidHighlights();
+            if (showUi)
+            {
+                MarkFieldInvalid(focusField);
+                try { Activate(); } catch { }
+                if (focusField != null) focusField.Focus();
+                MessageBox.Show(this, msg, ClientUiStrings.T("AppTitle"),
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            return false;
+        }
+
+        private bool ValidateInterval(out int hours, bool showUi)
+        {
+            hours = 1;
+            var raw = AosIntervalBox != null ? (AosIntervalBox.Text ?? "").Trim() : "";
+            if (!int.TryParse(raw, out hours) || hours < 1 || hours > 168)
+            {
+                hours = 1;
+                return ShowAosFieldError("InvalidInterval", AosIntervalBox, showUi);
+            }
+            ClearFieldInvalid(AosIntervalBox);
+            return true;
+        }
+
+        private bool ValidateAosCredentials(bool showUi)
+        {
+            var email = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
+            var pass = (GetAosPasswordUi() ?? "").Trim();
+            if (string.IsNullOrEmpty(email))
+                return ShowAosFieldError("MissingEmail", AosEmailBox, showUi);
+            if (email.IndexOf('@') < 0 || email.IndexOf(' ') >= 0)
+                return ShowAosFieldError("InvalidUser", AosEmailBox, showUi);
+            if (string.IsNullOrEmpty(pass))
+            {
+                Control focus = AosPasswordBox;
+                if (AosShowPasswordCheck != null && AosShowPasswordCheck.IsChecked == true
+                    && AosPasswordPlainBox != null && AosPasswordPlainBox.Visibility == Visibility.Visible)
+                    focus = AosPasswordPlainBox;
+                return ShowAosFieldError("MissingPassword", focus, showUi);
+            }
+            ClearFieldInvalid(AosEmailBox);
+            ClearFieldInvalid(AosPasswordBox);
+            ClearFieldInvalid(AosPasswordPlainBox);
+            return true;
+        }
+
+        private void SetActionEnabled(Button btn, bool enabled, string disabledTipKey, string enabledTipKey = null)
+        {
+            if (btn == null) return;
+            btn.IsEnabled = enabled;
+            if (!enabled && !string.IsNullOrEmpty(disabledTipKey))
+                btn.ToolTip = ClientUiStrings.T(disabledTipKey);
+            else if (!string.IsNullOrEmpty(enabledTipKey))
+                btn.ToolTip = ClientUiStrings.T(enabledTipKey);
+            else if (enabled)
+                btn.ToolTip = null;
+        }
+
+        private static bool IsValidHost(string host)
+        {
+            if (string.IsNullOrWhiteSpace(host)) return false;
+            host = host.Trim();
+            if (host.IndexOf(' ') >= 0) return false;
+            IPAddress ip;
+            if (IPAddress.TryParse(host, out ip)) return true;
+            var kind = Uri.CheckHostName(host);
+            return kind == UriHostNameType.Dns || kind == UriHostNameType.IPv4 || kind == UriHostNameType.IPv6;
+        }
+
         private void SendAosApply()
         {
             if (_loadingAosUi || _loadingUi) return;
-            if (_client == null || !_client.IsConnected) return;
-            int hours = 1;
-            if (AosIntervalBox == null || !int.TryParse((AosIntervalBox.Text ?? "").Trim(), out hours) || hours < 1)
-                hours = 1;
-            if (hours > 168) hours = 168;
-            var email = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
-            var pass = GetAosPasswordUi();
-            var payload = NotifyMessage.EncodeAosSync(hours, email, pass);
-            var ok = _client.Send(new NotifyMessage
+            var explicitSave = _explicitAosSave;
+            _explicitAosSave = false;
+
+            if (_awaitingServerUpdateReconnect || _clientUpdateBusy)
             {
-                Kind = "aosApply",
-                Level = "info",
-                Title = "KAI - AOS Renew - Client",
-                Text = payload
-            });
-            if (!ok)
-            {
-                AppendActivityRow(null, "error", ClientUiStrings.T("AosSyncSendFail"));
-                JumpToActivityWithAlert();
+                if (explicitSave)
+                {
+                    try { Activate(); } catch { }
+                    MessageBox.Show(this, ClientUiStrings.T("AosSaveUpdating"), ClientUiStrings.T("AppTitle"),
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
                 return;
             }
-            BeginAosAckWait();
+
+            if (_client == null || !_client.IsConnected)
+            {
+                if (explicitSave)
+                {
+                    try { Activate(); } catch { }
+                    MessageBox.Show(this, ClientUiStrings.T("AosSaveOffline"), ClientUiStrings.T("AppTitle"),
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                return;
+            }
+
+            if (_aosApplyInFlight || _aosAwaitingAck)
+            {
+                if (!explicitSave) return;
+                if ((DateTime.UtcNow - _aosSaveClickUtc).TotalMilliseconds < 500)
+                    return;
+            }
+            if (explicitSave)
+            {
+                if ((DateTime.UtcNow - _aosSaveClickUtc).TotalMilliseconds < 500 && _aosApplyInFlight)
+                    return;
+                _aosSaveClickUtc = DateTime.UtcNow;
+            }
+
+            // LostFocus must never MessageBox — that loops with focus restore.
+            // Explicit Save keeps the modal; auto-apply fails silently if incomplete.
+            if (!ValidateAosCredentials(explicitSave))
+                return;
+            int hours;
+            if (!ValidateInterval(out hours, explicitSave))
+                return;
+
+            var email = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
+            var pass = (GetAosPasswordUi() ?? "").Trim();
+
+            bool? forceRegister = null;
+            if (explicitSave)
+            {
+                var credsChanged =
+                    !string.Equals(email, _lastSyncedEmail ?? "", StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(pass, _lastSyncedPass ?? "", StringComparison.Ordinal);
+                if (credsChanged)
+                {
+                    var confirm = MessageBox.Show(
+                        this,
+                        ClientUiStrings.T("CredentialsChangedConfirm"),
+                        ClientUiStrings.T("AppTitle"),
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question,
+                        MessageBoxResult.Yes);
+                    forceRegister = confirm == MessageBoxResult.Yes;
+                }
+            }
+
+            _aosApplyInFlight = true;
+            try
+            {
+                var payload = NotifyMessage.EncodeAosSync(hours, email, pass, forceRegister);
+                var ok = _client.Send(new NotifyMessage
+                {
+                    Kind = "aosApply",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = payload
+                });
+                if (!ok)
+                {
+                    AppendActivityRow(null, "error", ClientUiStrings.T("AosSyncSendFail"));
+                    JumpToActivityWithAlert();
+                    return;
+                }
+                ClearAosFieldInvalidHighlights();
+                BeginAosAckWait();
+            }
+            finally
+            {
+                _aosApplyInFlight = false;
+            }
         }
 
         private void SendAosCmd(string cmd)
@@ -1725,6 +2095,10 @@ namespace KaiAosNotifyClient
 
         private void AosField_TextChanged(object sender, TextChangedEventArgs e)
         {
+            ClearFieldInvalid(sender as Control);
+            ClearFieldInvalid(AosEmailBox);
+            ClearFieldInvalid(AosIntervalBox);
+            ClearFieldInvalid(AosPasswordPlainBox);
             if (_loadingAosUi || _loadingUi) return;
             _aosDirty = true;
             UpdateAosSyncStatus();
@@ -1732,6 +2106,8 @@ namespace KaiAosNotifyClient
 
         private void AosPassword_Changed(object sender, RoutedEventArgs e)
         {
+            ClearFieldInvalid(AosPasswordBox);
+            ClearFieldInvalid(AosPasswordPlainBox);
             if (_loadingAosUi || _loadingUi) return;
             _aosDirty = true;
             UpdateAosSyncStatus();
@@ -1741,11 +2117,13 @@ namespace KaiAosNotifyClient
         {
             if (_loadingAosUi || _loadingUi || !_aosDirty) return;
             if (_client == null || !_client.IsConnected) return;
+            _explicitAosSave = false;
             SendAosApply();
         }
 
         private void AosSave_Click(object sender, RoutedEventArgs e)
         {
+            _explicitAosSave = true;
             SendAosApply();
         }
 
@@ -1771,12 +2149,6 @@ namespace KaiAosNotifyClient
         private void AosCheckBrowserPass_Click(object sender, RoutedEventArgs e)
         {
             var email = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
-            if (string.IsNullOrEmpty(email))
-            {
-                MessageBox.Show(this, ClientUiStrings.T("MissingEmail"), ClientUiStrings.T("AppTitle"),
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
 
             BrowserPasswordReader.Result found;
             try
@@ -1796,6 +2168,12 @@ namespace KaiAosNotifyClient
                 MessageBox.Show(this, failMsg, ClientUiStrings.T("AppTitle"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
+            }
+
+            if (string.IsNullOrEmpty(email) && !string.IsNullOrWhiteSpace(found.Username) && AosEmailBox != null)
+            {
+                AosEmailBox.Text = found.Username.Trim();
+                email = AosEmailBox.Text.Trim();
             }
 
             var when = FormatBrowserSavedWhen(found.LastSavedLocal);
@@ -1943,18 +2321,51 @@ namespace KaiAosNotifyClient
             else
                 CaptureConnectionFields();
 
-            if (string.IsNullOrWhiteSpace(_settings.Host))
+            var host = (_settings.Host ?? "").Trim();
+            ClearFieldInvalid(HostCombo);
+            ClearFieldInvalid(PortBox);
+            if (string.IsNullOrWhiteSpace(host))
             {
+                MarkFieldInvalid(HostCombo);
+                try { Activate(); } catch { }
+                if (HostCombo != null) HostCombo.Focus();
+                MessageBox.Show(this, ClientUiStrings.T("EnterIp"), ClientUiStrings.T("AppTitle"),
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
                 SetConnStatus(ClientUiStrings.T("EnterIp"));
                 RefreshTrayStatus();
                 return;
             }
+            if (!IsValidHost(host))
+            {
+                MarkFieldInvalid(HostCombo);
+                try { Activate(); } catch { }
+                if (HostCombo != null) HostCombo.Focus();
+                MessageBox.Show(this, ClientUiStrings.T("InvalidHost"), ClientUiStrings.T("AppTitle"),
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                SetConnStatus(ClientUiStrings.T("InvalidHost"));
+                RefreshTrayStatus();
+                return;
+            }
+            _settings.Host = host;
 
             int port = portOverride;
             if (port < 1 || port > 65535)
             {
-                if (!int.TryParse(_settings.Port, out port) || port < 1 || port > 65535)
+                if (!int.TryParse((_settings.Port ?? "").Trim(), out port) || port < 1 || port > 65535)
+                {
+                    // Explicit Connect: do not silently fall back to 17890.
+                    if (portOverride == 0)
+                    {
+                        MarkFieldInvalid(PortBox);
+                        try { Activate(); } catch { }
+                        if (PortBox != null) PortBox.Focus();
+                        MessageBox.Show(this, ClientUiStrings.T("InvalidPort"), ClientUiStrings.T("AppTitle"),
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+                        RefreshTrayStatus();
+                        return;
+                    }
                     port = 17890;
+                }
             }
             _settings.Port = port.ToString();
             if (PortBox != null) PortBox.Text = _settings.Port;
@@ -2023,6 +2434,8 @@ namespace KaiAosNotifyClient
                 }
                 UpdateAosControlsEnabled();
                 RefreshTrayStatus();
+                RequestAosSync();
+                RequestUpdateFeed();
                 SendUpdateFeed();
             }));
         }
@@ -2332,6 +2745,7 @@ namespace KaiAosNotifyClient
             {
                 LogFilterCombo.DisplayMemberPath = "Name";
                 LogFilterCombo.SelectedValuePath = "Code";
+                // Keep in sync with server MainWindow.RefreshLogFilterComboItems order.
                 LogFilterCombo.ItemsSource = new List<LangItem>
                 {
                     new LangItem { Code = "all", Name = TL("LogAll", "All") },
@@ -2339,6 +2753,7 @@ namespace KaiAosNotifyClient
                     new LangItem { Code = "success", Name = TL("LogSuccess", "Success") },
                     new LangItem { Code = "warning", Name = TL("LogWarning", "Warning") },
                     new LangItem { Code = "error", Name = TL("LogError", "Error") },
+                    new LangItem { Code = "registration", Name = TL("LogRegistration", "Registration") },
                     new LangItem { Code = "keyreader", Name = TL("LogKeyReader", "KeyReader") }
                 };
                 LogFilterCombo.SelectedValue = string.IsNullOrEmpty(prev) ? "all" : prev;
@@ -2370,6 +2785,12 @@ namespace KaiAosNotifyClient
             {
                 var t = row.Text ?? "";
                 return t.StartsWith("KeyReader:", StringComparison.OrdinalIgnoreCase);
+            }
+            if (string.Equals(_activityFilter, "registration", StringComparison.OrdinalIgnoreCase))
+            {
+                var t = row.Text ?? "";
+                return t.IndexOf("Registration", StringComparison.OrdinalIgnoreCase) >= 0
+                    || t.IndexOf("Register", StringComparison.OrdinalIgnoreCase) >= 0;
             }
             if (string.IsNullOrEmpty(_activityFilter) || _activityFilter == "all") return true;
             return string.Equals(row.LevelText, _activityFilter, StringComparison.OrdinalIgnoreCase);
@@ -2699,9 +3120,7 @@ namespace KaiAosNotifyClient
             _kaiBusy = busy;
             _kaiBusyTimer.Stop();
             if (busy) _kaiBusyTimer.Start();
-            var on = _client != null && _client.IsConnected;
-            if (KaiFixServicesBtn != null) KaiFixServicesBtn.IsEnabled = on && !busy;
-            if (KaiStopServicesBtn != null) KaiStopServicesBtn.IsEnabled = on && !busy;
+            UpdateAosControlsEnabled();
         }
 
         private void KaiBusyTimer_Tick(object sender, EventArgs e)
@@ -2916,7 +3335,8 @@ namespace KaiAosNotifyClient
         private void RefreshTrayOutdatedIcon()
         {
             if (_tray == null) return;
-            var outdated = _pendingUpdate != null
+            var outdated = _debugMode
+                || _pendingUpdate != null
                 || (!_awaitingServerUpdateReconnect
                     && !string.IsNullOrEmpty(_latestServerReleaseVer)
                     && !string.IsNullOrEmpty(_serverVersionFromFooter)
@@ -2986,7 +3406,14 @@ namespace KaiAosNotifyClient
             {
                 RegisterAgeText.Inlines.Clear();
                 RegisterAgeText.ToolTip = null;
+                RegisterAgeText.Opacity = 1.0;
             }
+            _registerAgeBlinkKey = null;
+            _registerAgeBlinkTicksLeft = 0;
+            if (_registerAgeBlinkTimer.IsEnabled)
+                _registerAgeBlinkTimer.Stop();
+            _registerAgeBlinkOn = true;
+            _debugTokenModeKey = null;
             if (AuthGuardsFooterText != null)
             {
                 AuthGuardsFooterText.Inlines.Clear();
@@ -3009,6 +3436,7 @@ namespace KaiAosNotifyClient
             var tokenMode = FooterPart(parts, 4);
             ApplyTaggedText(TokenFooterText, tokenMode, FooterPart(parts, 5));
             SetRenewAlert(tokenMode == "fail" || tokenMode == "error");
+            MaybeDebugTokenSticky(tokenMode, FooterPart(parts, 5));
             var svcMode = FooterPart(parts, 6);
             ApplyTaggedText(ServicesFooterText, svcMode, FooterPart(parts, 7));
             _servicesFail = svcMode == "fail" || svcMode == "error";
@@ -3024,6 +3452,8 @@ namespace KaiAosNotifyClient
                     RegisterAgeText.Inlines.Add(new Run(fail) { Foreground = _footerError });
                 var tip = FooterPart(parts, 11);
                 RegisterAgeText.ToolTip = tip.Length == 0 ? null : tip;
+                if (tip.Length > 0)
+                    MaybeBlinkRegisterAge(tip);
             }
             var prevServerVer = _serverVersionFromFooter ?? "";
             var raw = (FooterPart(parts, 10) ?? "").Trim();
@@ -3188,6 +3618,106 @@ namespace KaiAosNotifyClient
         {
             if (ServicesFooterText == null) return;
             ServicesFooterText.Opacity = _servicesFail ? (_servicesBlinkOn ? 1.0 : 0.2) : 1.0;
+        }
+
+        private void StartRegisterAgeBlink()
+        {
+            _registerAgeBlinkTicksLeft = 6;
+            _registerAgeBlinkOn = false;
+            ApplyRegisterAgeBlinkVisuals();
+            if (!_registerAgeBlinkTimer.IsEnabled)
+                _registerAgeBlinkTimer.Start();
+        }
+
+        private void RegisterAgeBlinkTimer_Tick(object sender, EventArgs e)
+        {
+            _registerAgeBlinkOn = !_registerAgeBlinkOn;
+            ApplyRegisterAgeBlinkVisuals();
+            _registerAgeBlinkTicksLeft--;
+            if (_registerAgeBlinkTicksLeft > 0) return;
+            _registerAgeBlinkTimer.Stop();
+            _registerAgeBlinkOn = true;
+            ApplyRegisterAgeBlinkVisuals();
+        }
+
+        private void ApplyRegisterAgeBlinkVisuals()
+        {
+            if (RegisterAgeText == null) return;
+            RegisterAgeText.Opacity = _registerAgeBlinkOn ? 1.0 : 0.2;
+        }
+
+        private void MaybeBlinkRegisterAge(string key)
+        {
+            key = key ?? "";
+            if (_registerAgeBlinkKey == null)
+            {
+                _registerAgeBlinkKey = key;
+                return;
+            }
+            if (string.Equals(_registerAgeBlinkKey, key, StringComparison.Ordinal))
+                return;
+            _registerAgeBlinkKey = key;
+            StartRegisterAgeBlink();
+            if (_debugMode)
+                ShowDebugRegisterStickyBalloon();
+        }
+
+        private void ShowDebugRegisterStickyBalloon()
+        {
+            var body = "";
+            var showFail = false;
+            if (RegisterAgeText != null)
+            {
+                body = (RegisterAgeText.Text ?? "").Trim();
+                var i = 0;
+                foreach (var inline in RegisterAgeText.Inlines)
+                {
+                    if (inline is Run && i > 0)
+                    {
+                        showFail = true;
+                        break;
+                    }
+                    i++;
+                }
+            }
+            if (string.IsNullOrEmpty(body))
+                body = "Register";
+            var title = TrimLabelColon(ClientUiStrings.T(showFail ? "RegisterFailAge" : "RegisterOkAge"));
+            if (string.IsNullOrEmpty(title) || title.StartsWith("RegisterFail", StringComparison.Ordinal)
+                || title.StartsWith("RegisterOk", StringComparison.Ordinal))
+                title = showFail ? "Register fail" : "Register OK";
+            var level = showFail ? "warning" : "info";
+            AppendActivityRow(null, level, title + " — " + DateTime.Now.ToString("g"));
+            ToastWindow.ShowSticky(title, body, level);
+        }
+
+        private static string TrimLabelColon(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Trim().TrimEnd(':').Trim();
+        }
+
+        private void MaybeDebugTokenSticky(string mode, string body)
+        {
+            mode = string.IsNullOrEmpty(mode) ? "none" : mode;
+            if (string.Equals(mode, "error", StringComparison.OrdinalIgnoreCase))
+                mode = "fail";
+            if (_debugTokenModeKey == null)
+            {
+                _debugTokenModeKey = mode;
+                return;
+            }
+            if (string.Equals(_debugTokenModeKey, mode, StringComparison.Ordinal))
+                return;
+            _debugTokenModeKey = mode;
+            if (!_debugMode) return;
+            if (mode != "ok" && mode != "fail") return;
+            var fail = mode == "fail";
+            var title = fail ? "Token: FAIL" : "Token: OK";
+            var tip = string.IsNullOrWhiteSpace(body) ? title : body.Trim();
+            var level = fail ? "warning" : "info";
+            AppendActivityRow(null, level, title + " — " + DateTime.Now.ToString("g"));
+            ToastWindow.ShowSticky(title, tip, level);
         }
 
         private void ApplyFooterChrome(bool night)

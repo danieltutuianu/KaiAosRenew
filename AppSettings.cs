@@ -74,6 +74,8 @@ namespace KaiAosRenew
         public bool NotifyServerEnabled { get; set; }
         /// <summary>TCP listen port (1024–65535), default 17890.</summary>
         public int NotifyServerPort { get; set; }
+        /// <summary>Force Update UI / debug banner until explicitly turned off.</summary>
+        public bool DebugMode { get; set; }
 
         public AppSettings()
         {
