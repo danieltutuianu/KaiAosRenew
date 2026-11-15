@@ -166,7 +166,7 @@ namespace KaiAosNotifyClient
             _alertBlinkTimer.Interval = TimeSpan.FromMilliseconds(450);
             _alertBlinkTimer.Tick += AlertBlinkTimer_Tick;
             _keysHighlightTimer.Tick += KeysHighlightTimer_Tick;
-            _kaiBusyTimer.Interval = TimeSpan.FromSeconds(30);
+            _kaiBusyTimer.Interval = TimeSpan.FromSeconds(120);
             _kaiBusyTimer.Tick += KaiBusyTimer_Tick;
             ApplyAppIcon();
             try
@@ -246,7 +246,7 @@ namespace KaiAosNotifyClient
             if (KaiTokenSection != null) KaiTokenSection.Text = TL("KaiToken", "WebEAM token:");
             if (KaiServicesSection != null) KaiServicesSection.Text = TL("KaiServices", "Services:");
             if (KaiFixServicesBtn != null) KaiFixServicesBtn.Content = TL("KaiFixNow", "Fix now");
-            if (KaiStopServicesBtn != null) KaiStopServicesBtn.Content = TL("KaiStopServices", "Stop");
+            if (KaiStopServicesBtn != null) KaiStopServicesBtn.Content = TL("KaiStopServices", "Restart");
             if (KaiRefreshBtn != null) KaiRefreshBtn.Content = TL("KaiRefresh", "Refresh");
             if (KaiSvcColName != null) KaiSvcColName.Text = TL("KaiSvcName", "Service");
             if (KaiSvcColStatus != null) KaiSvcColStatus.Text = TL("KaiSvcStatus", "Status");
@@ -1234,7 +1234,7 @@ namespace KaiAosNotifyClient
             {
                 Kind = "aosApply",
                 Level = "info",
-                Title = "KaiAos Notify Client",
+                Title = "KAI - AOS Renew - Client",
                 Text = payload
             });
             if (!ok)
@@ -1253,7 +1253,7 @@ namespace KaiAosNotifyClient
             {
                 Kind = "aosCmd",
                 Level = "info",
-                Title = "KaiAos Notify Client",
+                Title = "KAI - AOS Renew - Client",
                 Text = cmd ?? ""
             });
             if (!ok)
@@ -1931,7 +1931,9 @@ namespace KaiAosNotifyClient
             if (ActivityTabAlertDot != null)
                 ActivityTabAlertDot.Opacity = _activityAlert ? op : 1.0;
             if (KaiFixServicesBtn != null)
-                KaiFixServicesBtn.Opacity = (_kaiServiceAlert && KaiFixServicesBtn.Visibility == Visibility.Visible)
+                KaiFixServicesBtn.Opacity = (_kaiServiceAlert
+                    && KaiFixServicesBtn.Visibility == Visibility.Visible
+                    && KaiFixServicesBtn.IsEnabled)
                     ? op
                     : 1.0;
         }
@@ -2150,7 +2152,8 @@ namespace KaiAosNotifyClient
         {
             var d = NotifyMessage.ParseKaiSync(text);
             if (d == null) return;
-            SetKaiBusy(false);
+            // Mirror server Fix/Stop busy so clients stay disabled while server runs the command.
+            SetKaiBusy(d.ServiceCmdBusy);
             if (KaiInstallText != null) KaiInstallText.Text = string.IsNullOrEmpty(d.Install) ? "—" : d.Install;
             if (KaiUrlRegisterBox != null) KaiUrlRegisterBox.Text = d.RegisterUrl ?? "";
             if (KaiUrlWebEamBox != null) KaiUrlWebEamBox.Text = d.WebEamUrl ?? "";
@@ -2222,6 +2225,7 @@ namespace KaiAosNotifyClient
         private void KaiFixServices_Click(object sender, RoutedEventArgs e)
         {
             if (_client == null || !_client.IsConnected) return;
+            if (_kaiBusy) return;
             SetKaiBusy(true);
             SendAosCmd("fixServices");
         }
@@ -2229,8 +2233,9 @@ namespace KaiAosNotifyClient
         private void KaiStopServices_Click(object sender, RoutedEventArgs e)
         {
             if (_client == null || !_client.IsConnected) return;
+            if (_kaiBusy) return;
             SetKaiBusy(true);
-            SendAosCmd("stopServices");
+            SendAosCmd("restartServices");
         }
 
         private void UpsertKeyRow(ClientKeyRow row)
@@ -2668,7 +2673,7 @@ namespace KaiAosNotifyClient
         private void ApplyTrayTooltip()
         {
             if (_tray == null) return;
-            var tip = "KaiAos Notify — " + _trayStatus;
+            var tip = "KAI - AOS Renew - Client — " + _trayStatus;
             if (tip.Length > 63) tip = tip.Substring(0, 63);
             try { _tray.Text = tip; }
             catch { }

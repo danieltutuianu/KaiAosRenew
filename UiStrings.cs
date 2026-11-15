@@ -63,7 +63,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> En()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew",
+                "WindowTitle", "KAI - AOS Renew",
                 "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Renew schedule:",
                 "IntervalHours", "Interval (hours):",
@@ -228,19 +228,19 @@ namespace KaiAosRenew
                 "KaiServicesOk", "BMW services OK.",
                 "KaiServicesProblem", "BMW services: {0}",
                 "KaiFixNow", "Fix now",
-                "KaiStopServices", "Stop",
+                "KaiStopServices", "Restart",
                 "KaiFixOk", "BMW services fixed.",
                 "KaiFixFail", "BMW services fix failed: {0}",
-                "KaiStopOk", "BMW services stopped.",
-                "KaiStopFail", "BMW services stop failed: {0}",
+                "KaiStopOk", "BMW services restarted.",
+                "KaiStopFail", "BMW services restart failed: {0}",
                 "KaiElevateCancelled", "Administrator elevation cancelled.",
                 "ServicesFooterOk", "Services: OK",
                 "ServicesFooterFail", "Services: FAIL",
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: FAIL",
                 "TrayAbout", "About",
-                "AboutTitle", "About KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nRenews BMW KAI AOS credentials (WebEAM / Register), monitors BMW BDR services, and runs from the tray.\n\nSee CHANGELOG.md in the app folder.",
+                "AboutTitle", "About KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nRenews BMW KAI AOS credentials (WebEAM / Register), monitors BMW BDR services, and runs from the tray.\n\nSee CHANGELOG.md in the app folder.",
                 "AboutOpenLogs", "Open logs folder",
                 "AboutSettingsPath", "Settings:",
                 "AboutCopySettings", "Copy settings path",
@@ -376,7 +376,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Ro()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew",
+                "WindowTitle", "KAI - AOS Renew",
                 "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Program reînnoire:",
                 "IntervalHours", "Interval (ore):",
@@ -541,19 +541,19 @@ namespace KaiAosRenew
                 "KaiServicesOk", "Servicii BMW OK.",
                 "KaiServicesProblem", "Servicii BMW: {0}",
                 "KaiFixNow", "Repară acum",
-                "KaiStopServices", "Oprește",
+                "KaiStopServices", "Restart",
                 "KaiFixOk", "Servicii BMW reparate.",
                 "KaiFixFail", "Reparare servicii BMW eșuată: {0}",
-                "KaiStopOk", "Servicii BMW oprite.",
-                "KaiStopFail", "Oprire servicii BMW eșuată: {0}",
+                "KaiStopOk", "Servicii BMW restartate.",
+                "KaiStopFail", "Restart servicii BMW eșuat: {0}",
                 "KaiElevateCancelled", "Elevare administrator anulată.",
                 "ServicesFooterOk", "Servicii: OK",
                 "ServicesFooterFail", "Servicii: FAIL",
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: FAIL",
                 "TrayAbout", "Despre",
-                "AboutTitle", "Despre KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nReînnoiește credentialele BMW KAI AOS (WebEAM / Register), monitorizează serviciile BMW BDR și rulează din tray.\n\nVezi CHANGELOG.md în folderul aplicației.",
+                "AboutTitle", "Despre KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nReînnoiește credentialele BMW KAI AOS (WebEAM / Register), monitorizează serviciile BMW BDR și rulează din tray.\n\nVezi CHANGELOG.md în folderul aplicației.",
                 "AboutOpenLogs", "Deschide folder loguri",
                 "AboutSettingsPath", "Setări:",
                 "AboutCopySettings", "Copiază calea setărilor",
@@ -689,7 +689,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> De()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Erneuerungsplan:", "IntervalHours", "Intervall (Stunden):",
                 "StartWithWindows", "Mit Windows starten:", "Yes", "Ja",
                 "SectionConfig", "KAI-Konfiguration:", "ConfigPath", "Konfigurationspfad:",
@@ -783,7 +783,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "BMW-Dienste OK.",
                 "KaiServicesProblem", "BMW-Dienste: {0}",
                 "KaiFixNow", "Jetzt reparieren",
-                "KaiStopServices", "Stoppen",
+                "KaiStopServices", "Neustart",
                 "KaiFixOk", "BMW-Dienste repariert.",
                 "KaiFixFail", "Reparatur der BMW-Dienste fehlgeschlagen: {0}",
                 "KaiStopOk", "BMW-Dienste gestoppt.",
@@ -794,8 +794,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: FEHLER",
                 "TrayAbout", "Info",
-                "AboutTitle", "Über KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nErneuert BMW-KAI-AOS-Zugangsdaten (WebEAM / Register), überwacht BMW-BDR-Dienste und läuft im Infobereich.\n\nSiehe CHANGELOG.md im Anwendungsordner.",
+                "AboutTitle", "Über KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nErneuert BMW-KAI-AOS-Zugangsdaten (WebEAM / Register), überwacht BMW-BDR-Dienste und läuft im Infobereich.\n\nSiehe CHANGELOG.md im Anwendungsordner.",
                 "AboutOpenLogs", "Protokollordner öffnen",
                 "AboutSettingsPath", "Einstellungen:",
                 "AboutCopySettings", "Einstellungspfad kopieren",
@@ -963,7 +963,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Fr()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Planning de renouvellement :", "IntervalHours", "Intervalle (heures) :",
                 "StartWithWindows", "Démarrer avec Windows :", "Yes", "Oui",
                 "SectionConfig", "Configuration KAI :", "ConfigPath", "Chemin config :",
@@ -1057,7 +1057,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "Services BMW OK.",
                 "KaiServicesProblem", "Services BMW : {0}",
                 "KaiFixNow", "Réparer maintenant",
-                "KaiStopServices", "Arrêter",
+                "KaiStopServices", "Redémarrer",
                 "KaiFixOk", "Services BMW réparés.",
                 "KaiFixFail", "Échec de la réparation des services BMW : {0}",
                 "KaiStopOk", "Services BMW arrêtés.",
@@ -1068,8 +1068,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Jeton : OK",
                 "TokenFooterFail", "Jeton : ÉCHEC",
                 "TrayAbout", "À propos",
-                "AboutTitle", "À propos de KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nRenouvelle les identifiants BMW KAI AOS (WebEAM / Register), surveille les services BMW BDR et s'exécute dans la barre d'état système.\n\nVoir CHANGELOG.md dans le dossier de l'application.",
+                "AboutTitle", "À propos de KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nRenouvelle les identifiants BMW KAI AOS (WebEAM / Register), surveille les services BMW BDR et s'exécute dans la barre d'état système.\n\nVoir CHANGELOG.md dans le dossier de l'application.",
                 "AboutOpenLogs", "Ouvrir le dossier des journaux",
                 "AboutSettingsPath", "Paramètres :",
                 "AboutCopySettings", "Copier le chemin des paramètres",
@@ -1237,7 +1237,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Es()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Programa de renovación:", "IntervalHours", "Intervalo (horas):",
                 "StartWithWindows", "Iniciar con Windows:", "Yes", "Sí",
                 "SectionConfig", "Configuración KAI:", "ConfigPath", "Ruta de config:",
@@ -1331,7 +1331,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "Servicios BMW OK.",
                 "KaiServicesProblem", "Servicios BMW: {0}",
                 "KaiFixNow", "Reparar ahora",
-                "KaiStopServices", "Detener",
+                "KaiStopServices", "Reiniciar",
                 "KaiFixOk", "Servicios BMW reparados.",
                 "KaiFixFail", "Error al reparar servicios BMW: {0}",
                 "KaiStopOk", "Servicios BMW detenidos.",
@@ -1342,8 +1342,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: FALLO",
                 "TrayAbout", "Acerca de",
-                "AboutTitle", "Acerca de KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nRenueva las credenciales BMW KAI AOS (WebEAM / Register), supervisa los servicios BMW BDR y se ejecuta en la bandeja del sistema.\n\nConsulte CHANGELOG.md en la carpeta de la aplicación.",
+                "AboutTitle", "Acerca de KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nRenueva las credenciales BMW KAI AOS (WebEAM / Register), supervisa los servicios BMW BDR y se ejecuta en la bandeja del sistema.\n\nConsulte CHANGELOG.md en la carpeta de la aplicación.",
                 "AboutOpenLogs", "Abrir carpeta de registros",
                 "AboutSettingsPath", "Ajustes:",
                 "AboutCopySettings", "Copiar ruta de ajustes",
@@ -1511,7 +1511,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> It()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Programma di rinnovo:", "IntervalHours", "Intervallo (ore):",
                 "StartWithWindows", "Avvia con Windows:", "Yes", "Sì",
                 "SectionConfig", "Configurazione KAI:", "ConfigPath", "Percorso config:",
@@ -1613,7 +1613,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "Servizi BMW OK.",
                 "KaiServicesProblem", "Servizi BMW: {0}",
                 "KaiFixNow", "Ripara ora",
-                "KaiStopServices", "Arresta",
+                "KaiStopServices", "Riavvia",
                 "KaiFixOk", "Servizi BMW riparati.",
                 "KaiFixFail", "Riparazione servizi BMW non riuscita: {0}",
                 "KaiStopOk", "Servizi BMW arrestati.",
@@ -1624,8 +1624,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: ERRORE",
                 "TrayAbout", "Informazioni",
-                "AboutTitle", "Informazioni su KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nRinnova le credenziali BMW KAI AOS (WebEAM / Register), monitora i servizi BMW BDR e viene eseguito dall'area di notifica.\n\nVedere CHANGELOG.md nella cartella dell'app.",
+                "AboutTitle", "Informazioni su KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nRinnova le credenziali BMW KAI AOS (WebEAM / Register), monitora i servizi BMW BDR e viene eseguito dall'area di notifica.\n\nVedere CHANGELOG.md nella cartella dell'app.",
                 "AboutOpenLogs", "Apri cartella log",
                 "AboutSettingsPath", "Impostazioni:",
                 "AboutCopySettings", "Copia percorso impostazioni",
@@ -1793,7 +1793,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Da()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Fornyelsesplan:", "IntervalHours", "Interval (timer):",
                 "StartWithWindows", "Start med Windows:", "Yes", "Ja",
                 "SectionConfig", "KAI-konfiguration:", "ConfigPath", "Konfigurationssti:",
@@ -1895,7 +1895,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "BMW-tjenester OK.",
                 "KaiServicesProblem", "BMW-tjenester: {0}",
                 "KaiFixNow", "Reparer nu",
-                "KaiStopServices", "Stop",
+                "KaiStopServices", "Restart",
                 "KaiFixOk", "BMW-tjenester repareret.",
                 "KaiFixFail", "Reparation af BMW-tjenester mislykkedes: {0}",
                 "KaiStopOk", "BMW-tjenester stoppet.",
@@ -1906,8 +1906,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: FEJL",
                 "TrayAbout", "Om",
-                "AboutTitle", "Om KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nFornyer BMW KAI AOS-legitimationsoplysninger (WebEAM / Register), overvåger BMW BDR-tjenester og kører i systembakken.\n\nSe CHANGELOG.md i app-mappen.",
+                "AboutTitle", "Om KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nFornyer BMW KAI AOS-legitimationsoplysninger (WebEAM / Register), overvåger BMW BDR-tjenester og kører i systembakken.\n\nSe CHANGELOG.md i app-mappen.",
                 "AboutOpenLogs", "Åbn logmappe",
                 "AboutSettingsPath", "Indstillinger:",
                 "AboutCopySettings", "Kopiér indstillingssti",
@@ -2075,7 +2075,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Cs()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Plán obnovení:", "IntervalHours", "Interval (hodiny):",
                 "StartWithWindows", "Spustit s Windows:", "Yes", "Ano",
                 "SectionConfig", "Konfigurace KAI:", "ConfigPath", "Cesta konfigurace:",
@@ -2177,7 +2177,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "Služby BMW OK.",
                 "KaiServicesProblem", "Služby BMW: {0}",
                 "KaiFixNow", "Opravit nyní",
-                "KaiStopServices", "Zastavit",
+                "KaiStopServices", "Restart",
                 "KaiFixOk", "Služby BMW opraveny.",
                 "KaiFixFail", "Oprava služeb BMW selhala: {0}",
                 "KaiStopOk", "Služby BMW zastaveny.",
@@ -2188,8 +2188,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: CHYBA",
                 "TrayAbout", "O aplikaci",
-                "AboutTitle", "O KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nObnovuje přihlašovací údaje BMW KAI AOS (WebEAM / Register), monitoruje služby BMW BDR a běží v oznamovací oblasti.\n\nViz CHANGELOG.md ve složce aplikace.",
+                "AboutTitle", "O KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nObnovuje přihlašovací údaje BMW KAI AOS (WebEAM / Register), monitoruje služby BMW BDR a běží v oznamovací oblasti.\n\nViz CHANGELOG.md ve složce aplikace.",
                 "AboutOpenLogs", "Otevřít složku protokolů",
                 "AboutSettingsPath", "Nastavení:",
                 "AboutCopySettings", "Kopírovat cestu nastavení",
@@ -2357,7 +2357,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Nl()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Vernieuwingsschema:", "IntervalHours", "Interval (uren):",
                 "StartWithWindows", "Starten met Windows:", "Yes", "Ja",
                 "SectionConfig", "KAI-configuratie:", "ConfigPath", "Configpad:",
@@ -2459,7 +2459,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "BMW-services OK.",
                 "KaiServicesProblem", "BMW-services: {0}",
                 "KaiFixNow", "Nu herstellen",
-                "KaiStopServices", "Stoppen",
+                "KaiStopServices", "Neustart",
                 "KaiFixOk", "BMW-services hersteld.",
                 "KaiFixFail", "Herstellen van BMW-services mislukt: {0}",
                 "KaiStopOk", "BMW-services gestopt.",
@@ -2470,8 +2470,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: MISLUKT",
                 "TrayAbout", "Info",
-                "AboutTitle", "Over KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nVernieuwt BMW KAI AOS-referenties (WebEAM / Register), bewaakt BMW BDR-services en draait in het systeemvak.\n\nZie CHANGELOG.md in de app-map.",
+                "AboutTitle", "Over KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nVernieuwt BMW KAI AOS-referenties (WebEAM / Register), bewaakt BMW BDR-services en draait in het systeemvak.\n\nZie CHANGELOG.md in de app-map.",
                 "AboutOpenLogs", "Logmap openen",
                 "AboutSettingsPath", "Instellingen:",
                 "AboutCopySettings", "Instellingenpad kopiëren",
@@ -2639,7 +2639,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Pl()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Harmonogram odnawiania:", "IntervalHours", "Interwał (godziny):",
                 "StartWithWindows", "Uruchom z Windows:", "Yes", "Tak",
                 "SectionConfig", "Konfiguracja KAI:", "ConfigPath", "Ścieżka konfiguracji:",
@@ -2741,7 +2741,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "Usługi BMW OK.",
                 "KaiServicesProblem", "Usługi BMW: {0}",
                 "KaiFixNow", "Napraw teraz",
-                "KaiStopServices", "Zatrzymaj",
+                "KaiStopServices", "Restart",
                 "KaiFixOk", "Usługi BMW naprawione.",
                 "KaiFixFail", "Naprawa usług BMW nie powiodła się: {0}",
                 "KaiStopOk", "Usługi BMW zatrzymane.",
@@ -2752,8 +2752,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: BŁĄD",
                 "TrayAbout", "O programie",
-                "AboutTitle", "O KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nOdnawia poświadczenia BMW KAI AOS (WebEAM / Register), monitoruje usługi BMW BDR i działa w zasobniku.\n\nZobacz CHANGELOG.md w folderze aplikacji.",
+                "AboutTitle", "O KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nOdnawia poświadczenia BMW KAI AOS (WebEAM / Register), monitoruje usługi BMW BDR i działa w zasobniku.\n\nZobacz CHANGELOG.md w folderze aplikacji.",
                 "AboutOpenLogs", "Otwórz folder dzienników",
                 "AboutSettingsPath", "Ustawienia:",
                 "AboutCopySettings", "Kopiuj ścieżkę ustawień",
@@ -2921,7 +2921,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Pt()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Agenda de renovação:", "IntervalHours", "Intervalo (horas):",
                 "StartWithWindows", "Iniciar com o Windows:", "Yes", "Sim",
                 "SectionConfig", "Configuração KAI:", "ConfigPath", "Caminho de config:",
@@ -3015,7 +3015,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "Serviços BMW OK.",
                 "KaiServicesProblem", "Serviços BMW: {0}",
                 "KaiFixNow", "Reparar agora",
-                "KaiStopServices", "Parar",
+                "KaiStopServices", "Reiniciar",
                 "KaiFixOk", "Serviços BMW reparados.",
                 "KaiFixFail", "Falha ao reparar serviços BMW: {0}",
                 "KaiStopOk", "Serviços BMW parados.",
@@ -3026,8 +3026,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: FALHA",
                 "TrayAbout", "Acerca de",
-                "AboutTitle", "Acerca de KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nRenova as credenciais BMW KAI AOS (WebEAM / Register), monitoriza os serviços BMW BDR e é executado na área de notificação.\n\nConsulte CHANGELOG.md na pasta da aplicação.",
+                "AboutTitle", "Acerca de KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nRenova as credenciais BMW KAI AOS (WebEAM / Register), monitoriza os serviços BMW BDR e é executado na área de notificação.\n\nConsulte CHANGELOG.md na pasta da aplicação.",
                 "AboutOpenLogs", "Abrir pasta de registos",
                 "AboutSettingsPath", "Definições:",
                 "AboutCopySettings", "Copiar caminho das definições",
@@ -3195,7 +3195,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Sv()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Förnyelseschema:", "IntervalHours", "Intervall (timmar):",
                 "StartWithWindows", "Starta med Windows:", "Yes", "Ja",
                 "SectionConfig", "KAI-konfiguration:", "ConfigPath", "Konfigurationssökväg:",
@@ -3297,7 +3297,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "BMW-tjänster OK.",
                 "KaiServicesProblem", "BMW-tjänster: {0}",
                 "KaiFixNow", "Fixa nu",
-                "KaiStopServices", "Stoppa",
+                "KaiStopServices", "Starta om",
                 "KaiFixOk", "BMW-tjänster åtgärdade.",
                 "KaiFixFail", "Kunde inte åtgärda BMW-tjänster: {0}",
                 "KaiStopOk", "BMW-tjänster stoppade.",
@@ -3308,8 +3308,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: FEL",
                 "TrayAbout", "Om",
-                "AboutTitle", "Om KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nFörnyar BMW KAI AOS-autentiseringsuppgifter (WebEAM / Register), övervakar BMW BDR-tjänster och körs i aktivitetsfältet.\n\nSe CHANGELOG.md i appmapen.",
+                "AboutTitle", "Om KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nFörnyar BMW KAI AOS-autentiseringsuppgifter (WebEAM / Register), övervakar BMW BDR-tjänster och körs i aktivitetsfältet.\n\nSe CHANGELOG.md i appmapen.",
                 "AboutOpenLogs", "Öppna loggmapp",
                 "AboutSettingsPath", "Inställningar:",
                 "AboutCopySettings", "Kopiera sökväg till inställningar",
@@ -3477,7 +3477,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> No()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Fornyelsesplan:", "IntervalHours", "Intervall (timer):",
                 "StartWithWindows", "Start med Windows:", "Yes", "Ja",
                 "SectionConfig", "KAI-konfigurasjon:", "ConfigPath", "Konfigurasjonsbane:",
@@ -3579,7 +3579,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "BMW-tjenester OK.",
                 "KaiServicesProblem", "BMW-tjenester: {0}",
                 "KaiFixNow", "Fiks nå",
-                "KaiStopServices", "Stopp",
+                "KaiStopServices", "Omstart",
                 "KaiFixOk", "BMW-tjenester fikset.",
                 "KaiFixFail", "Kunne ikke fikse BMW-tjenester: {0}",
                 "KaiStopOk", "BMW-tjenester stoppet.",
@@ -3590,8 +3590,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Token: OK",
                 "TokenFooterFail", "Token: FEIL",
                 "TrayAbout", "Om",
-                "AboutTitle", "Om KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nFornyer BMW KAI AOS-påloggingsinformasjon (WebEAM / Register), overvåker BMW BDR-tjenester og kjører i systemstatusfeltet.\n\nSe CHANGELOG.md i app-mappen.",
+                "AboutTitle", "Om KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nFornyer BMW KAI AOS-påloggingsinformasjon (WebEAM / Register), overvåker BMW BDR-tjenester og kjører i systemstatusfeltet.\n\nSe CHANGELOG.md i app-mappen.",
                 "AboutOpenLogs", "Åpne loggmappe",
                 "AboutSettingsPath", "Innstillinger:",
                 "AboutCopySettings", "Kopier innstillingsbane",
@@ -3759,7 +3759,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Ru()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Расписание обновления:", "IntervalHours", "Интервал (часы):",
                 "StartWithWindows", "Запуск с Windows:", "Yes", "Да",
                 "SectionConfig", "Конфигурация KAI:", "ConfigPath", "Путь конфигурации:",
@@ -3861,7 +3861,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "Службы BMW OK.",
                 "KaiServicesProblem", "Службы BMW: {0}",
                 "KaiFixNow", "Исправить сейчас",
-                "KaiStopServices", "Остановить",
+                "KaiStopServices", "Перезапуск",
                 "KaiFixOk", "Службы BMW исправлены.",
                 "KaiFixFail", "Не удалось исправить службы BMW: {0}",
                 "KaiStopOk", "Службы BMW остановлены.",
@@ -3872,8 +3872,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Токен: OK",
                 "TokenFooterFail", "Токен: ОШИБКА",
                 "TrayAbout", "О программе",
-                "AboutTitle", "О KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nОбновляет учётные данные BMW KAI AOS (WebEAM / Register), контролирует службы BMW BDR и работает в трее.\n\nСм. CHANGELOG.md в папке приложения.",
+                "AboutTitle", "О KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nОбновляет учётные данные BMW KAI AOS (WebEAM / Register), контролирует службы BMW BDR и работает в трее.\n\nСм. CHANGELOG.md в папке приложения.",
                 "AboutOpenLogs", "Открыть папку журналов",
                 "AboutSettingsPath", "Настройки:",
                 "AboutCopySettings", "Копировать путь настроек",
@@ -4041,7 +4041,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Tr()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Yenileme planı:", "IntervalHours", "Aralık (saat):",
                 "StartWithWindows", "Windows ile başlat:", "Yes", "Evet",
                 "SectionConfig", "KAI yapılandırması:", "ConfigPath", "Yapılandırma yolu:",
@@ -4143,7 +4143,7 @@ namespace KaiAosRenew
                 "KaiServicesOk", "BMW hizmetleri OK.",
                 "KaiServicesProblem", "BMW hizmetleri: {0}",
                 "KaiFixNow", "Şimdi düzelt",
-                "KaiStopServices", "Durdur",
+                "KaiStopServices", "Yeniden başlat",
                 "KaiFixOk", "BMW hizmetleri düzeltildi.",
                 "KaiFixFail", "BMW hizmetleri düzeltilemedi: {0}",
                 "KaiStopOk", "BMW hizmetleri durduruldu.",
@@ -4154,8 +4154,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "Belirteç: OK",
                 "TokenFooterFail", "Belirteç: HATA",
                 "TrayAbout", "Hakkında",
-                "AboutTitle", "KAI AOS Renew hakkında",
-                "AboutBody", "KAI AOS Renew {0}\n\nBMW KAI AOS kimlik bilgilerini yeniler (WebEAM / Register), BMW BDR hizmetlerini izler ve sistem tepsisinde çalışır.\n\nUygulama klasöründeki CHANGELOG.md dosyasına bakın.",
+                "AboutTitle", "KAI - AOS Renew hakkında",
+                "AboutBody", "KAI - AOS Renew {0}\n\nBMW KAI AOS kimlik bilgilerini yeniler (WebEAM / Register), BMW BDR hizmetlerini izler ve sistem tepsisinde çalışır.\n\nUygulama klasöründeki CHANGELOG.md dosyasına bakın.",
                 "AboutOpenLogs", "Günlük klasörünü aç",
                 "AboutSettingsPath", "Ayarlar:",
                 "AboutCopySettings", "Ayar yolunu kopyala",
@@ -4323,7 +4323,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Ja()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "更新スケジュール:", "IntervalHours", "間隔（時間）:",
                 "StartWithWindows", "Windows と同時に起動:", "Yes", "はい",
                 "SectionConfig", "KAI 設定:", "ConfigPath", "設定パス:",
@@ -4436,8 +4436,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "トークン: OK",
                 "TokenFooterFail", "トークン: 失敗",
                 "TrayAbout", "情報",
-                "AboutTitle", "KAI AOS Renew について",
-                "AboutBody", "KAI AOS Renew {0}\n\nBMW KAI AOS 資格情報 (WebEAM / Register) を更新し、BMW BDR サービスを監視し、トレイで実行します。\n\nアプリフォルダーの CHANGELOG.md を参照してください。",
+                "AboutTitle", "KAI - AOS Renew について",
+                "AboutBody", "KAI - AOS Renew {0}\n\nBMW KAI AOS 資格情報 (WebEAM / Register) を更新し、BMW BDR サービスを監視し、トレイで実行します。\n\nアプリフォルダーの CHANGELOG.md を参照してください。",
                 "AboutOpenLogs", "ログフォルダーを開く",
                 "AboutSettingsPath", "設定:",
                 "AboutCopySettings", "設定パスをコピー",
@@ -4605,7 +4605,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Ko()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "갱신 일정:", "IntervalHours", "간격(시간):",
                 "StartWithWindows", "Windows와 함께 시작:", "Yes", "예",
                 "SectionConfig", "KAI 구성:", "ConfigPath", "구성 경로:",
@@ -4718,8 +4718,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "토큰: OK",
                 "TokenFooterFail", "토큰: 실패",
                 "TrayAbout", "정보",
-                "AboutTitle", "KAI AOS Renew 정보",
-                "AboutBody", "KAI AOS Renew {0}\n\nBMW KAI AOS 자격 증명(WebEAM / Register)을 갱신하고 BMW BDR 서비스를 모니터링하며 트레이에서 실행됩니다.\n\n앱 폴더의 CHANGELOG.md를 참조하세요.",
+                "AboutTitle", "KAI - AOS Renew 정보",
+                "AboutBody", "KAI - AOS Renew {0}\n\nBMW KAI AOS 자격 증명(WebEAM / Register)을 갱신하고 BMW BDR 서비스를 모니터링하며 트레이에서 실행됩니다.\n\n앱 폴더의 CHANGELOG.md를 참조하세요.",
                 "AboutOpenLogs", "로그 폴더 열기",
                 "AboutSettingsPath", "설정:",
                 "AboutCopySettings", "설정 경로 복사",
@@ -4887,7 +4887,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Zh()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "续订计划：", "IntervalHours", "间隔（小时）：",
                 "StartWithWindows", "随 Windows 启动：", "Yes", "是",
                 "SectionConfig", "KAI 配置：", "ConfigPath", "配置路径：",
@@ -5000,8 +5000,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "令牌：正常",
                 "TokenFooterFail", "令牌：失败",
                 "TrayAbout", "关于",
-                "AboutTitle", "关于 KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\n续订 BMW KAI AOS 凭据（WebEAM / Register），监控 BMW BDR 服务，并从托盘运行。\n\n请参阅应用程序文件夹中的 CHANGELOG.md。",
+                "AboutTitle", "关于 KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\n续订 BMW KAI AOS 凭据（WebEAM / Register），监控 BMW BDR 服务，并从托盘运行。\n\n请参阅应用程序文件夹中的 CHANGELOG.md。",
                 "AboutOpenLogs", "打开日志文件夹",
                 "AboutSettingsPath", "设置：",
                 "AboutCopySettings", "复制设置路径",
@@ -5169,7 +5169,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> Th()
         {
             return D(
-                "WindowTitle", "KAI AOS Renew", "HeaderTitle", "KAI - AOS Renew",
+                "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "กำหนดการต่ออายุ:", "IntervalHours", "ช่วงเวลา (ชั่วโมง):",
                 "StartWithWindows", "เริ่มพร้อม Windows:", "Yes", "ใช่",
                 "SectionConfig", "การกำหนดค่า KAI:", "ConfigPath", "พาธการกำหนดค่า:",
@@ -5282,8 +5282,8 @@ namespace KaiAosRenew
                 "TokenFooterOk", "โทเค็น: ปกติ",
                 "TokenFooterFail", "โทเค็น: ล้มเหลว",
                 "TrayAbout", "เกี่ยวกับ",
-                "AboutTitle", "เกี่ยวกับ KAI AOS Renew",
-                "AboutBody", "KAI AOS Renew {0}\n\nต่ออายุข้อมูลรับรอง BMW KAI AOS (WebEAM / Register) ตรวจสอบบริการ BMW BDR และทำงานในถาดระบบ\n\nดู CHANGELOG.md ในโฟลเดอร์แอป",
+                "AboutTitle", "เกี่ยวกับ KAI - AOS Renew",
+                "AboutBody", "KAI - AOS Renew {0}\n\nต่ออายุข้อมูลรับรอง BMW KAI AOS (WebEAM / Register) ตรวจสอบบริการ BMW BDR และทำงานในถาดระบบ\n\nดู CHANGELOG.md ในโฟลเดอร์แอป",
                 "AboutOpenLogs", "เปิดโฟลเดอร์บันทึก",
                 "AboutSettingsPath", "การตั้งค่า:",
                 "AboutCopySettings", "คัดลอกพาธการตั้งค่า",

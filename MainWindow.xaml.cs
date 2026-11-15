@@ -55,6 +55,7 @@ namespace KaiAosRenew
         private DateTime _nextHealthUtc = DateTime.MaxValue;
         private DateTime _nextServiceCheckUtc = DateTime.MaxValue;
         private bool _busy;
+        private bool _kaiServiceCmdBusy;
         private bool _loadingUi;
         private bool _retrySchedule;
         private bool _hasFailureAlert;
@@ -177,7 +178,7 @@ namespace KaiAosRenew
             InitTray();
             LoadSettingsToUi();
             ApplyKeysRefreshInterval();
-            StartMenuShortcut.Ensure();
+            StartMenuShortcut.Ensure("KAI - AOS Renew", ThemeManager.AppUserModelId);
             SyncStartupFromRegistry();
             if (_settings.ConsecutiveFailures > 0)
                 ApplyFailureAlert(_settings.LastMessage ?? "Last run failed.");
@@ -492,7 +493,7 @@ namespace KaiAosRenew
             if (TabSettingsHeaderText != null) TabSettingsHeaderText.Text = UiStrings.T("TabSettings");
             if (AboutTabBtn != null) AboutTabBtn.Content = UiStrings.T("TabAbout");
             ApplyKeysTabStrings();
-            AboutTitleText.Text = "KAI AOS Renew";
+            AboutTitleText.Text = "KAI - AOS Renew";
             AboutVersionText.Text = string.Format(UiStrings.T("Version"), AppVersionDisplay);
             if (AboutSettingsPathText != null)
                 AboutSettingsPathText.Text = UiStrings.T("AboutSettingsPath") + " " + AppSettings.SettingsPath;
@@ -2127,7 +2128,7 @@ namespace KaiAosRenew
             {
                 // Custom tip only — no Windows toast (NotifyIcon.ShowBalloonTip).
                 TrayBalloonWindow.ShowTip(
-                    "KAI AOS Renew",
+                    "KAI - AOS Renew",
                     text,
                     WinForms.ToolTipIcon.Info,
                     UiStrings.T("KeysCopyVin"),
@@ -2139,7 +2140,7 @@ namespace KaiAosRenew
             {
                 Kind = "vin",
                 Level = "info",
-                Title = "KAI AOS Renew",
+                Title = "KAI - AOS Renew",
                 Text = text,
                 Vin = capture,
                 Action = "copyVin",
@@ -2226,7 +2227,7 @@ namespace KaiAosRenew
                 {
                     Kind = "keySync",
                     Level = "info",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = NotifyMessage.EncodeKeySync(rows)
                 });
             }
@@ -2707,7 +2708,7 @@ namespace KaiAosRenew
         {
             _appIcon = IconFactory.GetAppIcon();
             _tray = new WinForms.NotifyIcon();
-            _tray.Text = "KAI AOS Renew";
+            _tray.Text = "KAI - AOS Renew";
             _tray.Visible = true;
             _tray.Icon = _appIcon;
             _tray.DoubleClick += delegate { ShowFromTray(); };
@@ -2767,7 +2768,7 @@ namespace KaiAosRenew
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, string.Format(UiStrings.T("CannotOpenLog"), ex.Message), "KAI AOS Renew",
+                MessageBox.Show(this, string.Format(UiStrings.T("CannotOpenLog"), ex.Message), "KAI - AOS Renew",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -2785,7 +2786,7 @@ namespace KaiAosRenew
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, string.Format(UiStrings.T("CannotOpenLog"), ex.Message), "KAI AOS Renew",
+                MessageBox.Show(this, string.Format(UiStrings.T("CannotOpenLog"), ex.Message), "KAI - AOS Renew",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -2866,7 +2867,7 @@ namespace KaiAosRenew
                 return;
             text = TruncateBalloon(text);
             // Custom in-app tip only — do not call NotifyIcon.ShowBalloonTip (Windows toast).
-            TrayBalloonWindow.ShowTip("KAI AOS Renew", text, icon);
+            TrayBalloonWindow.ShowTip("KAI - AOS Renew", text, icon);
             var level = "info";
             var kind = "info";
             if (icon == WinForms.ToolTipIcon.Warning)
@@ -2883,7 +2884,7 @@ namespace KaiAosRenew
             {
                 Kind = kind,
                 Level = level,
-                Title = "KAI AOS Renew",
+                Title = "KAI - AOS Renew",
                 Text = text,
                 Seconds = 8
             });
@@ -2913,7 +2914,7 @@ namespace KaiAosRenew
                 {
                     Kind = "footer",
                     Level = "info",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = BuildFooterPayload()
                 });
             }
@@ -2930,7 +2931,7 @@ namespace KaiAosRenew
                 {
                     Kind = "footer",
                     Level = "info",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = BuildFooterPayload()
                 });
             }
@@ -3043,7 +3044,7 @@ namespace KaiAosRenew
                 {
                     Kind = "aosSync",
                     Level = "info",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = BuildAosSyncPayload()
                 });
             }
@@ -3059,7 +3060,7 @@ namespace KaiAosRenew
                 {
                     Kind = "aosSync",
                     Level = "info",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = BuildAosSyncPayload()
                 });
             }
@@ -3103,7 +3104,7 @@ namespace KaiAosRenew
                 KaiUrlWebEamBox != null ? KaiUrlWebEamBox.Text : "",
                 KaiUrlUploadBox != null ? KaiUrlUploadBox.Text : "",
                 KaiTokenExpiryText != null ? KaiTokenExpiryText.Text : "",
-                allOk, anyRunning, svcAlert, rows);
+                allOk, anyRunning, svcAlert, _kaiServiceCmdBusy, rows);
         }
 
         private void BroadcastKaiSync()
@@ -3120,7 +3121,7 @@ namespace KaiAosRenew
                 {
                     Kind = "kaiSync",
                     Level = "info",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = BuildKaiSyncPayload()
                 });
             }
@@ -3136,7 +3137,7 @@ namespace KaiAosRenew
                 {
                     Kind = "kaiSync",
                     Level = "info",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = BuildKaiSyncPayload()
                 });
             }
@@ -3149,7 +3150,7 @@ namespace KaiAosRenew
             {
                 var err = fix ? await KaiFixServicesCoreAsync() : await KaiStopServicesCoreAsync();
                 if (err == null)
-                    SendAosAck(clientId, true, fix ? "fixServices" : "stopServices");
+                    SendAosAck(clientId, true, fix ? "fixServices" : "restartServices");
                 else
                     SendAosAck(clientId, false, err);
                 BroadcastKaiSync();
@@ -3168,7 +3169,7 @@ namespace KaiAosRenew
                 {
                     Kind = "aosAck",
                     Level = ok ? "success" : "error",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = text ?? ""
                 });
             }
@@ -3267,7 +3268,7 @@ namespace KaiAosRenew
                         {
                             Kind = "keySync",
                             Level = "info",
-                            Title = "KAI AOS Renew",
+                            Title = "KAI - AOS Renew",
                             Text = payload
                         });
                     }
@@ -3279,7 +3280,7 @@ namespace KaiAosRenew
                     RunKaiServiceCmdFromClient(clientId, true);
                     return;
                 }
-                if (c == "stopservices")
+                if (c == "stopservices" || c == "restartservices")
                 {
                     RunKaiServiceCmdFromClient(clientId, false);
                     return;
@@ -3343,7 +3344,7 @@ namespace KaiAosRenew
                 {
                     Kind = "keySync",
                     Level = "info",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = payload
                 });
             }
@@ -3495,7 +3496,7 @@ namespace KaiAosRenew
             {
                 Kind = "vin",
                 Level = "info",
-                Title = "KAI AOS Renew",
+                Title = "KAI - AOS Renew",
                 Text = "Test VIN WBATESTVIN0000001",
                 Vin = "WBATESTVIN0000001",
                 Action = "copyVin",
@@ -3509,7 +3510,7 @@ namespace KaiAosRenew
             {
                 Kind = "info",
                 Level = "info",
-                Title = "KAI AOS Renew",
+                Title = "KAI - AOS Renew",
                 Text = "Test info tip (remote)",
                 Seconds = 8
             }, "Info");
@@ -3521,7 +3522,7 @@ namespace KaiAosRenew
             {
                 Kind = "warning",
                 Level = "warning",
-                Title = "KAI AOS Renew",
+                Title = "KAI - AOS Renew",
                 Text = "Test warning tip (remote)",
                 Seconds = 8
             }, "Warning");
@@ -3533,7 +3534,7 @@ namespace KaiAosRenew
             {
                 Kind = "error",
                 Level = "error",
-                Title = "KAI AOS Renew",
+                Title = "KAI - AOS Renew",
                 Text = "Test error tip (remote)",
                 Seconds = 8
             }, "Error");
@@ -3809,7 +3810,7 @@ namespace KaiAosRenew
             var email = EmailBox != null ? EmailBox.Text.Trim() : (_settings != null ? _settings.Email : null);
             if (string.IsNullOrEmpty(email))
             {
-                MessageBox.Show(this, UiStrings.T("MissingEmail"), "KAI AOS Renew",
+                MessageBox.Show(this, UiStrings.T("MissingEmail"), "KAI - AOS Renew",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -3831,7 +3832,7 @@ namespace KaiAosRenew
                 AppendLog(failMsg, LogLevel.Warning);
                 ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(failMsg));
                 MessageBox.Show(this, failMsg,
-                    "KAI AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
                 RefreshPasswordHintBanners(false);
                 return;
             }
@@ -3923,7 +3924,7 @@ namespace KaiAosRenew
             {
                 AppendLog(string.Format(UiStrings.T("OpenBmwSsoFail"), ex.Message), LogLevel.Warning);
                 MessageBox.Show(this, string.Format(UiStrings.T("OpenBmwSsoFail"), ex.Message),
-                    "KAI AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -3934,6 +3935,9 @@ namespace KaiAosRenew
 
         private async void KaiFixServices_Click(object sender, RoutedEventArgs e)
         {
+            if (_busy) return;
+            if (KaiFixServicesBtn != null) KaiFixServicesBtn.IsEnabled = false;
+            if (KaiStopServicesBtn != null) KaiStopServicesBtn.IsEnabled = false;
             await KaiFixServicesCoreAsync();
         }
 
@@ -3941,6 +3945,7 @@ namespace KaiAosRenew
         private async Task<string> KaiFixServicesCoreAsync()
         {
             if (_busy) return "Busy";
+            SetKaiServiceCmdBusy(true);
             SetBusy(true);
             try
             {
@@ -3978,12 +3983,16 @@ namespace KaiAosRenew
             }
             finally
             {
+                SetKaiServiceCmdBusy(false);
                 SetBusy(false);
             }
         }
 
         private async void KaiStopServices_Click(object sender, RoutedEventArgs e)
         {
+            if (_busy) return;
+            if (KaiFixServicesBtn != null) KaiFixServicesBtn.IsEnabled = false;
+            if (KaiStopServicesBtn != null) KaiStopServicesBtn.IsEnabled = false;
             await KaiStopServicesCoreAsync();
         }
 
@@ -3991,13 +4000,14 @@ namespace KaiAosRenew
         private async Task<string> KaiStopServicesCoreAsync()
         {
             if (_busy) return "Busy";
+            SetKaiServiceCmdBusy(true);
             SetBusy(true);
             try
             {
-                var result = await Task.Run(() => ServiceMonitor.TryStopAll());
+                var result = await Task.Run(() => ServiceMonitor.TryRestartAll());
                 if (!result.Ok && result.NeedsElevation)
                 {
-                    var elevated = await Task.Run(() => RunElevatedServiceAction(ServiceMonitor.ArgStop));
+                    var elevated = await Task.Run(() => RunElevatedServiceAction(ServiceMonitor.ArgRestart));
                     if (elevated == null)
                     {
                         AppendLog(UiStrings.T("KaiElevateCancelled"), LogLevel.Warning);
@@ -4017,7 +4027,7 @@ namespace KaiAosRenew
                     ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(fail));
                 }
                 CheckBmwServices(false, true);
-                return result.Ok ? null : (result.Message ?? "Stop failed");
+                return result.Ok ? null : (result.Message ?? "Restart failed");
             }
             catch (Exception ex)
             {
@@ -4028,8 +4038,16 @@ namespace KaiAosRenew
             }
             finally
             {
+                SetKaiServiceCmdBusy(false);
                 SetBusy(false);
             }
+        }
+
+        private void SetKaiServiceCmdBusy(bool busy)
+        {
+            if (_kaiServiceCmdBusy == busy) return;
+            _kaiServiceCmdBusy = busy;
+            BroadcastKaiSync();
         }
 
         /// <returns>Null if UAC cancelled; otherwise result from elevated process exit + recheck message.</returns>
@@ -4055,6 +4073,10 @@ namespace KaiAosRenew
                     string message;
                     if (arg == ServiceMonitor.ArgStop)
                         message = ok ? "Elevated stop done." : (after.AlertMessage ?? ("Elevated stop exit " + p.ExitCode));
+                    else if (arg == ServiceMonitor.ArgRestart)
+                        message = ok && after.AllOk
+                            ? "Elevated restart done."
+                            : (after.AlertMessage ?? ("Elevated restart exit " + p.ExitCode));
                     else if (ok && after.AllOk)
                         message = "Elevated fix done.";
                     else if (ok)
@@ -4299,7 +4321,9 @@ namespace KaiAosRenew
             if (KeysTabAlertDot != null)
                 KeysTabAlertDot.Opacity = _keysAlert ? opacity : 1.0;
             if (KaiFixServicesBtn != null)
-                KaiFixServicesBtn.Opacity = (_kaiServiceAlert && KaiFixServicesBtn.Visibility == Visibility.Visible)
+                KaiFixServicesBtn.Opacity = (_kaiServiceAlert
+                    && KaiFixServicesBtn.Visibility == Visibility.Visible
+                    && KaiFixServicesBtn.IsEnabled)
                     ? opacity
                     : 1.0;
         }
@@ -4593,7 +4617,7 @@ namespace KaiAosRenew
                 failMessage = UiStrings.T("PreflightPathFail");
                 AppendLog(failMessage, LogLevel.Warning);
                 if (showUi)
-                    MessageBox.Show(this, failMessage, "KAI AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(this, failMessage, "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
 
@@ -4605,7 +4629,7 @@ namespace KaiAosRenew
                     failMessage = UiStrings.T("PreflightServicesMissing");
                     AppendLog(failMessage, LogLevel.Warning);
                     if (showUi)
-                        MessageBox.Show(this, failMessage, "KAI AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(this, failMessage, "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
                 for (var i = 0; i < report.Services.Count; i++)
@@ -4616,7 +4640,7 @@ namespace KaiAosRenew
                         failMessage = UiStrings.T("PreflightServicesMissing");
                         AppendLog(failMessage, LogLevel.Warning);
                         if (showUi)
-                            MessageBox.Show(this, failMessage, "KAI AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            MessageBox.Show(this, failMessage, "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
                         return false;
                     }
                 }
@@ -4626,7 +4650,7 @@ namespace KaiAosRenew
                 failMessage = string.Format(UiStrings.T("PreflightServicesMissing") + " ({0})", ex.Message);
                 AppendLog(failMessage, LogLevel.Warning);
                 if (showUi)
-                    MessageBox.Show(this, failMessage, "KAI AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(this, failMessage, "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             return true;
@@ -4921,7 +4945,7 @@ namespace KaiAosRenew
                     msg = string.Format(UiStrings.T("PropsMissing"), path);
                 AppendLog(msg);
                 if (showMessage)
-                    MessageBox.Show(this, msg, "KAI AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(this, msg, "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
                 var revert = _lastValidConfigPath;
                 if (string.IsNullOrEmpty(revert) && _settings != null)
                     revert = _settings.ConfigPath;
@@ -4948,7 +4972,7 @@ namespace KaiAosRenew
                 var msg = UiStrings.T("InvalidUser");
                 AppendLog(msg);
                 if (showUi)
-                    MessageBox.Show(this, msg, "KAI AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(this, msg, "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             if (string.IsNullOrEmpty(password))
@@ -4956,7 +4980,7 @@ namespace KaiAosRenew
                 var msg = UiStrings.T("MissingPassword");
                 AppendLog(msg);
                 if (showUi)
-                    MessageBox.Show(this, msg, "KAI AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(this, msg, "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             return true;
@@ -5011,18 +5035,18 @@ namespace KaiAosRenew
             if (_hasFailureAlert || (_settings != null && _settings.ConsecutiveFailures > 0 && _retrySchedule))
             {
                 var fails = _settings != null ? _settings.ConsecutiveFailures : 0;
-                tip = "KAI AOS Renew ERR";
+                tip = "KAI - AOS Renew ERR";
                 if (fails > 0)
                     tip += " x" + fails;
                 if (_timerActive && _nextDueUtc != DateTime.MaxValue)
                     tip += " @" + _nextDueUtc.ToLocalTime().ToString("t");
             }
             else if (_keysAlert)
-                tip = "KAI AOS Renew — " + UiStrings.T("TrayKeysAlert");
+                tip = "KAI - AOS Renew — " + UiStrings.T("TrayKeysAlert");
             else if (_timerActive && _nextDueUtc != DateTime.MaxValue)
-                tip = "KAI AOS Renew — next " + _nextDueUtc.ToLocalTime().ToString("g");
+                tip = "KAI - AOS Renew — next " + _nextDueUtc.ToLocalTime().ToString("g");
             else
-                tip = "KAI AOS Renew";
+                tip = "KAI - AOS Renew";
             if (tip.Length > 63)
                 tip = tip.Substring(0, 63);
             if (_tray != null)
@@ -6094,7 +6118,7 @@ namespace KaiAosRenew
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, string.Format(UiStrings.T("CannotOpenLog"), ex.Message), "KAI AOS Renew",
+                MessageBox.Show(this, string.Format(UiStrings.T("CannotOpenLog"), ex.Message), "KAI - AOS Renew",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -6114,7 +6138,7 @@ namespace KaiAosRenew
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, string.Format(UiStrings.T("ExportFail"), ex.Message), "KAI AOS Renew",
+                MessageBox.Show(this, string.Format(UiStrings.T("ExportFail"), ex.Message), "KAI - AOS Renew",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -6191,7 +6215,7 @@ namespace KaiAosRenew
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, string.Format(UiStrings.T("ImportFail"), ex.Message), "KAI AOS Renew",
+                MessageBox.Show(this, string.Format(UiStrings.T("ImportFail"), ex.Message), "KAI - AOS Renew",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -6326,7 +6350,7 @@ namespace KaiAosRenew
                 {
                     Kind = "activity",
                     Level = LogLevelWireName(entry.Level),
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = entry.Text ?? "",
                     At = entry.Time.ToString("yyyy-MM-ddTHH:mm:ss")
                 });
@@ -6343,7 +6367,7 @@ namespace KaiAosRenew
                 {
                     Kind = "activityClear",
                     Level = "info",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = ""
                 });
             }
@@ -6374,7 +6398,7 @@ namespace KaiAosRenew
                 {
                     Kind = "activitySync",
                     Level = "info",
-                    Title = "KAI AOS Renew",
+                    Title = "KAI - AOS Renew",
                     Text = payload ?? ""
                 });
             }

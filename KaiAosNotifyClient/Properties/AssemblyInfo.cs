@@ -1,10 +1,10 @@
 using System.Reflection;
 
-[assembly: AssemblyTitle("KaiAosNotifyClient")]
-[assembly: AssemblyDescription("Remote notify client for KaiAosRenew")]
+[assembly: AssemblyTitle("KAI - AOS Renew - Client")]
+[assembly: AssemblyDescription("Remote notify client for KAI - AOS Renew")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("KaiAosNotifyClient")]
+[assembly: AssemblyProduct("KAI - AOS Renew - Client")]
 [assembly: AssemblyCopyright("")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyVersion("1.0.0.0")]

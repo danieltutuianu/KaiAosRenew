@@ -11,7 +11,7 @@ set "STAGE=%DIST%\_stage_notify"
 if exist "%STAGE%" rmdir /S /Q "%STAGE%"
 mkdir "%STAGE%"
 
-copy /Y "%OUTDIR%\KaiAosNotifyClient.exe" "%STAGE%\" >nul
+copy /Y "%OUTDIR%\KAI - AOS Renew - Client.exe" "%STAGE%\" >nul
 
 set "ZIP=%DIST%\KaiAosNotifyClient.zip"
 if exist "%ZIP%" del /F /Q "%ZIP%"

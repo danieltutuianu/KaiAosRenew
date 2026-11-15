@@ -6,18 +6,28 @@ using System.Text;
 
 namespace KaiAosRenew
 {
+    /// <summary>
+    /// Creates/updates a Start Menu .lnk with AppUserModelID so the taskbar
+    /// shows the friendly name instead of the .exe file name.
+    /// </summary>
     internal static class StartMenuShortcut
     {
-        private const string ShortcutName = "KAI AOS Renew.lnk";
-
-        public static void Ensure()
+        public static void Ensure(string displayName, string aumid)
         {
+            if (string.IsNullOrWhiteSpace(displayName) || string.IsNullOrWhiteSpace(aumid))
+                return;
             try
             {
                 var programs = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
                 if (string.IsNullOrEmpty(programs)) return;
                 Directory.CreateDirectory(programs);
-                var linkPath = Path.Combine(programs, ShortcutName);
+
+                // Remove legacy shortcut names so only the friendly one remains.
+                TryDelete(Path.Combine(programs, "KaiAosRenew.lnk"));
+                TryDelete(Path.Combine(programs, "KaiAosNotifyClient.lnk"));
+                TryDelete(Path.Combine(programs, "KAI AOS Renew.lnk"));
+
+                var linkPath = Path.Combine(programs, displayName.Trim() + ".lnk");
                 var exe = GetExePath();
                 if (string.IsNullOrEmpty(exe) || !File.Exists(exe)) return;
 
@@ -27,14 +37,24 @@ namespace KaiAosRenew
                     {
                         if (string.Equals(ReadTarget(linkPath), exe, StringComparison.OrdinalIgnoreCase))
                         {
-                            WriteAppUserModelId(linkPath, ThemeManager.AppUserModelId);
+                            WriteAppUserModelId(linkPath, aumid);
                             return;
                         }
                     }
                     catch { }
                 }
 
-                CreateShortcut(linkPath, exe, Path.GetDirectoryName(exe), ThemeManager.AppUserModelId);
+                CreateShortcut(linkPath, exe, Path.GetDirectoryName(exe), displayName.Trim(), aumid);
+            }
+            catch { }
+        }
+
+        private static void TryDelete(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
             }
             catch { }
         }
@@ -51,7 +71,7 @@ namespace KaiAosRenew
             }
         }
 
-        private static void CreateShortcut(string linkPath, string target, string workDir, string aumid)
+        private static void CreateShortcut(string linkPath, string target, string workDir, string description, string aumid)
         {
             var link = (IShellLinkW)new CShellLink();
             try
@@ -59,7 +79,7 @@ namespace KaiAosRenew
                 link.SetPath(target);
                 if (!string.IsNullOrEmpty(workDir))
                     link.SetWorkingDirectory(workDir);
-                link.SetDescription("KAI AOS Renew");
+                link.SetDescription(description ?? "");
                 link.SetIconLocation(target, 0);
 
                 var file = (IPersistFile)link;

@@ -37,7 +37,7 @@ namespace KaiAosRenew
             string footer,
             bool offerFillSave)
         {
-            Title = "KAI AOS Renew";
+            Title = "KAI - AOS Renew";
             Width = 520;
             SizeToContent = SizeToContent.Height;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -74,7 +74,7 @@ namespace KaiAosRenew
                 {
                     MessageBox.Show(this,
                         string.Format(UiStrings.T("OpenBrowserPasswordsFail"), err ?? "unknown"),
-                        "KAI AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
                 OpenedPasswordManager = true;

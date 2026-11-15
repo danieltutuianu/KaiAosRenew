@@ -32,5 +32,5 @@ copy /Y "%BMWLIB%" "%OUTDIR%\" >nul
 copy /Y "%BMWBASE%" "%OUTDIR%\" >nul
 if exist "%ASSETDIR%\kai-key.png" copy /Y "%ASSETDIR%\kai-key.png" "%OUTDIR%\" >nul
 if exist "%~dp0CHANGELOG.md" copy /Y "%~dp0CHANGELOG.md" "%OUTDIR%\" >nul
-echo Built: %OUTDIR%\KaiAosRenew.exe
+echo Built: %OUTDIR%\KAI - AOS Renew.exe
 endlocal

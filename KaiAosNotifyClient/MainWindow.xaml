@@ -1,7 +1,7 @@
 ﻿<Window x:Class="KaiAosNotifyClient.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="KaiAos Notify Client"
+        Title="KAI - AOS Renew - Client"
         Width="1280" Height="740"
         MinWidth="1180" MinHeight="600"
         WindowStartupLocation="CenterScreen"
@@ -23,7 +23,7 @@
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <TextBlock x:Name="TitleText" Text="KaiAos Notify Client" Style="{DynamicResource TitleText}"
+      <TextBlock x:Name="TitleText" Text="KAI - AOS Renew - Client" Style="{DynamicResource TitleText}"
                  VerticalAlignment="Center" />
 
       <Grid x:Name="MainContentHost" Grid.Row="1" Margin="0,12,0,0">
@@ -330,8 +330,8 @@
                   <Button x:Name="KaiFixServicesBtn" Content="Fix now" Style="{DynamicResource BeigeButton}"
                           Click="KaiFixServices_Click" MinWidth="90" Margin="0,0,8,0"
                           Visibility="Collapsed" />
-                  <Button x:Name="KaiStopServicesBtn" Content="Stop" Style="{DynamicResource BeigeButton}"
-                          Click="KaiStopServices_Click" MinWidth="80"
+                  <Button x:Name="KaiStopServicesBtn" Content="Restart" Style="{DynamicResource BeigeButton}"
+                          Click="KaiStopServices_Click" MinWidth="90"
                           Visibility="Collapsed" />
                 </StackPanel>
                 <TextBlock x:Name="KaiServicesSection" Text="Services:" Style="{DynamicResource SectionText}"
@@ -559,7 +559,7 @@
             <RowDefinition Height="*" />
           </Grid.RowDefinitions>
           <StackPanel Grid.Row="0" Margin="0,0,0,12">
-            <TextBlock x:Name="AboutTitleText" Text="KaiAos Notify Client" Style="{DynamicResource SectionText}"
+            <TextBlock x:Name="AboutTitleText" Text="KAI - AOS Renew - Client" Style="{DynamicResource SectionText}"
                        Margin="0,0,0,4" />
             <TextBlock x:Name="AboutVersionText" Text="" FontSize="12"
                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,8" />

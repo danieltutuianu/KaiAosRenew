@@ -26,5 +26,5 @@ if errorlevel 1 exit /b 1
 
 if exist "%ROOT%..\CHANGELOG.md" copy /Y "%ROOT%..\CHANGELOG.md" "%OUTDIR%\CHANGELOG.md" >nul
 
-echo Built: %OUTDIR%\KaiAosNotifyClient.exe
+echo Built: %OUTDIR%\KAI - AOS Renew - Client.exe
 endlocal

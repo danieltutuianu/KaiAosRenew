@@ -6,6 +6,8 @@ set "CLIENT_ROOT=%ROOT%KaiAosNotifyClient"
 set "CLIENT_OUT=%CLIENT_ROOT%\bin\Release"
 set "DIST=%ROOT%dist"
 
+taskkill /F /IM "KAI - AOS Renew.exe" >nul 2>&1
+taskkill /F /IM "KAI - AOS Renew - Client.exe" >nul 2>&1
 taskkill /F /IM KaiAosRenew.exe >nul 2>&1
 taskkill /F /IM KaiAosNotifyClient.exe >nul 2>&1
 
@@ -21,7 +23,7 @@ if exist "%STAGE%" rmdir /S /Q "%STAGE%"
 mkdir "%STAGE%"
 mkdir "%STAGE%\KaiAosNotifyClient"
 
-copy /Y "%OUTDIR%\KaiAosRenew.exe" "%STAGE%\" >nul
+copy /Y "%OUTDIR%\KAI - AOS Renew.exe" "%STAGE%\" >nul
 copy /Y "%OUTDIR%\BMW.ISPI.KAI.Decentral.KaiAdminLibData.dll" "%STAGE%\" >nul
 copy /Y "%OUTDIR%\BMW.ISPI.KAI.Decentral.KaiBasicData.dll" "%STAGE%\" >nul
 if exist "%OUTDIR%\log4net.dll" copy /Y "%OUTDIR%\log4net.dll" "%STAGE%\" >nul
@@ -30,7 +32,7 @@ if exist "%OUTDIR%\SQLite.Interop.dll" copy /Y "%OUTDIR%\SQLite.Interop.dll" "%S
 if exist "%OUTDIR%\kai-key.png" copy /Y "%OUTDIR%\kai-key.png" "%STAGE%\" >nul
 if exist "%ROOT%CHANGELOG.md" copy /Y "%ROOT%CHANGELOG.md" "%STAGE%\" >nul
 
-copy /Y "%CLIENT_OUT%\KaiAosNotifyClient.exe" "%STAGE%\KaiAosNotifyClient\" >nul
+copy /Y "%CLIENT_OUT%\KAI - AOS Renew - Client.exe" "%STAGE%\KaiAosNotifyClient\" >nul
 
 set "ZIP=%DIST%\KaiAosRenew.zip"
 if exist "%ZIP%" del /F /Q "%ZIP%"
@@ -48,7 +50,7 @@ REM Also a standalone client zip next to the server zip
 set "CLIENT_STAGE=%DIST%\_stage_notify"
 if exist "%CLIENT_STAGE%" rmdir /S /Q "%CLIENT_STAGE%"
 mkdir "%CLIENT_STAGE%"
-copy /Y "%CLIENT_OUT%\KaiAosNotifyClient.exe" "%CLIENT_STAGE%\" >nul
+copy /Y "%CLIENT_OUT%\KAI - AOS Renew - Client.exe" "%CLIENT_STAGE%\" >nul
 
 set "CLIENT_ZIP=%DIST%\KaiAosNotifyClient.zip"
 if exist "%CLIENT_ZIP%" del /F /Q "%CLIENT_ZIP%"

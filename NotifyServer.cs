@@ -133,7 +133,7 @@ namespace KaiAosRenew
             {
                 Kind = "ping",
                 Level = "info",
-                Title = "KAI AOS Renew",
+                Title = "KAI - AOS Renew",
                 Text = "ping"
             });
         }
@@ -486,7 +486,7 @@ namespace KaiAosRenew
             var m = new NotifyMessage();
             m.Kind = JsonStr(line, "kind") ?? "info";
             m.Level = JsonStr(line, "level") ?? "info";
-            m.Title = JsonStr(line, "title") ?? "KAI AOS Renew";
+            m.Title = JsonStr(line, "title") ?? "KAI - AOS Renew";
             m.Text = JsonStr(line, "text") ?? "";
             m.Vin = JsonStr(line, "vin");
             m.Action = JsonStr(line, "action");
@@ -596,7 +596,7 @@ namespace KaiAosRenew
         /// </summary>
         public static string EncodeKaiSync(
             string install, string registerUrl, string webEamUrl, string uploadUrl, string tokenExpiryText,
-            bool allOk, bool anyRunning, bool svcAlert, IList<KaiSvcWireRow> services)
+            bool allOk, bool anyRunning, bool svcAlert, bool cmdBusy, IList<KaiSvcWireRow> services)
         {
             var sb = new StringBuilder();
             sb.Append(EscPipe(install ?? ""));
@@ -607,6 +607,7 @@ namespace KaiAosRenew
             sb.Append('|').Append(allOk ? "1" : "0");
             sb.Append('|').Append(anyRunning ? "1" : "0");
             sb.Append('|').Append(svcAlert ? "1" : "0");
+            sb.Append('|').Append(cmdBusy ? "1" : "0");
             if (services != null)
             {
                 var n = 0;

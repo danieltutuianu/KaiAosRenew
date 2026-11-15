@@ -11,7 +11,7 @@ namespace KaiAosNotifyClient
     {
         public const int WmShowMe = 0x0400 + 77;
         private const string MutexName = @"Local\KaiAosNotifyClient.SingleInstance";
-        private const string WindowTitle = "KaiAos Notify Client";
+        private const string WindowTitle = "KAI - AOS Renew - Client";
         private static Mutex _mutex;
 
         [STAThread]
@@ -46,6 +46,10 @@ namespace KaiAosNotifyClient
 
             try
             {
+                try { SetCurrentProcessExplicitAppUserModelID(ClientThemeManager.AppUserModelId); }
+                catch { }
+                try { KaiAosRenew.StartMenuShortcut.Ensure("KAI - AOS Renew - Client", ClientThemeManager.AppUserModelId); }
+                catch { }
                 var app = new App();
                 app.InitializeComponent();
                 app.Run();
@@ -134,6 +138,9 @@ namespace KaiAosNotifyClient
             }
             catch { }
         }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetCurrentProcessExplicitAppUserModelID(string appID);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);

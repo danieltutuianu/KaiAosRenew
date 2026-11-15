@@ -124,7 +124,7 @@ namespace KaiAosRenew
             var textPanel = new StackPanel { Margin = new Thickness(4, 12, 14, 12) };
             textPanel.Children.Add(new TextBlock
             {
-                Text = title ?? "KAI AOS Renew",
+                Text = title ?? "KAI - AOS Renew",
                 FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
                 Foreground = new SolidColorBrush(titleFg),

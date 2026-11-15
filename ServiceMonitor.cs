@@ -45,6 +45,7 @@ namespace KaiAosRenew
     {
         public const string ArgFix = "--fix-bmw-services";
         public const string ArgStop = "--stop-bmw-services";
+        public const string ArgRestart = "--restart-bmw-services";
 
         public static readonly string[] WatchedServiceNames = new string[]
         {
@@ -153,6 +154,36 @@ namespace KaiAosRenew
             };
         }
 
+        public static BmwServiceActionResult TryRestartAll()
+        {
+            var sb = new StringBuilder();
+            var anyFail = false;
+            var needsElevation = false;
+
+            foreach (var name in WatchedServiceNames)
+            {
+                var one = TryRestartOne(name);
+                if (!string.IsNullOrEmpty(one.Message))
+                {
+                    if (sb.Length > 0) sb.Append(" | ");
+                    sb.Append(one.Message);
+                }
+                if (!one.Ok)
+                {
+                    anyFail = true;
+                    if (one.NeedsElevation) needsElevation = true;
+                }
+            }
+
+            var report = Check();
+            return new BmwServiceActionResult
+            {
+                Ok = !anyFail && report.AllOk,
+                NeedsElevation = needsElevation,
+                Message = string.IsNullOrEmpty(sb.ToString()) ? report.AlertMessage : sb.ToString()
+            };
+        }
+
         private static BmwServiceActionResult TryFixOne(string serviceName)
         {
             var status = ReadOne(serviceName);
@@ -228,6 +259,53 @@ namespace KaiAosRenew
                 {
                     Ok = true,
                     Message = status.DisplayName + " stopped"
+                };
+            }
+            catch (Exception ex)
+            {
+                return FailWithElevationHint(status.DisplayName, ex);
+            }
+        }
+
+        private static BmwServiceActionResult TryRestartOne(string serviceName)
+        {
+            var status = ReadOne(serviceName);
+            if (!status.Exists)
+            {
+                return new BmwServiceActionResult
+                {
+                    Ok = false,
+                    Message = status.DisplayName + " missing"
+                };
+            }
+
+            try
+            {
+                if (!status.IsAutomatic)
+                    SetStartModeAutomatic(serviceName);
+
+                using (var sc = new ServiceController(serviceName))
+                {
+                    sc.Refresh();
+                    if (sc.Status != ServiceControllerStatus.Stopped
+                        && sc.Status != ServiceControllerStatus.StopPending)
+                    {
+                        sc.Stop();
+                        sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(45));
+                    }
+                    sc.Refresh();
+                    if (sc.Status != ServiceControllerStatus.Running
+                        && sc.Status != ServiceControllerStatus.StartPending)
+                    {
+                        sc.Start();
+                        sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(45));
+                    }
+                }
+
+                return new BmwServiceActionResult
+                {
+                    Ok = true,
+                    Message = status.DisplayName + " restarted"
                 };
             }
             catch (Exception ex)

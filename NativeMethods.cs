@@ -230,7 +230,7 @@ namespace KaiAosRenew
 
         private static IntPtr FindOtherInstanceHwnd()
         {
-            var h = FindWindow(null, "KAI AOS Renew");
+            var h = FindWindow(null, "KAI - AOS Renew");
             if (h != IntPtr.Zero && IsWindow(h)) return h;
 
             var current = Process.GetCurrentProcess();
@@ -266,7 +266,7 @@ namespace KaiAosRenew
                 var sb = new System.Text.StringBuilder(len + 1);
                 GetWindowText(hwnd, sb, sb.Capacity);
                 var title = sb.ToString();
-                if (string.Equals(title, "KAI AOS Renew", StringComparison.OrdinalIgnoreCase) ||
+                if (string.Equals(title, "KAI - AOS Renew", StringComparison.OrdinalIgnoreCase) ||
                     title.IndexOf("KAI AOS", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     titled = hwnd;

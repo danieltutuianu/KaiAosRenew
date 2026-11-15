@@ -39,6 +39,14 @@ namespace KaiAosRenew
                     Environment.Exit(stop.Ok ? 0 : 1);
                     return;
                 }
+                if (string.Equals(args[i], ServiceMonitor.ArgRestart, StringComparison.OrdinalIgnoreCase))
+                {
+                    var restart = ServiceMonitor.TryRestartAll();
+                    Console.WriteLine(restart.Ok ? "OK" : "FAIL");
+                    Console.WriteLine(restart.Message);
+                    Environment.Exit(restart.Ok ? 0 : 1);
+                    return;
+                }
             }
 
             bool created;
@@ -80,7 +88,7 @@ namespace KaiAosRenew
             {
                 NativeMethods.SetAppUserModelId(ThemeManager.AppUserModelId);
                 NativeMethods.EnsureTrayNotificationsEnabled();
-                StartMenuShortcut.Ensure();
+                StartMenuShortcut.Ensure("KAI - AOS Renew", ThemeManager.AppUserModelId);
                 var app = new App();
                 app.InitializeComponent();
                 app.Run();

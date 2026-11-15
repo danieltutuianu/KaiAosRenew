@@ -38,7 +38,7 @@ namespace KaiAosNotifyClient
             string footer,
             bool offerFillSave)
         {
-            Title = "KaiAos Notify Client";
+            Title = "KAI - AOS Renew - Client";
             Width = 520;
             SizeToContent = SizeToContent.Height;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -75,7 +75,7 @@ namespace KaiAosNotifyClient
                 {
                     MessageBox.Show(this,
                         string.Format(ClientUiStrings.T("OpenBrowserPasswordsFail"), err ?? "unknown"),
-                        "KaiAos Notify Client", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        "KAI - AOS Renew - Client", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
                 OpenedPasswordManager = true;

@@ -6,6 +6,8 @@ namespace KaiAosNotifyClient
 {
     internal static class ClientThemeManager
     {
+        public const string AppUserModelId = "BMW.KaiAosRenew.Client";
+
         private static bool _night;
         private static bool _listening;
         private static Func<string> _getMode;
