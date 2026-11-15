@@ -221,6 +221,10 @@ namespace KaiAosNotifyClient
                 { "UpdateServerAvailableShort", "Server → {0}" },
                 { "UpdateServerConfirm", "Update server to {0}? The server will download, install, and restart." },
                 { "UpdateServerSendFail", "Could not send server update command." },
+                { "UpdateServerWaiting", "Waiting for server after update…" },
+                { "UpdateServerVerifying", "Checking server version…" },
+                { "UpdateServerDone", "Server updated to {0}" },
+                { "UpdateServerStillOld", "Server still on {0}; update may have failed" },
             };
         }
 
@@ -370,6 +374,10 @@ namespace KaiAosNotifyClient
                 { "UpdateServerAvailableShort", "Server → {0}" },
                 { "UpdateServerConfirm", "Actualizezi serverul la {0}? Serverul descarcă, instalează și repornește." },
                 { "UpdateServerSendFail", "Nu s-a putut trimite comanda de update server." },
+                { "UpdateServerWaiting", "Aștept serverul după update…" },
+                { "UpdateServerVerifying", "Verific versiunea serverului…" },
+                { "UpdateServerDone", "Server actualizat la {0}" },
+                { "UpdateServerStillOld", "Serverul e încă pe {0}; update-ul poate fi eșuat" },
                 { "VinTipDuration", "Durată tip VIN (sec):" },
                 { "Yes", "Da" },
                 { "LogAll", "Toate" },

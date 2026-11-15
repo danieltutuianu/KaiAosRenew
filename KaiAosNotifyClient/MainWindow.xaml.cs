@@ -111,6 +111,8 @@ namespace KaiAosNotifyClient
         private string _serverVersionFromFooter = "";
         private string _latestServerReleaseVer = "";
         private bool _serverUpdateCheckBusy;
+        private bool _awaitingServerUpdateReconnect;
+        private string _pendingServerUpdateVer = "";
         private readonly DispatcherTimer _updatePeekTimer = new DispatcherTimer();
         private UpdateInfo _pendingUpdate;
         private bool _updateCheckBusy;
@@ -600,27 +602,62 @@ namespace KaiAosNotifyClient
                     ClientUiStrings.T("UpdateServer"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            var msg = string.Format(ClientUiStrings.T("UpdateServerConfirm"), _latestServerReleaseVer);
+            var targetVer = _latestServerReleaseVer;
+            var msg = string.Format(ClientUiStrings.T("UpdateServerConfirm"), targetVer);
             var result = MessageBox.Show(this, msg, ClientUiStrings.T("UpdateServer"),
                 MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (result != MessageBoxResult.Yes) return;
 
             if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = false;
+            _pendingServerUpdateVer = targetVer;
             var ok = _client.Send(new NotifyMessage
             {
                 Kind = "serverUpdate",
                 Level = "info",
                 Title = "KAI - AOS Renew - Client",
-                Text = _latestServerReleaseVer ?? ""
+                Text = targetVer ?? ""
             });
             if (!ok)
             {
+                _pendingServerUpdateVer = "";
                 if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = true;
                 MessageBox.Show(this, ClientUiStrings.T("UpdateServerSendFail"),
                     ClientUiStrings.T("UpdateServer"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             BeginAosAckWait();
+        }
+
+        private async Task FinishServerUpdateReconnectAsync()
+        {
+            if (!_awaitingServerUpdateReconnect) return;
+            SetConnStatus(ClientUiStrings.T("UpdateServerVerifying"));
+            await CheckRemoteServerVersionAsync();
+            if (!_awaitingServerUpdateReconnect) return;
+
+            var expected = _pendingServerUpdateVer ?? "";
+            var actual = _serverVersionFromFooter ?? "";
+            _awaitingServerUpdateReconnect = false;
+            _pendingServerUpdateVer = "";
+
+            if (!string.IsNullOrEmpty(actual)
+                && (string.IsNullOrEmpty(expected)
+                    || string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)
+                    || !UpdateService.IsNewerVersion(expected, actual)))
+            {
+                AppendActivityRow(null, "success",
+                    string.Format(ClientUiStrings.T("UpdateServerDone"), actual));
+                SetConnStatus("");
+            }
+            else
+            {
+                AppendActivityRow(null, "warning",
+                    string.Format(ClientUiStrings.T("UpdateServerStillOld"),
+                        string.IsNullOrEmpty(actual) ? "?" : actual));
+                SetConnStatus("");
+                JumpToActivityWithAlert();
+            }
+            RefreshServerUpdateUi();
         }
 
         private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
@@ -1396,11 +1433,15 @@ namespace KaiAosNotifyClient
             UpdateAosSyncStatus();
             if (!string.IsNullOrEmpty(text) && !string.Equals(text, "OK", StringComparison.OrdinalIgnoreCase))
                 AppendActivityRow(null, "success", "AOS: " + text);
-            // Server is applying update + restart — hide the server-update CTA until reconnect.
+            // Server is applying update + restart — wait for reconnect, then re-check version.
             if (!string.IsNullOrEmpty(text) && text.IndexOf("serverUpdate", StringComparison.OrdinalIgnoreCase) >= 0)
             {
+                _awaitingServerUpdateReconnect = true;
+                if (string.IsNullOrEmpty(_pendingServerUpdateVer))
+                    _pendingServerUpdateVer = _latestServerReleaseVer ?? "";
                 _latestServerReleaseVer = "";
                 RefreshServerUpdateUi();
+                SetConnStatus(ClientUiStrings.T("UpdateServerWaiting"));
             }
         }
 
@@ -1794,7 +1835,11 @@ namespace KaiAosNotifyClient
                     SetConnStatus(steady ? "" : status);
                 }
                 if (!_client.IsConnected)
+                {
                     ShowDisconnectedFooter();
+                    if (_awaitingServerUpdateReconnect)
+                        SetConnStatus(ClientUiStrings.T("UpdateServerWaiting"));
+                }
                 RefreshTrayStatus();
             }));
         }
@@ -1807,7 +1852,10 @@ namespace KaiAosNotifyClient
                 DisconnectBtn.IsEnabled = true;
                 _lastHeardUtc = DateTime.UtcNow;
                 _offlineAlertShown = false;
-                SetConnStatus("");
+                if (_awaitingServerUpdateReconnect)
+                    SetConnStatus(ClientUiStrings.T("UpdateServerVerifying"));
+                else
+                    SetConnStatus("");
                 if (!_hasServerFooter)
                     ApplyStatusMode("ok", ClientUiStrings.T("Connected"));
                 CaptureConnectionFields();
@@ -1839,6 +1887,8 @@ namespace KaiAosNotifyClient
                 }
                 CancelAosAckWait();
                 SetKaiBusy(false);
+                if (_awaitingServerUpdateReconnect)
+                    SetConnStatus(ClientUiStrings.T("UpdateServerWaiting"));
                 UpdateAosControlsEnabled();
                 UpdateAosSyncStatus();
                 RefreshTrayStatus();
@@ -2781,7 +2831,11 @@ namespace KaiAosNotifyClient
                 raw = raw.Substring(colon + 1).Trim();
             _serverVersionFromFooter = raw;
             RefreshVersionLabel();
-            if (!string.Equals(raw, prevServerVer, StringComparison.Ordinal)
+            if (_awaitingServerUpdateReconnect && !string.IsNullOrEmpty(raw))
+            {
+                var finish = FinishServerUpdateReconnectAsync();
+            }
+            else if (!string.Equals(raw, prevServerVer, StringComparison.Ordinal)
                 || string.IsNullOrEmpty(_latestServerReleaseVer))
             {
                 var ignore = CheckRemoteServerVersionAsync();
