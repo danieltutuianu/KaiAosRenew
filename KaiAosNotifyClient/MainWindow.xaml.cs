@@ -371,6 +371,7 @@ namespace KaiAosNotifyClient
             if (ShowAlertTipsCheck != null) ShowAlertTipsCheck.Content = ClientUiStrings.T("ShowAlertTips");
             if (TestBalloonTipsBtn != null) TestBalloonTipsBtn.Content = ClientUiStrings.T("TrayTestTips");
             if (KeysRefreshBtn != null) KeysRefreshBtn.Content = ClientUiStrings.T("KeysRefresh");
+            if (KeysClearBtn != null) KeysClearBtn.Content = ClientUiStrings.T("ClearKeys");
             if (KeysRetryBmwBtn != null)
             {
                 KeysRetryBmwBtn.Content = ClientUiStrings.T("KeysRetryBmw");
@@ -653,6 +654,12 @@ namespace KaiAosNotifyClient
                 }
                 ShowPendingUpdate(update);
             }
+            await BeginClientSelfUpdateAsync(update);
+        }
+
+        private async Task BeginClientSelfUpdateAsync(UpdateInfo update)
+        {
+            if (update == null || _clientUpdateBusy) return;
             var ver = UpdateService.FormatUpdateVersion(update);
             var confirm = string.Format(ClientUiStrings.T("UpdateAvailable"), ver);
             var result = MessageBox.Show(this, confirm, ClientUiStrings.T("CheckForUpdates"),
@@ -662,6 +669,7 @@ namespace KaiAosNotifyClient
             _clientUpdateBusy = true;
             UpdateAosControlsEnabled();
             if (FooterUpdateBtn != null) FooterUpdateBtn.IsEnabled = false;
+            if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = false;
             try
             {
                 SendClientUpdating(ver);
@@ -679,6 +687,7 @@ namespace KaiAosNotifyClient
                 UpdateAosControlsEnabled();
                 if (FooterUpdateBtn != null && (_pendingUpdate != null || _debugMode))
                     FooterUpdateBtn.IsEnabled = true;
+                if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = true;
             }
         }
 
@@ -977,18 +986,21 @@ namespace KaiAosNotifyClient
 
         private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
         {
+            if (_clientUpdateBusy) return;
             if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = false;
             try
             {
                 var update = await UpdateService.PeekAsync();
                 ShowPendingUpdate(update);
+                try { await RefreshUpdateFeedAsync(true); }
+                catch { }
                 if (update == null)
                 {
                     MessageBox.Show(this, ClientUiStrings.T("UpdateNone"),
                         ClientUiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
                 }
-                try { await RefreshUpdateFeedAsync(true); }
-                catch { }
+                await BeginClientSelfUpdateAsync(update);
             }
             catch (Exception ex)
             {
@@ -997,7 +1009,8 @@ namespace KaiAosNotifyClient
             }
             finally
             {
-                if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = true;
+                if (CheckForUpdatesBtn != null && !_clientUpdateBusy)
+                    CheckForUpdatesBtn.IsEnabled = true;
             }
         }
 
@@ -1558,6 +1571,30 @@ namespace KaiAosNotifyClient
                 SendAosCmd("refreshKeys");
             ApplyKeysFilter();
             UpdateKeysRetryButton();
+        }
+
+        private void KeysClear_Click(object sender, RoutedEventArgs e)
+        {
+            var confirm = MessageBox.Show(
+                this,
+                ClientUiStrings.T("ClearKeysConfirm"),
+                ClientUiStrings.T("ClearKeys"),
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question,
+                MessageBoxResult.No);
+            if (confirm != MessageBoxResult.Yes)
+                return;
+
+            _keyAllRows.Clear();
+            PersistKeysHistory();
+            ClearKeysRowHighlight();
+            _lastVin = null;
+            ApplyKeysFilter();
+            UpdateKeysTodayBadge();
+            UpdateKeysAlert();
+            UpdateKeysRetryButton();
+            RefreshTrayStatus();
+            AppendActivityRow(null, "info", ClientUiStrings.T("ClearKeysDone"));
         }
 
         private void KeysRetryBmw_Click(object sender, RoutedEventArgs e)

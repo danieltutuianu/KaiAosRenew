@@ -130,6 +130,10 @@ namespace KaiAosNotifyClient
                 { "KeysFilterWaiting", "Waiting" },
                 { "KeysRecent", "Recent key activity:" },
                 { "KeysRefresh", "Refresh" },
+                { "ClearKeys", "Clear" },
+                { "ClearKeysConfirm", "Clear the Keys list on this client only?\n\nThe server and other clients are unchanged." },
+                { "ClearKeysDone", "Keys list cleared (this client only)." },
+
                 { "KeysRetryBmw", "Retry BMW" },
                 { "KeysRetryBmwTip", "Ask the server to re-send the last key file to BMW Server" },
                 { "KeysSearch", "Search:" },
@@ -323,6 +327,10 @@ namespace KaiAosNotifyClient
                 { "KeysFilterWaiting", "În așteptare" },
                 { "KeysRecent", "Activitate chei recentă:" },
                 { "KeysRefresh", "Reîmprospătează" },
+                { "ClearKeys", "Golește" },
+                { "ClearKeysConfirm", "Golești lista Keys doar pe acest client?\n\nServerul și ceilalți clienți rămân neschimbați." },
+                { "ClearKeysDone", "Lista Keys a fost golită (doar pe acest client)." },
+
                 { "KeysRetryBmw", "Retry BMW" },
                 { "KeysRetryBmwTip", "Cere serverului să retrimită ultimul fișier cheie la BMW Server" },
                 { "KeysSearch", "Căutare:" },

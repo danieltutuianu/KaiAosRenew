@@ -62,6 +62,8 @@
             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
               <Button x:Name="KeysRefreshBtn" Content="Refresh" Style="{DynamicResource BeigeButton}"
                       Click="KeysRefresh_Click" MinWidth="90" Margin="0,0,8,0" />
+              <Button x:Name="KeysClearBtn" Content="Clear" Style="{DynamicResource BeigeButton}"
+                      Click="KeysClear_Click" MinWidth="80" Margin="0,0,8,0" />
               <Button x:Name="KeysRetryBmwBtn" Content="Retry BMW" Style="{DynamicResource BeigeButton}"
                       Click="KeysRetryBmw_Click" MinWidth="100" Margin="0,0,8,0"
                       IsEnabled="False"

@@ -4,6 +4,11 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.11] - 2026-11-15
+
+- Keys: Clear button on server and client — server clear is local only (no empty keySync); client clear is local + history
+- Settings Check for updates: if newer version exists, Yes/No then install and restart (same flow as footer Update)
+
 ## [1.2.10] - 2026-11-15
 
 - AOS validation on server and client: empty email/password, `@` / no mid-spaces, interval 1–168, host/port on Connect

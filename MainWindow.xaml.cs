@@ -133,6 +133,8 @@ namespace KaiAosRenew
         private bool _keysRefreshAnnouncePending;
         private string _trayVinMenuSignature;
         private string _lastKeySyncSignature;
+        /// <summary>After Clear Keys: hide events at or before this local time; never push empty keySync.</summary>
+        private DateTime? _keysClearedAfterLocal;
         private Button _keysCopyFeedbackBtn;
         private readonly DispatcherTimer _keysCopyFeedbackTimer = new DispatcherTimer();
         private readonly DispatcherTimer _intervalDebounceTimer = new DispatcherTimer();
@@ -772,6 +774,7 @@ namespace KaiAosRenew
         private void ApplyKeysTabStrings()
         {
             if (KeysRefreshBtn != null) KeysRefreshBtn.Content = UiStrings.T("KeysRefresh");
+            if (KeysClearBtn != null) KeysClearBtn.Content = UiStrings.T("ClearKeys");
             if (KeysRetryBmwBtn != null)
             {
                 KeysRetryBmwBtn.Content = UiStrings.T("KeysRetryBmw");
@@ -972,6 +975,29 @@ namespace KaiAosRenew
         private void KeysRefresh_Click(object sender, RoutedEventArgs e)
         {
             RefreshKeysTab(true);
+        }
+
+        private void KeysClear_Click(object sender, RoutedEventArgs e)
+        {
+            var confirm = MessageBox.Show(
+                this,
+                UiStrings.T("ClearKeysConfirm"),
+                UiStrings.T("ClearKeys"),
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question,
+                MessageBoxResult.No);
+            if (confirm != MessageBoxResult.Yes)
+                return;
+
+            _keysClearedAfterLocal = DateTime.Now;
+            _keysAllEvents = new List<KeyActivityEvent>();
+            ClearKeysRowHighlight();
+            ApplyKeysFilter();
+            UpdateKeysTodayBadge(0);
+            UpdateKeysRetryButton();
+            // Do not broadcast empty keySync — clients keep their existing lists.
+            _lastKeySyncSignature = "";
+            AppendLog(UiStrings.T("ClearKeysDone"), LogLevel.Info);
         }
 
         private void KeysOpenUploaderLog_Click(object sender, RoutedEventArgs e)
@@ -1854,9 +1880,10 @@ namespace KaiAosRenew
                         KeysServicesText.Text = "—";
                 }
 
-                _keysAllEvents = snap.Events ?? new List<KeyActivityEvent>();
+                var raw = snap.Events ?? new List<KeyActivityEvent>();
+                _keysAllEvents = FilterAfterKeysClear(raw);
                 ApplyKeysFilter();
-                UpdateKeysTodayBadge(snap.KeysToday);
+                UpdateKeysTodayBadge(CountKeysToday(_keysAllEvents));
                 HandleKeysNotifications(snap);
                 UpdateKeysAlert(snap);
                 RebuildTrayMenu();
@@ -2034,6 +2061,34 @@ namespace KaiAosRenew
                 list.Add(ev);
             }
             return list;
+        }
+
+        private List<KeyActivityEvent> FilterAfterKeysClear(IEnumerable<KeyActivityEvent> src)
+        {
+            var list = new List<KeyActivityEvent>();
+            if (src == null) return list;
+            foreach (var ev in src)
+            {
+                if (ev == null) continue;
+                if (_keysClearedAfterLocal.HasValue
+                    && ev.DetectedLocal <= _keysClearedAfterLocal.Value)
+                    continue;
+                list.Add(ev);
+            }
+            return list;
+        }
+
+        private static int CountKeysToday(IEnumerable<KeyActivityEvent> src)
+        {
+            var today = DateTime.Now.Date;
+            var n = 0;
+            if (src == null) return 0;
+            foreach (var ev in src)
+            {
+                if (ev != null && ev.DetectedLocal.Date == today)
+                    n++;
+            }
+            return n;
         }
 
         private static List<KeyActivityEvent> FilterByStatus(IEnumerable<KeyActivityEvent> src, KeyEventStatus status)
@@ -2300,6 +2355,12 @@ namespace KaiAosRenew
                 if (_settings == null || !_settings.NotifyServerEnabled) return;
                 if (!NotifyServer.Instance.IsRunning || NotifyServer.Instance.ClientCount <= 0) return;
                 var rows = GetRecentKeyRows(10) ?? new List<KeyActivityEvent>();
+                // Never push empty snapshot — would wipe client lists (ApplyKeySync is authoritative).
+                if (rows.Count == 0)
+                {
+                    _lastKeySyncSignature = "";
+                    return;
+                }
                 var sig = KeySyncSignature(rows);
                 if (string.Equals(sig, _lastKeySyncSignature, StringComparison.Ordinal)) return;
                 _lastKeySyncSignature = sig;
@@ -2952,18 +3013,28 @@ namespace KaiAosRenew
 
         private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
         {
+            if (_remoteServerUpdateBusy)
+            {
+                MessageBox.Show(this, UiStrings.T("UpdateServerBusy"),
+                    UiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = false;
             try
             {
-                // Peek only — apply goes through Footer Update (broadcast + countdown).
                 var update = await UpdateService.PeekAsync();
                 ShowPendingUpdate(update);
                 if (update == null)
                 {
                     MessageBox.Show(this, UiStrings.T("UpdateNone"),
                         UiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    try { await RefreshUpdateFeedAsync(); }
+                    catch { }
+                    return;
                 }
-                await RefreshUpdateFeedAsync();
+                try { await RefreshUpdateFeedAsync(); }
+                catch { }
+                await ApplySelfUpdateAsync(update, true, null, UiStrings.T("UpdateSourceFooter"));
             }
             catch (Exception ex)
             {
@@ -3844,15 +3915,19 @@ namespace KaiAosRenew
                 {
                     RefreshKeysTab(true);
                     var rows = GetRecentKeyRows(10) ?? new List<KeyActivityEvent>();
-                    var payload = NotifyMessage.EncodeKeySync(rows) ?? "";
-                    _lastKeySyncSignature = KeySyncSignature(rows);
-                    NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                    // Skip empty keySync after Clear Keys — do not wipe the requesting client.
+                    if (rows.Count > 0)
                     {
-                        Kind = "keySync",
-                        Level = "info",
-                        Title = "KAI - AOS Renew",
-                        Text = payload
-                    });
+                        var payload = NotifyMessage.EncodeKeySync(rows) ?? "";
+                        _lastKeySyncSignature = KeySyncSignature(rows);
+                        NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                        {
+                            Kind = "keySync",
+                            Level = "info",
+                            Title = "KAI - AOS Renew",
+                            Text = payload
+                        });
+                    }
                     SendAosAck(clientId, true, "refreshKeys");
                     return;
                 }
@@ -3912,7 +3987,10 @@ namespace KaiAosRenew
             {
                 if (_settings == null || !_settings.NotifyServerEnabled) return;
                 // Authoritative snapshot only — never invent Waiting stubs from VIN cache.
+                // Skip empty after Clear Keys so reconnect does not wipe the client's history.
                 var rows = GetRecentKeyRows(10) ?? new List<KeyActivityEvent>();
+                if (rows.Count == 0)
+                    return;
                 var payload = NotifyMessage.EncodeKeySync(rows) ?? "";
                 _lastKeySyncSignature = KeySyncSignature(rows);
                 NotifyServer.Instance.SendTo(clientId, new NotifyMessage
