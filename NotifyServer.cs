@@ -38,6 +38,8 @@ namespace KaiAosRenew
         public int Port { get { return _port; } }
         /// <summary>Raised on the accept thread after a client is added (arg = client id).</summary>
         public event Action<int> ClientConnected;
+        /// <summary>Raised after a client is removed (arg = client id).</summary>
+        public event Action<int> ClientDisconnected;
         /// <summary>Raised when a client sends a JSON line (args = client id, message).</summary>
         public event Action<int, NotifyMessage> MessageFromClient;
         public int ClientCount
@@ -291,15 +293,27 @@ namespace KaiAosRenew
         {
             if (c == null) return;
             var removed = false;
+            var id = 0;
             lock (_gate)
             {
                 removed = _clients.Remove(c);
+                if (removed) id = c.Id;
             }
             if (!removed) return;
             try { c.Dispose(); }
             catch { }
-            try { RenewEngine.Log("Notify client disconnected #" + c.Id + " (" + ClientCount + ")"); }
+            try { RenewEngine.Log("Notify client disconnected #" + id + " (" + ClientCount + ")"); }
             catch { }
+            var handler = ClientDisconnected;
+            if (handler != null)
+            {
+                try { handler(id); }
+                catch (Exception ex)
+                {
+                    try { RenewEngine.Log("Notify ClientDisconnected handler: " + ex.Message); }
+                    catch { }
+                }
+            }
         }
 
         private sealed class ClientConn : IDisposable

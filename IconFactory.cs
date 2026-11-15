@@ -23,10 +23,27 @@ namespace KaiAosRenew
 
         public static Icon GetErrorTrayIcon()
         {
+            return GetBadgedTrayIcon(Color.FromArgb(220, 200, 30, 30), SystemIcons.Error);
+        }
+
+        /// <summary>App icon with an amber badge — update available (no balloon).</summary>
+        public static Icon GetOutdatedTrayIcon(Icon baseIcon = null)
+        {
+            return GetBadgedTrayIcon(Color.FromArgb(230, 210, 140, 20), SystemIcons.Warning, baseIcon);
+        }
+
+        private static Icon GetBadgedTrayIcon(Color badge, Icon fallback, Icon baseIcon = null)
+        {
+            Icon owned = null;
             try
             {
-                using (var baseIcon = GetAppIcon())
-                using (var baseBmp = baseIcon.ToBitmap())
+                var src = baseIcon;
+                if (src == null)
+                {
+                    owned = GetAppIcon();
+                    src = owned;
+                }
+                using (var baseBmp = src.ToBitmap())
                 {
                     var size = 16;
                     var bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
@@ -36,7 +53,7 @@ namespace KaiAosRenew
                         g.SmoothingMode = SmoothingMode.AntiAlias;
                         g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                         g.DrawImage(baseBmp, 0, 0, size, size);
-                        using (var brush = new SolidBrush(Color.FromArgb(220, 200, 30, 30)))
+                        using (var brush = new SolidBrush(badge))
                         using (var border = new Pen(Color.White, 1f))
                         {
                             g.FillEllipse(brush, size - 8, size - 8, 7, 7);
@@ -45,7 +62,6 @@ namespace KaiAosRenew
                     }
                     var hIcon = bmp.GetHicon();
                     var icon = Icon.FromHandle(hIcon);
-                    // Clone so we can free the HICON later safely via DestroyIcon path
                     var clone = (Icon)icon.Clone();
                     NativeIconHelper.DestroyIcon(hIcon);
                     icon.Dispose();
@@ -55,7 +71,15 @@ namespace KaiAosRenew
             }
             catch
             {
-                return SystemIcons.Error;
+                return fallback;
+            }
+            finally
+            {
+                if (owned != null)
+                {
+                    try { owned.Dispose(); }
+                    catch { }
+                }
             }
         }
 

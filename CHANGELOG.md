@@ -4,6 +4,13 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-11-15
+
+- Broadcast `serverUpdating` to all clients before self-update (countdown, Activity log); `serverUpdateFailed` on error
+- All clients hide Update server and wait/verify after reconnect; concurrent Update server is gated
+- Client Update gated while downloading; `clientUpdating` marks the client in the server notify combo
+- Footer buttons show Update client/server v.X; channel tooltips; tray outdated badge (no update balloons)
+
 ## [1.2.8] - 2026-11-15
 
 - Shared `updateFeed`: any GitHub poll loads latest server + client versions; server redistributes to all clients immediately

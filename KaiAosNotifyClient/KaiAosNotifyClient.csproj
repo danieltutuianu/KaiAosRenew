@@ -98,6 +98,9 @@
     <Compile Include="..\UpdateService.cs">
       <Link>UpdateService.cs</Link>
     </Compile>
+    <Compile Include="..\IconFactory.cs">
+      <Link>IconFactory.cs</Link>
+    </Compile>
     <Compile Include="LanServerDiscovery.cs" />
     <Compile Include="NotifyMessage.cs" />
     <Compile Include="NotifyClient.cs" />

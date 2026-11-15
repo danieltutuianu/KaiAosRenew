@@ -132,8 +132,11 @@ namespace KaiAosRenew
         private readonly DispatcherTimer _updatePeekTimer = new DispatcherTimer();
         private UpdateInfo _pendingUpdate;
         private bool _updateCheckBusy;
+        private bool _remoteServerUpdateBusy;
         private string _feedServerVer = "";
         private string _feedClientVer = "";
+        private readonly HashSet<int> _clientsUpdating = new HashSet<int>();
+        private System.Drawing.Icon _outdatedIcon;
         private DateTime _lastKeys403RemediateUtc = DateTime.MinValue;
         private string _lastKeys403RemediateKey;
         private string _pending403RetryVin;
@@ -199,6 +202,7 @@ namespace KaiAosRenew
             HookPowerEvents();
             ApplyKeysMonitorSettings();
             NotifyServer.Instance.ClientConnected += OnNotifyClientConnected;
+            NotifyServer.Instance.ClientDisconnected += OnNotifyClientDisconnected;
             NotifyServer.Instance.MessageFromClient += OnNotifyMessageFromClient;
             ApplyNotifyServerFromSettings();
             _keyMonitor.Start(OnKeyActivityChanged);
@@ -471,11 +475,10 @@ namespace KaiAosRenew
             }
             if (CheckForUpdatesBtn != null)
                 CheckForUpdatesBtn.Content = UiStrings.T("CheckForUpdates");
-            if (FooterUpdateBtn != null)
+            if (_pendingUpdate != null)
+                ShowPendingUpdate(_pendingUpdate);
+            else if (FooterUpdateBtn != null)
                 FooterUpdateBtn.Content = UiStrings.T("Update");
-            if (_pendingUpdate != null && UpdateAvailableText != null)
-                UpdateAvailableText.Text = string.Format(UiStrings.T("UpdateAvailableShort"),
-                    UpdateService.FormatUpdateVersion(_pendingUpdate));
             if (SectionConfigText != null) SectionConfigText.Text = UiStrings.T("SectionConfig");
             if (ConfigPathLabel != null) ConfigPathLabel.Text = UiStrings.T("ConfigPath");
             if (BrowseBtn != null) BrowseBtn.Content = UiStrings.T("Browse");
@@ -2512,11 +2515,18 @@ namespace KaiAosRenew
         {
             if (_tray == null) return;
             var alert = _hasFailureAlert || _hintTrayIcon || _keysAlert || _renewAlert;
+            var outdated = _pendingUpdate != null;
             if (alert)
             {
                 if (_errorIcon == null)
                     _errorIcon = IconFactory.GetErrorTrayIcon();
                 _tray.Icon = _errorIcon;
+            }
+            else if (outdated)
+            {
+                if (_outdatedIcon == null)
+                    _outdatedIcon = IconFactory.GetOutdatedTrayIcon(_appIcon);
+                _tray.Icon = _outdatedIcon;
             }
             else if (_appIcon != null)
             {
@@ -2597,23 +2607,16 @@ namespace KaiAosRenew
         {
             if (_updateCheckBusy) return;
             _updateCheckBusy = true;
+            UpdateInfo peeked = null;
             try
             {
-                if (autoApply)
-                {
-                    // Silent apply if available (restarts). One GitHub hit — no second peek.
-                    await UpdateService.CheckForUpdateAsync(this, true, true, UiStrings.T);
-                    ShowPendingUpdate(null);
-                }
-                else
-                {
-                    var update = await UpdateService.PeekAsync();
-                    ShowPendingUpdate(update);
-                }
+                peeked = await UpdateService.PeekAsync();
+                ShowPendingUpdate(peeked);
             }
             catch
             {
                 ShowPendingUpdate(null);
+                peeked = null;
             }
             finally
             {
@@ -2621,6 +2624,14 @@ namespace KaiAosRenew
             }
             try { await RefreshUpdateFeedAsync(); }
             catch { }
+            if (autoApply && peeked != null)
+            {
+                try
+                {
+                    await ApplySelfUpdateAsync(peeked, false, null, UiStrings.T("UpdateSourceAuto"));
+                }
+                catch { }
+            }
         }
 
         private async Task RefreshUpdateFeedAsync()
@@ -2701,7 +2712,11 @@ namespace KaiAosRenew
                 if (UpdateAvailableText != null)
                     UpdateAvailableText.Visibility = Visibility.Collapsed;
                 if (FooterUpdateBtn != null)
+                {
                     FooterUpdateBtn.Visibility = Visibility.Collapsed;
+                    FooterUpdateBtn.ToolTip = null;
+                }
+                RefreshTrayIcon();
                 return;
             }
             var ver = UpdateService.FormatUpdateVersion(update);
@@ -2712,10 +2727,12 @@ namespace KaiAosRenew
             }
             if (FooterUpdateBtn != null)
             {
-                FooterUpdateBtn.Content = UiStrings.T("Update");
+                FooterUpdateBtn.Content = string.Format(UiStrings.T("UpdateServerBtn"), ver);
+                FooterUpdateBtn.ToolTip = string.Format(UiStrings.T("UpdateChannelTooltip"), UpdateService.ServerChannel);
                 FooterUpdateBtn.Visibility = Visibility.Visible;
                 FooterUpdateBtn.IsEnabled = true;
             }
+            RefreshTrayIcon();
         }
 
         private async void FooterUpdate_Click(object sender, RoutedEventArgs e)
@@ -2724,7 +2741,7 @@ namespace KaiAosRenew
             if (FooterUpdateBtn != null) FooterUpdateBtn.IsEnabled = false;
             try
             {
-                await UpdateService.ApplyUpdateAsync(this, _pendingUpdate, UiStrings.T, true);
+                await ApplySelfUpdateAsync(_pendingUpdate, true, null, UiStrings.T("UpdateSourceFooter"));
             }
             catch (Exception ex)
             {
@@ -2733,7 +2750,89 @@ namespace KaiAosRenew
             }
             finally
             {
-                if (FooterUpdateBtn != null) FooterUpdateBtn.IsEnabled = true;
+                if (FooterUpdateBtn != null && _pendingUpdate != null && !_remoteServerUpdateBusy)
+                    FooterUpdateBtn.IsEnabled = true;
+            }
+        }
+
+        private void BroadcastServerUpdating(string version)
+        {
+            BroadcastNotify(new NotifyMessage
+            {
+                Kind = "serverUpdating",
+                Level = "info",
+                Title = "KAI - AOS Renew",
+                Text = version ?? ""
+            });
+        }
+
+        private void BroadcastServerUpdateFailed(string error)
+        {
+            BroadcastNotify(new NotifyMessage
+            {
+                Kind = "serverUpdateFailed",
+                Level = "error",
+                Title = "KAI - AOS Renew",
+                Text = error ?? ""
+            });
+        }
+
+        private async Task ApplySelfUpdateAsync(UpdateInfo update, bool prompt, int? ackClientId, string sourceLabel)
+        {
+            if (update == null) return;
+            if (_remoteServerUpdateBusy)
+            {
+                if (ackClientId.HasValue)
+                    SendAosAck(ackClientId.Value, false, UiStrings.T("UpdateServerBusy"));
+                return;
+            }
+            _remoteServerUpdateBusy = true;
+            var ver = UpdateService.FormatUpdateVersion(update);
+            try
+            {
+                if (prompt)
+                {
+                    var msg = string.Format(UiStrings.T("UpdateAvailable"), ver);
+                    var result = MessageBox.Show(this, msg, UiStrings.T("CheckForUpdates"),
+                        MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (result != MessageBoxResult.Yes)
+                        return;
+                }
+
+                AppendLog(string.Format(UiStrings.T("UpdateStartedFrom"),
+                    string.IsNullOrEmpty(sourceLabel) ? "?" : sourceLabel), LogLevel.Info);
+                BroadcastServerUpdating(ver);
+                if (ackClientId.HasValue)
+                    SendAosAck(ackClientId.Value, true, "serverUpdate " + ver);
+
+                if (UpdateAvailableText != null)
+                {
+                    UpdateAvailableText.Text = UiStrings.T("ServerRestarting");
+                    UpdateAvailableText.Visibility = Visibility.Visible;
+                }
+                if (FooterUpdateBtn != null)
+                    FooterUpdateBtn.IsEnabled = false;
+
+                await System.Threading.Tasks.Task.Delay(2500);
+
+                AppendLog(string.Format(UiStrings.T("UpdateApplied"), ver), LogLevel.Info);
+                await UpdateService.ApplyUpdateAsync(this, update, UiStrings.T, false);
+            }
+            catch (Exception ex)
+            {
+                var err = ex.Message ?? "Update failed";
+                AppendLog(string.Format(UiStrings.T("UpdateFailed"), err), LogLevel.Error);
+                BroadcastServerUpdateFailed(err);
+                if (ackClientId.HasValue)
+                {
+                    try { SendAosAck(ackClientId.Value, false, err); }
+                    catch { }
+                }
+                ShowPendingUpdate(_pendingUpdate ?? update);
+            }
+            finally
+            {
+                _remoteServerUpdateBusy = false;
             }
         }
 
@@ -2749,12 +2848,14 @@ namespace KaiAosRenew
             if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = false;
             try
             {
-                // Manual check always prompts; keep banner if user declines.
-                var update = await UpdateService.CheckForUpdateAsync(this, false, false, UiStrings.T);
-                if (update != null)
-                    ShowPendingUpdate(update);
-                else
-                    ShowPendingUpdate(null);
+                // Peek only — apply goes through Footer Update (broadcast + countdown).
+                var update = await UpdateService.PeekAsync();
+                ShowPendingUpdate(update);
+                if (update == null)
+                {
+                    MessageBox.Show(this, UiStrings.T("UpdateNone"),
+                        UiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Information);
+                }
                 await RefreshUpdateFeedAsync();
             }
             catch (Exception ex)
@@ -3294,6 +3395,32 @@ namespace KaiAosRenew
                 var ignore = HandleInboundUpdateFeedAsync(msg.Text);
                 return;
             }
+            if (kind == "clientupdating")
+            {
+                MarkClientUpdating(clientId, true, msg.Text);
+                return;
+            }
+            if (kind == "clientupdatedone")
+            {
+                MarkClientUpdating(clientId, false, null);
+                return;
+            }
+        }
+
+        private void MarkClientUpdating(int clientId, bool updating, string version)
+        {
+            if (clientId <= 0) return;
+            if (updating)
+            {
+                _clientsUpdating.Add(clientId);
+                AppendLog(string.Format(UiStrings.T("ClientUpdateStarted"), clientId,
+                    string.IsNullOrEmpty(version) ? "?" : version), LogLevel.Info);
+            }
+            else
+            {
+                _clientsUpdating.Remove(clientId);
+            }
+            RefreshNotifyClientsCombo();
         }
 
         private async void BeginServerUpdateFromClient(int clientId)
@@ -3312,9 +3439,8 @@ namespace KaiAosRenew
                     SendAosAck(clientId, false, UiStrings.T("UpdateNone"));
                     return;
                 }
-                // Ack before restart so the client clears the wait UI.
-                SendAosAck(clientId, true, "serverUpdate " + UpdateService.FormatUpdateVersion(update));
-                await UpdateService.ApplyUpdateAsync(this, update, UiStrings.T, false);
+                await ApplySelfUpdateAsync(update, false, clientId,
+                    string.Format(UiStrings.T("UpdateSourceClient"), clientId));
             }
             catch (Exception ex)
             {
@@ -3601,6 +3727,16 @@ namespace KaiAosRenew
             }
         }
 
+        private void OnNotifyClientDisconnected(int clientId)
+        {
+            var idCopy = clientId;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_clientsUpdating.Remove(idCopy))
+                    RefreshNotifyClientsCombo();
+            }));
+        }
+
         private void OnNotifyClientConnected(int clientId)
         {
             var idCopy = clientId;
@@ -3715,10 +3851,13 @@ namespace KaiAosRenew
             {
                 foreach (var c in NotifyServer.Instance.GetClients())
                 {
+                    var label = c.Display ?? ("#" + c.Id);
+                    if (_clientsUpdating.Contains(c.Id))
+                        label = string.Format(UiStrings.T("ClientUpdatingLabel"), label);
                     items.Add(new NotifySendTarget
                     {
                         ClientId = c.Id,
-                        Label = c.Display ?? ("#" + c.Id)
+                        Label = label
                     });
                 }
             }
@@ -3905,6 +4044,8 @@ namespace KaiAosRenew
             try { _keyReaderLogTailer.Dispose(); }
             catch { }
             try { NotifyServer.Instance.ClientConnected -= OnNotifyClientConnected; }
+            catch { }
+            try { NotifyServer.Instance.ClientDisconnected -= OnNotifyClientDisconnected; }
             catch { }
             try { NotifyServer.Instance.MessageFromClient -= OnNotifyMessageFromClient; }
             catch { }
