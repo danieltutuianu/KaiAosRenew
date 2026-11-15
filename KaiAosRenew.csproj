@@ -54,6 +54,21 @@
       <HintPath>libs\sqlite-x86\System.Data.SQLite.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Web" />
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Velopack">
+      <HintPath>packages\Velopack.1.2.161\lib\net472\Velopack.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml">
@@ -86,6 +101,7 @@
     <Compile Include="TrayBalloonWindow.cs" />
     <Compile Include="ThemeManager.cs" />
     <Compile Include="StartMenuShortcut.cs" />
+    <Compile Include="UpdateService.cs" />
     <Compile Include="UiStrings.cs" />
     <Compile Include="KaiDiag.cs" />
     <Compile Include="KeyActivityMonitor.cs" />

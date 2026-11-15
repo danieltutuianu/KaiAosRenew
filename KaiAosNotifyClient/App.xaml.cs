@@ -1,5 +1,8 @@
 using System;
+using System.IO;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 
 namespace KaiAosNotifyClient
 {
@@ -7,9 +10,27 @@ namespace KaiAosNotifyClient
     {
         public static bool StartMinimized { get; private set; }
 
+        private static void Log(string line)
+        {
+            try
+            {
+                var dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "KaiAosNotifyClient");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(
+                    Path.Combine(dir, "startup.log"),
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " " + line + Environment.NewLine);
+            }
+            catch { }
+        }
+
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+            try { RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly; }
+            catch { }
+            Log("OnStartup");
 
             if (e.Args != null)
             {
@@ -20,9 +41,25 @@ namespace KaiAosNotifyClient
                 }
             }
 
-            var window = new MainWindow();
+            MainWindow window;
+            try
+            {
+                Log("creating MainWindow");
+                window = new MainWindow();
+                Log("MainWindow created");
+            }
+            catch (Exception ex)
+            {
+                Log("MainWindow ctor FAIL: " + ex);
+                MessageBox.Show("UI failed to start:\n" + ex.Message, "KAI - AOS Renew - Client",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown(1);
+                return;
+            }
+
             MainWindow = window;
             var hide = StartMinimized || window.PreferStartHidden;
+            Log("Show hide=" + hide + " preferHidden=" + window.PreferStartHidden);
             if (hide)
             {
                 window.MarkStartedHiddenToTray();
@@ -35,7 +72,9 @@ namespace KaiAosNotifyClient
             else
             {
                 window.Show();
+                window.Activate();
             }
+            Log("Show done");
         }
     }
 }

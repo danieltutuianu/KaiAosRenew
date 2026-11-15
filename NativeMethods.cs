@@ -161,7 +161,22 @@ namespace KaiAosRenew
         }
 
         /// <summary>
-        /// Activate existing instance if a valid main HWND responds. Returns false for zombie/white-square cases.
+        /// True for main window titles like "KAI - AOS Renew" / "KAI AOS Renew"
+        /// (hyphen-safe — IndexOf("KAI AOS") fails on "KAI - AOS").
+        /// </summary>
+        private static bool IsMainWindowTitle(string title)
+        {
+            if (string.IsNullOrEmpty(title)) return false;
+            if (string.Equals(title, "KAI - AOS Renew", StringComparison.OrdinalIgnoreCase))
+                return true;
+            var compact = title.Replace(" ", "").Replace("-", "");
+            return compact.IndexOf("KAIAOS", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Activate existing instance (tray/pin second launch). Same strategy as the client:
+        /// find HWND, send WM_SHOWME, restore — return true if HWND exists (do not fail on
+        /// SendMessageTimeout==0, or Program.Main will kill the tray instance).
         /// </summary>
         public static bool TryActivateOtherInstance()
         {
@@ -173,20 +188,22 @@ namespace KaiAosRenew
 
                 // Prefer titled main window — reject untitled junk HWNDs (white square).
                 var len = GetWindowTextLength(h);
-                if (len <= 0)
+                if (len > 0)
+                {
+                    var sb = new System.Text.StringBuilder(len + 1);
+                    GetWindowText(h, sb, sb.Capacity);
+                    if (!IsMainWindowTitle(sb.ToString()))
+                        return false;
+                }
+                else
+                {
                     return false;
-                var sb = new System.Text.StringBuilder(len + 1);
-                GetWindowText(h, sb, sb.Capacity);
-                var title = sb.ToString();
-                if (title.IndexOf("KAI AOS", StringComparison.OrdinalIgnoreCase) < 0)
-                    return false;
+                }
 
                 IntPtr result;
-                var sent = SendMessageTimeout(
+                SendMessageTimeout(
                     h, Program.WmShowMe, IntPtr.Zero, IntPtr.Zero,
                     SmtoAbortIfHung | SmtoBlock, 1500, out result);
-                if (sent == IntPtr.Zero)
-                    return false;
 
                 ShowWindow(h, SwRestore);
                 SetForegroundWindow(h);
@@ -266,8 +283,7 @@ namespace KaiAosRenew
                 var sb = new System.Text.StringBuilder(len + 1);
                 GetWindowText(hwnd, sb, sb.Capacity);
                 var title = sb.ToString();
-                if (string.Equals(title, "KAI - AOS Renew", StringComparison.OrdinalIgnoreCase) ||
-                    title.IndexOf("KAI AOS", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (IsMainWindowTitle(title))
                 {
                     titled = hwnd;
                     return false;

@@ -1,6 +1,10 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
+using Velopack;
 
 namespace KaiAosRenew
 {
@@ -12,6 +16,20 @@ namespace KaiAosRenew
         [STAThread]
         private static void Main(string[] args)
         {
+            try { RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly; }
+            catch { }
+
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                if (!string.IsNullOrEmpty(baseDir))
+                    Directory.SetCurrentDirectory(baseDir);
+            }
+            catch { }
+
+            try { VelopackApp.Build().Run(); }
+            catch { }
+
             for (var i = 0; i < args.Length; i++)
             {
                 if (string.Equals(args[i], "--once", StringComparison.OrdinalIgnoreCase))
@@ -88,7 +106,11 @@ namespace KaiAosRenew
             {
                 NativeMethods.SetAppUserModelId(ThemeManager.AppUserModelId);
                 NativeMethods.EnsureTrayNotificationsEnabled();
-                StartMenuShortcut.Ensure("KAI - AOS Renew", ThemeManager.AppUserModelId);
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try { StartMenuShortcut.Ensure("KAI - AOS Renew", ThemeManager.AppUserModelId); }
+                    catch { }
+                });
                 var app = new App();
                 app.InitializeComponent();
                 app.Run();

@@ -21,6 +21,8 @@ namespace KaiAosRenew
         public bool MinimizeToTray { get; set; }
         /// <summary>X / Alt+F4 hides to tray instead of exiting.</summary>
         public bool MinimizeOnClose { get; set; }
+        /// <summary>Check/download/apply Velopack updates at startup without prompting.</summary>
+        public bool AutoUpdate { get; set; }
         public bool UseSystemProxy { get; set; }
         /// <summary>On auth failure, hint to update app password to match Chrome/Edge (no decrypt).</summary>
         public bool BrowserPasswordHintOnAuthFail { get; set; }
@@ -85,6 +87,7 @@ namespace KaiAosRenew
             BrowserPasswordHintOnAuthFail = true;
             PasswordRotateRemindHours = 1;
             MinimizeOnClose = true;
+            AutoUpdate = true;
             AuthCooldownMinutes = 60;
             KeysBalloonEnabled = true;
             KeysStallAlertEnabled = true;
@@ -202,6 +205,8 @@ namespace KaiAosRenew
                             loaded.KeysPickupFolder = @"C:\Users\Public\keyreader";
                         if (xml.IndexOf("MinimizeOnClose", StringComparison.OrdinalIgnoreCase) < 0)
                             loaded.MinimizeOnClose = true;
+                        if (xml.IndexOf("AutoUpdate", StringComparison.OrdinalIgnoreCase) < 0)
+                            loaded.AutoUpdate = true;
                         if (xml.IndexOf("AuthCooldownMinutes", StringComparison.OrdinalIgnoreCase) < 0
                             || loaded.AuthCooldownMinutes < 5)
                             loaded.AuthCooldownMinutes = 60;
@@ -254,6 +259,7 @@ namespace KaiAosRenew
             portable.LogVerbose = LogVerbose;
             portable.MinimizeToTray = MinimizeToTray;
             portable.MinimizeOnClose = MinimizeOnClose;
+            portable.AutoUpdate = AutoUpdate;
             portable.UseSystemProxy = UseSystemProxy;
             portable.BrowserPasswordHintOnAuthFail = BrowserPasswordHintOnAuthFail;
             portable.PasswordRotateRemindHours = PasswordRotateRemindHours;
@@ -298,6 +304,7 @@ namespace KaiAosRenew
             LogVerbose = imported.LogVerbose;
             MinimizeToTray = imported.MinimizeToTray;
             MinimizeOnClose = imported.MinimizeOnClose;
+            AutoUpdate = imported.AutoUpdate;
             UseSystemProxy = imported.UseSystemProxy;
             BrowserPasswordHintOnAuthFail = imported.BrowserPasswordHintOnAuthFail;
             if (imported.PasswordRotateRemindHours >= 1 && imported.PasswordRotateRemindHours <= 168)

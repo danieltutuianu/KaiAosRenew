@@ -2,6 +2,8 @@
 bin/
 obj/
 dist/
+packages/
+tools/nuget.exe
 *.user
 *.suo
 *.cache

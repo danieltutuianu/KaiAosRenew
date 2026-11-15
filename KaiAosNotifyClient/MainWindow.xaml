@@ -410,6 +410,8 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
                   <TextBlock x:Name="StartWithWindowsLabel" Text="Start with Windows:" VerticalAlignment="Center"
                              Margin="0,0,0,8" Style="{DynamicResource FieldLabel}"
@@ -427,12 +429,22 @@
                             HorizontalAlignment="Left"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
                   <TextBlock x:Name="MinimizeOnCloseLabel" Grid.Row="2" Text="Minimize on close:"
-                             VerticalAlignment="Center" Style="{DynamicResource FieldLabel}"
+                             VerticalAlignment="Center" Margin="0,0,0,8" Style="{DynamicResource FieldLabel}"
                              Width="Auto" HorizontalAlignment="Left" />
                   <CheckBox x:Name="MinimizeOnCloseCheck" Grid.Row="2" Grid.Column="1"
-                            Content="Yes (X hides to tray)" VerticalAlignment="Center"
+                            Content="Yes (X hides to tray)" VerticalAlignment="Center" Margin="0,0,0,8"
                             Style="{DynamicResource KaiCheckBox}"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
+                  <TextBlock x:Name="AutoUpdateLabel" Grid.Row="3" Text="Auto update:"
+                             VerticalAlignment="Center" Margin="0,0,0,8" Style="{DynamicResource FieldLabel}"
+                             Width="Auto" HorizontalAlignment="Left" />
+                  <CheckBox x:Name="AutoUpdateCheck" Grid.Row="3" Grid.Column="1" Content="Yes" Margin="0,0,0,8"
+                            VerticalAlignment="Center" Style="{DynamicResource KaiCheckBox}"
+                            HorizontalAlignment="Left" IsChecked="True"
+                            Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
+                  <Button x:Name="CheckForUpdatesBtn" Grid.Row="4" Grid.Column="1"
+                          Content="Check for updates" Style="{DynamicResource BeigeButton}"
+                          HorizontalAlignment="Left" Padding="10,4" Click="CheckForUpdates_Click" />
                 </Grid>
               </GroupBox>
 

@@ -7,8 +7,8 @@ using System.Text;
 namespace KaiAosRenew
 {
     /// <summary>
-    /// Creates/updates a Start Menu .lnk with AppUserModelID so the taskbar
-    /// shows the friendly name instead of the .exe file name.
+    /// Creates/updates Start Menu and Desktop .lnk files with AppUserModelID
+    /// so the taskbar shows the friendly name instead of the .exe file name.
     /// </summary>
     internal static class StartMenuShortcut
     {
@@ -16,21 +16,33 @@ namespace KaiAosRenew
         {
             if (string.IsNullOrWhiteSpace(displayName) || string.IsNullOrWhiteSpace(aumid))
                 return;
+
+            var exe = GetExePath();
+            if (string.IsNullOrEmpty(exe) || !File.Exists(exe))
+                return;
+
+            var name = displayName.Trim();
+            EnsureInFolder(Environment.GetFolderPath(Environment.SpecialFolder.Programs), name, exe, aumid);
+
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (string.IsNullOrEmpty(desktop))
+                desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            EnsureInFolder(desktop, name, exe, aumid);
+        }
+
+        private static void EnsureInFolder(string folder, string displayName, string exe, string aumid)
+        {
+            if (string.IsNullOrEmpty(folder)) return;
             try
             {
-                var programs = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
-                if (string.IsNullOrEmpty(programs)) return;
-                Directory.CreateDirectory(programs);
+                Directory.CreateDirectory(folder);
 
                 // Remove legacy shortcut names so only the friendly one remains.
-                TryDelete(Path.Combine(programs, "KaiAosRenew.lnk"));
-                TryDelete(Path.Combine(programs, "KaiAosNotifyClient.lnk"));
-                TryDelete(Path.Combine(programs, "KAI AOS Renew.lnk"));
+                TryDelete(Path.Combine(folder, "KaiAosRenew.lnk"));
+                TryDelete(Path.Combine(folder, "KaiAosNotifyClient.lnk"));
+                TryDelete(Path.Combine(folder, "KAI AOS Renew.lnk"));
 
-                var linkPath = Path.Combine(programs, displayName.Trim() + ".lnk");
-                var exe = GetExePath();
-                if (string.IsNullOrEmpty(exe) || !File.Exists(exe)) return;
-
+                var linkPath = Path.Combine(folder, displayName + ".lnk");
                 if (File.Exists(linkPath))
                 {
                     try
@@ -44,7 +56,7 @@ namespace KaiAosRenew
                     catch { }
                 }
 
-                CreateShortcut(linkPath, exe, Path.GetDirectoryName(exe), displayName.Trim(), aumid);
+                CreateShortcut(linkPath, exe, Path.GetDirectoryName(exe), displayName, aumid);
             }
             catch { }
         }

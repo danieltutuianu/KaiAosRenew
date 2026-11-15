@@ -21,6 +21,14 @@ if exist "%KAIGUI%" (
   copy /Y "%SERVER_ICO%" "%ROOT%app.ico" >nul
 )
 
+set "NUGET=%ROOT%..\tools\nuget.exe"
+if not exist "%NUGET%" (
+  if not exist "%ROOT%..\tools" mkdir "%ROOT%..\tools"
+  powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile '%NUGET%'"
+)
+"%NUGET%" restore "%ROOT%packages.config" -PackagesDirectory "%ROOT%..\packages" -NonInteractive
+if errorlevel 1 exit /b 1
+
 "%MSBUILD%" "%ROOT%KaiAosNotifyClient.csproj" /t:Rebuild /p:Configuration=Release /p:Platform=x86 /v:m /nologo
 if errorlevel 1 exit /b 1
 

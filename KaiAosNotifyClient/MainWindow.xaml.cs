@@ -51,6 +51,8 @@ namespace KaiAosNotifyClient
         private bool _alertBlinkOn = true;
         private readonly DispatcherTimer _alertBlinkTimer = new DispatcherTimer();
         private const double KeysStallMinutes = 2;
+        /// <summary>Stop blinking Keys tab after this many minutes (Waiting/Failed/stall).</summary>
+        private const double KeysAlertMaxMinutes = 1;
 
         // Keys VIN highlight (simplified port from server)
         private const double KeysHighlightSeconds = 20;
@@ -151,9 +153,11 @@ namespace KaiAosNotifyClient
             _settings = ClientSettings.Load();
             ClientUiStrings.SetLanguage(_settings.Language);
             ClientThemeManager.SetModeProvider(() => _settings != null ? _settings.Theme : "system");
-            ClientThemeManager.Apply(_settings.Theme);
             _loadingUi = true;
             InitializeComponent();
+            // Apply theme after XAML load so a failed swap cannot blank the tree.
+            try { ClientThemeManager.Apply(_settings.Theme); }
+            catch { }
             if (KeysCopyOkBrush.CanFreeze) KeysCopyOkBrush.Freeze();
             _keysCopyFeedbackTimer.Interval = TimeSpan.FromMilliseconds(900);
             _keysCopyFeedbackTimer.Tick += KeysCopyFeedbackTimer_Tick;
@@ -311,6 +315,13 @@ namespace KaiAosNotifyClient
             if (MinimizeToTrayCheck != null) MinimizeToTrayCheck.Content = ClientUiStrings.T("Yes");
             if (MinimizeOnCloseLabel != null) MinimizeOnCloseLabel.Text = ClientUiStrings.T("MinimizeOnClose");
             if (MinimizeOnCloseCheck != null) MinimizeOnCloseCheck.Content = ClientUiStrings.T("MinimizeOnCloseYes");
+            if (AutoUpdateLabel != null) AutoUpdateLabel.Text = ClientUiStrings.T("AutoUpdate");
+            if (AutoUpdateCheck != null)
+            {
+                AutoUpdateCheck.Content = ClientUiStrings.T("Yes");
+                AutoUpdateCheck.ToolTip = ClientUiStrings.T("TipAutoUpdate");
+            }
+            if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.Content = ClientUiStrings.T("CheckForUpdates");
             if (KeysSettingsGroup != null) KeysSettingsGroup.Header = ClientUiStrings.T("TabKeys");
             if (VinTipDurationLabel != null) VinTipDurationLabel.Text = ClientUiStrings.T("VinTipDuration");
             if (ShowVinTipsCheck != null) ShowVinTipsCheck.Content = ClientUiStrings.T("ShowVinTips");
@@ -407,6 +418,49 @@ namespace KaiAosNotifyClient
             }
             if (_settings.AutoConnect && !string.IsNullOrWhiteSpace(_settings.Host))
                 DoConnect();
+            MaybeCheckForUpdatesOnStart();
+        }
+
+        private bool _updateCheckStarted;
+
+        private void MaybeCheckForUpdatesOnStart()
+        {
+            if (_settings == null || !_settings.AutoUpdate || _updateCheckStarted) return;
+            // After first paint so a slow GitHub check never leaves a blank shell.
+            ContentRendered += OnContentRenderedForUpdateCheck;
+        }
+
+        private async void OnContentRenderedForUpdateCheck(object sender, EventArgs e)
+        {
+            ContentRendered -= OnContentRenderedForUpdateCheck;
+            if (_updateCheckStarted) return;
+            _updateCheckStarted = true;
+            try { await Task.Delay(1500); }
+            catch { }
+            try
+            {
+                await KaiAosRenew.UpdateService.CheckForUpdateAsync(this, true, true, ClientUiStrings.T);
+            }
+            catch { }
+        }
+
+        private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
+        {
+            if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = false;
+            try
+            {
+                // Manual check always prompts; Auto update silent path is startup-only.
+                await KaiAosRenew.UpdateService.CheckForUpdateAsync(this, false, false, ClientUiStrings.T);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(ClientUiStrings.T("UpdateFailed"), ex.Message),
+                    ClientUiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = true;
+            }
         }
 
         private void ScanLan_Click(object sender, RoutedEventArgs e)
@@ -740,6 +794,8 @@ namespace KaiAosNotifyClient
                 MinimizeToTrayCheck.IsChecked = _settings.MinimizeToTray;
             if (MinimizeOnCloseCheck != null)
                 MinimizeOnCloseCheck.IsChecked = _settings.MinimizeOnClose;
+            if (AutoUpdateCheck != null)
+                AutoUpdateCheck.IsChecked = _settings.AutoUpdate;
             if (VinTipSecondsBox != null)
                 VinTipSecondsBox.Text = _settings.VinTipSeconds.ToString();
             if (ShowVinTipsCheck != null)
@@ -823,6 +879,8 @@ namespace KaiAosNotifyClient
                 _settings.MinimizeToTray = MinimizeToTrayCheck.IsChecked == true;
             if (MinimizeOnCloseCheck != null)
                 _settings.MinimizeOnClose = MinimizeOnCloseCheck.IsChecked == true;
+            if (AutoUpdateCheck != null)
+                _settings.AutoUpdate = AutoUpdateCheck.IsChecked == true;
             if (ShowVinTipsCheck != null)
                 _settings.ShowVinTips = ShowVinTipsCheck.IsChecked == true;
             if (AutoCopyVinCheck != null)
@@ -1693,32 +1751,36 @@ namespace KaiAosNotifyClient
 
         private void ApplyKeySync(string text)
         {
-            if (string.IsNullOrWhiteSpace(text))
-                return; // keep persisted history on empty sync / disconnect
-            var rows = NotifyMessage.ParseKeySync(text);
-            // Backward compat: old vinSync was comma-separated VINs only
-            if (rows.Count == 0 && text.IndexOf('|') < 0)
+            // Authoritative: replace local list with server snapshot (empty clears phantoms).
+            // Disconnect does not send keySync, so history survives offline.
+            _keyAllRows.Clear();
+            if (!string.IsNullOrWhiteSpace(text))
             {
-                var parts = text.Split(',');
-                var now = DateTime.Now;
-                foreach (var part in parts)
+                var rows = NotifyMessage.ParseKeySync(text);
+                // Backward compat: old vinSync was comma-separated VINs only
+                if (rows.Count == 0 && text.IndexOf('|') < 0)
                 {
-                    var vin = (part ?? "").Trim();
-                    if (string.IsNullOrEmpty(vin)) continue;
-                    UpsertKeyRowCore(new ClientKeyRow
+                    var parts = text.Split(',');
+                    var now = DateTime.Now;
+                    foreach (var part in parts)
                     {
-                        DetectedLocal = now,
-                        Vin = vin,
-                        Status = "Waiting"
-                    });
+                        var vin = (part ?? "").Trim();
+                        if (string.IsNullOrEmpty(vin)) continue;
+                        _keyAllRows.Add(new ClientKeyRow
+                        {
+                            DetectedLocal = now,
+                            Vin = vin,
+                            Status = "Waiting"
+                        });
+                    }
                 }
-            }
-            else
-            {
-                foreach (var row in rows)
+                else
                 {
-                    if (row == null) continue;
-                    UpsertKeyRowCore(row);
+                    foreach (var row in rows)
+                    {
+                        if (row == null || string.IsNullOrEmpty(row.Vin)) continue;
+                        _keyAllRows.Add(row);
+                    }
                 }
             }
             SortAndTrimKeyRows();
@@ -1944,17 +2006,16 @@ namespace KaiAosNotifyClient
             var ev = _keyAllRows.Count > 0 ? _keyAllRows[0] : null;
             if (ev != null)
             {
-                if (string.Equals(ev.Status, "Failed", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(ev.Status, "Waiting", StringComparison.OrdinalIgnoreCase))
+                var age = DateTime.Now - ev.DetectedLocal;
+                if (age.TotalMinutes < KeysAlertMaxMinutes)
                 {
-                    _keysAlert = true;
-                }
-                else
-                {
-                    var age = DateTime.Now - ev.DetectedLocal;
-                    if (ev.LocalSent && !ev.BmwUploaded && !ev.Failed
-                        && age.TotalMinutes > KeysStallMinutes
-                        && age.TotalHours < 24)
+                    if (string.Equals(ev.Status, "Failed", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(ev.Status, "Waiting", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _keysAlert = true;
+                    }
+                    else if (ev.LocalSent && !ev.BmwUploaded && !ev.Failed
+                        && age.TotalMinutes > KeysStallMinutes)
                     {
                         _keysAlert = true;
                     }

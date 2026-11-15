@@ -58,15 +58,23 @@ namespace KaiAosNotifyClient
             _night = night;
             var app = Application.Current;
             if (app == null) return;
-            var dicts = app.Resources.MergedDictionaries;
-            var uri = new Uri(night
-                ? "Themes/KaiTheme.Dark.xaml"
-                : "Themes/KaiTheme.xaml", UriKind.Relative);
-            var theme = new ResourceDictionary { Source = uri };
-            if (dicts.Count == 0)
-                dicts.Add(theme);
-            else
-                dicts[0] = theme;
+            try
+            {
+                // pack:// is required when cwd is not the app folder (Start Menu / Velopack stub).
+                var uri = new Uri(night
+                    ? "pack://application:,,,/Themes/KaiTheme.Dark.xaml"
+                    : "pack://application:,,,/Themes/KaiTheme.xaml");
+                var theme = new ResourceDictionary { Source = uri };
+                var dicts = app.Resources.MergedDictionaries;
+                if (dicts.Count == 0)
+                    dicts.Add(theme);
+                else
+                    dicts[0] = theme;
+            }
+            catch
+            {
+                // Keep App.xaml theme if swap fails — never blank the UI.
+            }
         }
 
         private static void EnsureOsListener(bool enable)

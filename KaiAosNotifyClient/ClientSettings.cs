@@ -14,6 +14,8 @@ namespace KaiAosNotifyClient
         public bool StartWithWindows { get; set; }
         public bool MinimizeToTray { get; set; }
         public bool MinimizeOnClose { get; set; }
+        /// <summary>Check/download/apply Velopack updates at startup without prompting.</summary>
+        public bool AutoUpdate { get; set; }
         public bool AutoConnect { get; set; }
         public string Host { get; set; }
         public string Port { get; set; }
@@ -37,6 +39,7 @@ namespace KaiAosNotifyClient
         public ClientSettings()
         {
             MinimizeOnClose = true;
+            AutoUpdate = true;
             AutoConnect = true;
             Host = "";
             Port = "17890";
@@ -100,6 +103,7 @@ namespace KaiAosNotifyClient
                     s.StartWithWindows = ReadBool(key, "StartWithWindows", false);
                     s.MinimizeToTray = ReadBool(key, "MinimizeToTray", false);
                     s.MinimizeOnClose = ReadBool(key, "MinimizeOnClose", true);
+                    s.AutoUpdate = ReadBool(key, "AutoUpdate", true);
                     s.AutoConnect = ReadBool(key, "AutoConnect", true);
                     s.ShowVinTips = ReadBool(key, "ShowVinTips", true);
                     s.AutoCopyVin = ReadBool(key, "AutoCopyVin", false);
@@ -143,6 +147,7 @@ namespace KaiAosNotifyClient
                     key.SetValue("StartWithWindows", StartWithWindows ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("MinimizeToTray", MinimizeToTray ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("MinimizeOnClose", MinimizeOnClose ? 1 : 0, RegistryValueKind.DWord);
+                    key.SetValue("AutoUpdate", AutoUpdate ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("AutoConnect", AutoConnect ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("ShowVinTips", ShowVinTips ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("AutoCopyVin", AutoCopyVin ? 1 : 0, RegistryValueKind.DWord);

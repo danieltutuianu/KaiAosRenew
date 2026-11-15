@@ -25,6 +25,14 @@ if not exist "%OUTDIR%" mkdir "%OUTDIR%"
 if not exist "%ASSETDIR%" mkdir "%ASSETDIR%"
 copy /Y "%KAIGUI%" "%ASSETDIR%\app.ico" >nul
 
+set "NUGET=%~dp0tools\nuget.exe"
+if not exist "%NUGET%" (
+  if not exist "%~dp0tools" mkdir "%~dp0tools"
+  powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile '%NUGET%'"
+)
+"%NUGET%" restore "%~dp0packages.config" -PackagesDirectory "%~dp0packages" -NonInteractive
+if errorlevel 1 exit /b 1
+
 "%MSBUILD%" "%~dp0KaiAosRenew.csproj" /t:Rebuild /p:Configuration=Release /p:Platform=x86 /v:m /nologo
 if errorlevel 1 exit /b 1
 

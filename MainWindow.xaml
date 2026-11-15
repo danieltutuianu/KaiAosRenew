@@ -475,6 +475,8 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <TextBlock x:Name="StartWithWindowsLabel" Text="Start with Windows:" Style="{DynamicResource FieldLabel}"
                            Width="Auto" VerticalAlignment="Center" Margin="0,0,0,8" />
@@ -492,12 +494,22 @@
                           Checked="MinimizeToTray_Changed" Unchecked="MinimizeToTray_Changed"
                           ToolTip="Only at Windows autostart: hide window to tray (requires Start with Windows)" />
                 <TextBlock x:Name="MinimizeOnCloseLabel" Grid.Row="2" Text="Minimize on close:"
-                           Style="{DynamicResource FieldLabel}" Width="Auto" VerticalAlignment="Center" />
+                           Style="{DynamicResource FieldLabel}" Width="Auto" VerticalAlignment="Center" Margin="0,0,0,8" />
                 <CheckBox x:Name="MinimizeOnCloseCheck" Grid.Row="2" Grid.Column="1"
                           Content="Yes (X hides to tray)" Style="{DynamicResource KaiCheckBox}"
-                          IsChecked="True" VerticalAlignment="Center"
+                          IsChecked="True" VerticalAlignment="Center" Margin="0,0,0,8"
                           Checked="MinimizeOnClose_Changed" Unchecked="MinimizeOnClose_Changed"
                           ToolTip="X / Alt+F4 hides to tray instead of quitting; Exit from tray still closes the app" />
+                <TextBlock x:Name="AutoUpdateLabel" Grid.Row="3" Text="Auto update:"
+                           Style="{DynamicResource FieldLabel}" Width="Auto" VerticalAlignment="Center" Margin="0,0,0,8" />
+                <CheckBox x:Name="AutoUpdateCheck" Grid.Row="3" Grid.Column="1" Content="Yes"
+                          Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
+                          VerticalAlignment="Center" IsChecked="True"
+                          Checked="AutoUpdate_Changed" Unchecked="AutoUpdate_Changed"
+                          ToolTip="Download and install updates automatically, then restart" />
+                <Button x:Name="CheckForUpdatesBtn" Grid.Row="4" Grid.Column="1"
+                        Content="Check for updates" Style="{DynamicResource BeigeButton}"
+                        HorizontalAlignment="Left" Padding="10,4" Click="CheckForUpdates_Click" />
               </Grid>
             </GroupBox>
 

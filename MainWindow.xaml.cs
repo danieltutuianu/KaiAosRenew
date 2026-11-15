@@ -424,6 +424,15 @@ namespace KaiAosRenew
                 MinimizeOnCloseLabel.Text = UiStrings.T("MinimizeOnClose");
             if (MinimizeOnCloseCheck != null)
                 MinimizeOnCloseCheck.Content = UiStrings.T("MinimizeOnCloseYes");
+            if (AutoUpdateLabel != null)
+                AutoUpdateLabel.Text = UiStrings.T("AutoUpdate");
+            if (AutoUpdateCheck != null)
+            {
+                AutoUpdateCheck.Content = UiStrings.T("Yes");
+                AutoUpdateCheck.ToolTip = UiStrings.T("TipAutoUpdate");
+            }
+            if (CheckForUpdatesBtn != null)
+                CheckForUpdatesBtn.Content = UiStrings.T("CheckForUpdates");
             if (SectionConfigText != null) SectionConfigText.Text = UiStrings.T("SectionConfig");
             if (ConfigPathLabel != null) ConfigPathLabel.Text = UiStrings.T("ConfigPath");
             if (BrowseBtn != null) BrowseBtn.Content = UiStrings.T("Browse");
@@ -1365,6 +1374,8 @@ namespace KaiAosRenew
                 LogVerboseCheck.IsChecked = _settings.LogVerbose;
             if (MinimizeOnCloseCheck != null)
                 MinimizeOnCloseCheck.IsChecked = _settings.MinimizeOnClose;
+            if (AutoUpdateCheck != null)
+                AutoUpdateCheck.IsChecked = _settings.AutoUpdate;
         }
 
         private void SaveKeysDataPathsFromUi()
@@ -2218,17 +2229,16 @@ namespace KaiAosRenew
             {
                 if (_settings == null || !_settings.NotifyServerEnabled) return;
                 if (!NotifyServer.Instance.IsRunning || NotifyServer.Instance.ClientCount <= 0) return;
-                var rows = GetRecentKeyRows(10);
+                var rows = GetRecentKeyRows(10) ?? new List<KeyActivityEvent>();
                 var sig = KeySyncSignature(rows);
                 if (string.Equals(sig, _lastKeySyncSignature, StringComparison.Ordinal)) return;
                 _lastKeySyncSignature = sig;
-                if (rows.Count == 0) return;
                 BroadcastNotify(new NotifyMessage
                 {
                     Kind = "keySync",
                     Level = "info",
                     Title = "KAI - AOS Renew",
-                    Text = NotifyMessage.EncodeKeySync(rows)
+                    Text = NotifyMessage.EncodeKeySync(rows) ?? ""
                 });
             }
             catch { }
@@ -2417,29 +2427,34 @@ namespace KaiAosRenew
             UpdateKeysAlert(snap);
         }
 
+        private const double KeysAlertMaxMinutes = 1;
+
         private void UpdateKeysAlert(KeyActivitySnapshot snap)
         {
             _keysAlert = false;
             var stallOn = _settings == null || _settings.KeysStallAlertEnabled;
-            // Alert only from the newest event — historical Failed must not keep the tab red.
+            // Alert only from the newest event — and only within KeysAlertMaxMinutes.
             var ev = snap != null ? KeyActivityMonitor.GetNewestEvent(snap.Events) : null;
             if (ev != null)
             {
-                if (ev.Status == KeyEventStatus.Failed
-                    || ev.Status == KeyEventStatus.Waiting)
+                var ageMin = (DateTime.Now - ev.DetectedLocal).TotalMinutes;
+                if (ageMin < KeysAlertMaxMinutes)
                 {
-                    _keysAlert = true;
-                }
-                else
-                {
-                    var stallMin = _settings != null ? _settings.KeysStallMinutes : 2;
-                    if (stallMin < 1) stallMin = 1;
-                    if (stallOn
-                        && ev.LocalSent && !ev.BmwUploaded && !ev.Failed
-                        && (DateTime.Now - ev.DetectedLocal).TotalMinutes > stallMin
-                        && (DateTime.Now - ev.DetectedLocal).TotalHours < 24)
+                    if (ev.Status == KeyEventStatus.Failed
+                        || ev.Status == KeyEventStatus.Waiting)
                     {
                         _keysAlert = true;
+                    }
+                    else
+                    {
+                        var stallMin = _settings != null ? _settings.KeysStallMinutes : 2;
+                        if (stallMin < 1) stallMin = 1;
+                        if (stallOn
+                            && ev.LocalSent && !ev.BmwUploaded && !ev.Failed
+                            && ageMin > stallMin)
+                        {
+                            _keysAlert = true;
+                        }
                     }
                 }
             }
@@ -2506,6 +2521,55 @@ namespace KaiAosRenew
                 if (IsVisible) Hide();
             }
             RunStartupSelfCheck();
+            MaybeCheckForUpdatesOnStart();
+        }
+
+        private bool _updateCheckStarted;
+
+        private void MaybeCheckForUpdatesOnStart()
+        {
+            if (_settings == null || !_settings.AutoUpdate || _updateCheckStarted) return;
+            ContentRendered += OnContentRenderedForUpdateCheck;
+        }
+
+        private async void OnContentRenderedForUpdateCheck(object sender, EventArgs e)
+        {
+            ContentRendered -= OnContentRenderedForUpdateCheck;
+            if (_updateCheckStarted) return;
+            _updateCheckStarted = true;
+            try { await System.Threading.Tasks.Task.Delay(1500); }
+            catch { }
+            try
+            {
+                await UpdateService.CheckForUpdateAsync(this, true, true, UiStrings.T);
+            }
+            catch { }
+        }
+
+        private void AutoUpdate_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_loadingUi || _settings == null) return;
+            _settings.AutoUpdate = AutoUpdateCheck != null && AutoUpdateCheck.IsChecked == true;
+            _settings.Save();
+        }
+
+        private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
+        {
+            if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = false;
+            try
+            {
+                // Manual check always prompts; Auto update silent path is startup-only.
+                await UpdateService.CheckForUpdateAsync(this, false, false, UiStrings.T);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(UiStrings.T("UpdateFailed"), ex.Message),
+                    UiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = true;
+            }
         }
 
         private void RunStartupSelfCheck()
@@ -2698,7 +2762,8 @@ namespace KaiAosRenew
         {
             if (msg == Program.WmShowMe)
             {
-                ShowFromTray();
+                // Pin/taskbar second instance — marshal to dispatcher (may arrive off UI path).
+                Dispatcher.BeginInvoke(new Action(ShowFromTray));
                 handled = true;
             }
             return IntPtr.Zero;
@@ -3259,19 +3324,16 @@ namespace KaiAosRenew
                 if (c == "refreshkeys")
                 {
                     RefreshKeysTab(true);
-                    var rows = GetRecentKeyRows(10);
-                    var payload = NotifyMessage.EncodeKeySync(rows);
-                    if (!string.IsNullOrEmpty(payload))
+                    var rows = GetRecentKeyRows(10) ?? new List<KeyActivityEvent>();
+                    var payload = NotifyMessage.EncodeKeySync(rows) ?? "";
+                    _lastKeySyncSignature = KeySyncSignature(rows);
+                    NotifyServer.Instance.SendTo(clientId, new NotifyMessage
                     {
-                        _lastKeySyncSignature = KeySyncSignature(rows);
-                        NotifyServer.Instance.SendTo(clientId, new NotifyMessage
-                        {
-                            Kind = "keySync",
-                            Level = "info",
-                            Title = "KAI - AOS Renew",
-                            Text = payload
-                        });
-                    }
+                        Kind = "keySync",
+                        Level = "info",
+                        Title = "KAI - AOS Renew",
+                        Text = payload
+                    });
                     SendAosAck(clientId, true, "refreshKeys");
                     return;
                 }
@@ -3319,26 +3381,9 @@ namespace KaiAosRenew
             try
             {
                 if (_settings == null || !_settings.NotifyServerEnabled) return;
-                var rows = GetRecentKeyRows(10);
-                if (rows == null || rows.Count == 0)
-                {
-                    // Fallback: VIN-only from monitor cache if Keys UI not loaded yet
-                    var vins = _keyMonitor.GetRecentVins(10);
-                    if (vins == null || vins.Count == 0) return;
-                    var legacy = new List<KeyActivityEvent>();
-                    foreach (var v in vins)
-                    {
-                        legacy.Add(new KeyActivityEvent
-                        {
-                            DetectedLocal = DateTime.Now,
-                            Vin = v,
-                            Status = KeyEventStatus.Waiting
-                        });
-                    }
-                    rows = legacy;
-                }
-                var payload = NotifyMessage.EncodeKeySync(rows);
-                if (string.IsNullOrEmpty(payload)) return;
+                // Authoritative snapshot only — never invent Waiting stubs from VIN cache.
+                var rows = GetRecentKeyRows(10) ?? new List<KeyActivityEvent>();
+                var payload = NotifyMessage.EncodeKeySync(rows) ?? "";
                 _lastKeySyncSignature = KeySyncSignature(rows);
                 NotifyServer.Instance.SendTo(clientId, new NotifyMessage
                 {
@@ -3643,6 +3688,7 @@ namespace KaiAosRenew
             {
                 e.Cancel = true;
                 Hide();
+                ShowInTaskbar = false;
                 return;
             }
             // Real exit (same as tray Exit) — required with OnExplicitShutdown.
@@ -3729,6 +3775,8 @@ namespace KaiAosRenew
                 _lastValidConfigPath = _settings.ConfigPath;
                 StartWithWindowsCheck.IsChecked = _settings.StartWithWindows;
                 MinimizeToTrayCheck.IsChecked = _settings.MinimizeToTray;
+                if (AutoUpdateCheck != null)
+                    AutoUpdateCheck.IsChecked = _settings.AutoUpdate;
                 UpdateMinimizeToTrayEnabled();
                 UseSystemProxyCheck.IsChecked = _settings.UseSystemProxy;
                 if (BrowserPassHintCheck != null)
@@ -4731,6 +4779,8 @@ namespace KaiAosRenew
                 _settings.LogVerbose = LogVerboseCheck.IsChecked == true;
             if (MinimizeOnCloseCheck != null)
                 _settings.MinimizeOnClose = MinimizeOnCloseCheck.IsChecked == true;
+            if (AutoUpdateCheck != null)
+                _settings.AutoUpdate = AutoUpdateCheck.IsChecked == true;
             ParseAndSetAuthCooldownMinutes();
             ParseAndSetKeysRefreshSeconds();
             ParseAndSetKeysVinTipSeconds();

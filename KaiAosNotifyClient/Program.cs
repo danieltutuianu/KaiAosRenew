@@ -1,9 +1,14 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Threading;
+using Velopack;
 
 namespace KaiAosNotifyClient
 {
@@ -14,9 +19,41 @@ namespace KaiAosNotifyClient
         private const string WindowTitle = "KAI - AOS Renew - Client";
         private static Mutex _mutex;
 
+        private static void StartupLog(string line)
+        {
+            try
+            {
+                var dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "KaiAosNotifyClient");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(
+                    Path.Combine(dir, "startup.log"),
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " " + line + Environment.NewLine);
+            }
+            catch { }
+        }
+
         [STAThread]
         private static void Main(string[] args)
         {
+            // Blank client area + visible title bar is classic WPF+GPU / remote-desktop failure.
+            try { RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly; }
+            catch { }
+            StartupLog("Main begin renderMode=SoftwareOnly");
+
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                StartupLog("BaseDirectory=" + baseDir);
+                if (!string.IsNullOrEmpty(baseDir))
+                    Directory.SetCurrentDirectory(baseDir);
+            }
+            catch (Exception ex) { StartupLog("cwd fail: " + ex.Message); }
+
+            try { VelopackApp.Build().Run(); StartupLog("VelopackApp.Run done"); }
+            catch (Exception ex) { StartupLog("VelopackApp.Run: " + ex.Message); }
+
             bool created;
             _mutex = new Mutex(true, MutexName, out created);
             if (!created)
@@ -48,11 +85,35 @@ namespace KaiAosNotifyClient
             {
                 try { SetCurrentProcessExplicitAppUserModelID(ClientThemeManager.AppUserModelId); }
                 catch { }
-                try { KaiAosRenew.StartMenuShortcut.Ensure("KAI - AOS Renew - Client", ClientThemeManager.AppUserModelId); }
-                catch { }
+                // Shortcuts off the UI thread — COM can hang on some desktops.
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try { KaiAosRenew.StartMenuShortcut.Ensure("KAI - AOS Renew - Client", ClientThemeManager.AppUserModelId); }
+                    catch { }
+                });
                 var app = new App();
+                app.DispatcherUnhandledException += App_DispatcherUnhandledException;
+                AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+                StartupLog("App InitializeComponent");
                 app.InitializeComponent();
+                StartupLog("App.Run");
                 app.Run();
+                StartupLog("App.Run returned");
+            }
+            catch (Exception ex)
+            {
+                StartupLog("FATAL: " + ex);
+                try
+                {
+                    MessageBox.Show(
+                        "Startup failed:\n" + ex,
+                        WindowTitle,
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+                catch { }
+                try { File.WriteAllText(Path.Combine(Path.GetTempPath(), "KaiAosNotifyClient-startup-error.txt"), ex.ToString()); }
+                catch { }
             }
             finally
             {
@@ -65,6 +126,38 @@ namespace KaiAosNotifyClient
                     _mutex = null;
                 }
             }
+        }
+
+        private static void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            try
+            {
+                File.WriteAllText(
+                    Path.Combine(Path.GetTempPath(), "KaiAosNotifyClient-ui-error.txt"),
+                    e.Exception != null ? e.Exception.ToString() : "unknown");
+            }
+            catch { }
+            try
+            {
+                MessageBox.Show(
+                    "Unexpected error:\n" + (e.Exception != null ? e.Exception.Message : ""),
+                    WindowTitle,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            catch { }
+            e.Handled = true;
+        }
+
+        private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            try
+            {
+                File.WriteAllText(
+                    Path.Combine(Path.GetTempPath(), "KaiAosNotifyClient-crash.txt"),
+                    e.ExceptionObject != null ? e.ExceptionObject.ToString() : "unknown");
+            }
+            catch { }
         }
 
         private static bool TryActivateOtherInstance()
