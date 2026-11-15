@@ -1,0 +1,29 @@
+# Build
+bin/
+obj/
+dist/
+*.user
+*.suo
+*.cache
+*.pdb
+*.exe
+*.dll
+!libs/**/*.dll
+
+# Local / temp
+_tmp*
+_gen*
+*.log
+.vs/
+.idea/
+
+# Secrets / local settings (never publish)
+.env*
+**/settings.xml
+**/credentials*
+**/secrets*
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

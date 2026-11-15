@@ -1,0 +1,326 @@
+using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using System.Xml.Serialization;
+
+namespace KaiAosRenew
+{
+    public class AppSettings
+    {
+        public string Email { get; set; }
+        public string PasswordProtectedBase64 { get; set; }
+        public int IntervalHours { get; set; }
+        public string ConfigPath { get; set; }
+        public string RegisterUrl { get; set; }
+        /// <summary>Optional WebEAM token URL override (empty = from KAI config).</summary>
+        public string WebEamUrl { get; set; }
+        public string Language { get; set; }
+        public bool StartWithWindows { get; set; }
+        public bool LogVerbose { get; set; }
+        public bool MinimizeToTray { get; set; }
+        /// <summary>X / Alt+F4 hides to tray instead of exiting.</summary>
+        public bool MinimizeOnClose { get; set; }
+        public bool UseSystemProxy { get; set; }
+        /// <summary>On auth failure, hint to update app password to match Chrome/Edge (no decrypt).</summary>
+        public bool BrowserPasswordHintOnAuthFail { get; set; }
+        /// <summary>Remind to rotate AOS password every N hours (1–168).</summary>
+        public int PasswordRotateRemindHours { get; set; }
+        /// <summary>UTC when app AOS password was last changed by the user.</summary>
+        public DateTime? LastPasswordChangeUtc { get; set; }
+        /// <summary>UTC of last password-rotate reminder log/balloon (throttle).</summary>
+        public DateTime? LastPasswordRemindUtc { get; set; }
+        /// <summary>system | day | night</summary>
+        public string ThemeMode { get; set; }
+        public DateTime? LastSuccessUtc { get; set; }
+        /// <summary>UTC of the last Register that returned credentials.</summary>
+        public DateTime? LastRegisterOkUtc { get; set; }
+        /// <summary>UTC of the last Register attempt that failed, including auth rejection.</summary>
+        public DateTime? LastRegisterFailUtc { get; set; }
+        public string LastMessage { get; set; }
+        public int ConsecutiveFailures { get; set; }
+        /// <summary>OAuth expires_in seconds from last successful WebEAM token (0 = unknown).</summary>
+        public int LastTokenExpiresInSeconds { get; set; }
+        /// <summary>Absolute UTC expiry of last WebEAM token (M2m-style).</summary>
+        public DateTime? LastTokenExpiryUtc { get; set; }
+        /// <summary>Until this UTC time, never call Register (anti-lockout after hard 401).</summary>
+        public DateTime? AuthCooldownUntilUtc { get; set; }
+        /// <summary>After wrong-password Register (401), block auto Register until the user changes the password.</summary>
+        public bool AuthRegisterBlocked { get; set; }
+        /// <summary>UTC of last automatic Register attempt (Health-fail path); max one per 12h.</summary>
+        public DateTime? LastAutoRegisterUtc { get; set; }
+        /// <summary>Minutes to block Register after hard 401 (5–240).</summary>
+        public int AuthCooldownMinutes { get; set; }
+        /// <summary>Tray balloon when a new key is detected.</summary>
+        public bool KeysBalloonEnabled { get; set; }
+        /// <summary>Alert when Local OK but BMW upload missing for &gt; stall minutes.</summary>
+        public bool KeysStallAlertEnabled { get; set; }
+        /// <summary>Folder watched for keyreader.bin (default C:\Users\Public\keyreader).</summary>
+        public string KeysPickupFolder { get; set; }
+        /// <summary>Minutes after Local OK without BMW Server before stall alert (1–60).</summary>
+        public int KeysStallMinutes { get; set; }
+        /// <summary>Copy VIN to clipboard automatically when a new VIN is read.</summary>
+        public bool KeysAutoCopyVin { get; set; }
+        /// <summary>Keys tab polling interval when active (1–60 seconds).</summary>
+        public int KeysRefreshSeconds { get; set; }
+        /// <summary>VIN info tip display duration with Copy button (3–60 seconds).</summary>
+        public int KeysVinTipSeconds { get; set; }
+        public string KeysUploaderLogDir { get; set; }
+        public string KeysKaiLogDir { get; set; }
+        public string KeysSqlitePath { get; set; }
+        /// <summary>TCP notify server for remote KaiAosNotifyClient.</summary>
+        public bool NotifyServerEnabled { get; set; }
+        /// <summary>TCP listen port (1024–65535), default 17890.</summary>
+        public int NotifyServerPort { get; set; }
+
+        public AppSettings()
+        {
+            IntervalHours = 1;
+            ConfigPath = @"C:\ProgramData\BMW\ISPI\config\KAI\KAI";
+            RegisterUrl = "https://kai-b2i-basic.bmwgroup.com/api/agent/register";
+            WebEamUrl = "";
+            Language = "en";
+            ThemeMode = "system";
+            UseSystemProxy = false;
+            BrowserPasswordHintOnAuthFail = true;
+            PasswordRotateRemindHours = 1;
+            MinimizeOnClose = true;
+            AuthCooldownMinutes = 60;
+            KeysBalloonEnabled = true;
+            KeysStallAlertEnabled = true;
+            KeysPickupFolder = @"C:\Users\Public\keyreader";
+            KeysStallMinutes = 2;
+            KeysAutoCopyVin = false;
+            KeysRefreshSeconds = 3;
+            KeysVinTipSeconds = 8;
+            KeysUploaderLogDir = @"C:\ProgramData\BMW\ISPI\Logs\KAI\KeyUploader";
+            KeysKaiLogDir = @"C:\ProgramData\BMW\ISPI\Logs\KAI\KAI";
+            KeysSqlitePath = @"C:\ProgramData\BMW\ISPI\data\KAI\KAI\SqliteKaiDb.db";
+            NotifyServerEnabled = false;
+            NotifyServerPort = 17890;
+        }
+
+        private static string StoreDir
+        {
+            get
+            {
+                var dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "KaiAosRenew");
+                Directory.CreateDirectory(dir);
+                return dir;
+            }
+        }
+
+        public static string SettingsPath
+        {
+            get { return Path.Combine(StoreDir, "settings.xml"); }
+        }
+
+        public static string LogPath
+        {
+            get { return Path.Combine(StoreDir, "renew.log"); }
+        }
+
+        public string GetPassword()
+        {
+            if (string.IsNullOrEmpty(PasswordProtectedBase64))
+                return string.Empty;
+            var protectedBytes = Convert.FromBase64String(PasswordProtectedBase64);
+            var plain = ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser);
+            return Encoding.UTF8.GetString(plain);
+        }
+
+        public void SetPassword(string password)
+        {
+            if (string.IsNullOrEmpty(password))
+            {
+                PasswordProtectedBase64 = null;
+                return;
+            }
+            var plain = Encoding.UTF8.GetBytes(password);
+            var protectedBytes = ProtectedData.Protect(plain, null, DataProtectionScope.CurrentUser);
+            PasswordProtectedBase64 = Convert.ToBase64String(protectedBytes);
+        }
+
+        public void NormalizeClamps()
+        {
+            if (PasswordRotateRemindHours < 1) PasswordRotateRemindHours = 1;
+            if (PasswordRotateRemindHours > 168) PasswordRotateRemindHours = 168;
+            if (KeysStallMinutes < 1) KeysStallMinutes = 1;
+            if (KeysStallMinutes > 60) KeysStallMinutes = 60;
+            if (AuthCooldownMinutes < 5) AuthCooldownMinutes = 5;
+            if (AuthCooldownMinutes > 240) AuthCooldownMinutes = 240;
+            if (KeysRefreshSeconds < 1) KeysRefreshSeconds = 1;
+            if (KeysRefreshSeconds > 60) KeysRefreshSeconds = 60;
+            if (KeysVinTipSeconds < 3) KeysVinTipSeconds = 3;
+            if (KeysVinTipSeconds > 60) KeysVinTipSeconds = 60;
+            if (NotifyServerPort < 1024 || NotifyServerPort > 65535)
+                NotifyServerPort = 17890;
+            if (string.IsNullOrWhiteSpace(KeysPickupFolder))
+                KeysPickupFolder = @"C:\Users\Public\keyreader";
+            if (string.IsNullOrWhiteSpace(KeysUploaderLogDir))
+                KeysUploaderLogDir = @"C:\ProgramData\BMW\ISPI\Logs\KAI\KeyUploader";
+            if (string.IsNullOrWhiteSpace(KeysKaiLogDir))
+                KeysKaiLogDir = @"C:\ProgramData\BMW\ISPI\Logs\KAI\KAI";
+            if (string.IsNullOrWhiteSpace(KeysSqlitePath))
+                KeysSqlitePath = @"C:\ProgramData\BMW\ISPI\data\KAI\KAI\SqliteKaiDb.db";
+            if (string.IsNullOrWhiteSpace(RegisterUrl))
+                RegisterUrl = "https://kai-b2i-basic.bmwgroup.com/api/agent/register";
+            if (WebEamUrl == null) WebEamUrl = "";
+        }
+
+        public static AppSettings Load()
+        {
+            if (!File.Exists(SettingsPath))
+                return new AppSettings();
+            try
+            {
+                var ser = new XmlSerializer(typeof(AppSettings));
+                using (var fs = File.OpenRead(SettingsPath))
+                {
+                    var loaded = ser.Deserialize(fs) as AppSettings;
+                    if (loaded == null)
+                        return new AppSettings();
+                    try
+                    {
+                        var xml = File.ReadAllText(SettingsPath);
+                        if (xml.IndexOf("BrowserPasswordHintOnAuthFail", StringComparison.OrdinalIgnoreCase) < 0)
+                            loaded.BrowserPasswordHintOnAuthFail = true;
+                        if (xml.IndexOf("PasswordRotateRemindHours", StringComparison.OrdinalIgnoreCase) < 0
+                            || loaded.PasswordRotateRemindHours < 1)
+                            loaded.PasswordRotateRemindHours = 1;
+                        if (xml.IndexOf("KeysBalloonEnabled", StringComparison.OrdinalIgnoreCase) < 0)
+                            loaded.KeysBalloonEnabled = true;
+                        if (xml.IndexOf("KeysStallAlertEnabled", StringComparison.OrdinalIgnoreCase) < 0)
+                            loaded.KeysStallAlertEnabled = true;
+                        if (xml.IndexOf("KeysStallMinutes", StringComparison.OrdinalIgnoreCase) < 0
+                            || loaded.KeysStallMinutes < 1)
+                            loaded.KeysStallMinutes = 2;
+                        if (xml.IndexOf("KeysPickupFolder", StringComparison.OrdinalIgnoreCase) < 0
+                            || string.IsNullOrWhiteSpace(loaded.KeysPickupFolder))
+                            loaded.KeysPickupFolder = @"C:\Users\Public\keyreader";
+                        if (xml.IndexOf("MinimizeOnClose", StringComparison.OrdinalIgnoreCase) < 0)
+                            loaded.MinimizeOnClose = true;
+                        if (xml.IndexOf("AuthCooldownMinutes", StringComparison.OrdinalIgnoreCase) < 0
+                            || loaded.AuthCooldownMinutes < 5)
+                            loaded.AuthCooldownMinutes = 60;
+                        if (xml.IndexOf("KeysRefreshSeconds", StringComparison.OrdinalIgnoreCase) < 0
+                            || loaded.KeysRefreshSeconds < 1)
+                            loaded.KeysRefreshSeconds = 3;
+                        if (xml.IndexOf("KeysVinTipSeconds", StringComparison.OrdinalIgnoreCase) < 0
+                            || loaded.KeysVinTipSeconds < 3)
+                            loaded.KeysVinTipSeconds = 8;
+                        if (xml.IndexOf("KeysUploaderLogDir", StringComparison.OrdinalIgnoreCase) < 0
+                            || string.IsNullOrWhiteSpace(loaded.KeysUploaderLogDir))
+                            loaded.KeysUploaderLogDir = @"C:\ProgramData\BMW\ISPI\Logs\KAI\KeyUploader";
+                        if (xml.IndexOf("KeysKaiLogDir", StringComparison.OrdinalIgnoreCase) < 0
+                            || string.IsNullOrWhiteSpace(loaded.KeysKaiLogDir))
+                            loaded.KeysKaiLogDir = @"C:\ProgramData\BMW\ISPI\Logs\KAI\KAI";
+                        if (xml.IndexOf("KeysSqlitePath", StringComparison.OrdinalIgnoreCase) < 0
+                            || string.IsNullOrWhiteSpace(loaded.KeysSqlitePath))
+                            loaded.KeysSqlitePath = @"C:\ProgramData\BMW\ISPI\data\KAI\KAI\SqliteKaiDb.db";
+                    }
+                    catch { }
+                    loaded.NormalizeClamps();
+                    return loaded;
+                }
+            }
+            catch
+            {
+                return new AppSettings();
+            }
+        }
+
+        public void Save()
+        {
+            NormalizeClamps();
+            var ser = new XmlSerializer(typeof(AppSettings));
+            using (var fs = File.Create(SettingsPath))
+                ser.Serialize(fs, this);
+        }
+
+        /// <summary>Portable settings without DPAPI password.</summary>
+        public void ExportPortable(string path)
+        {
+            var portable = new AppSettings();
+            portable.Email = Email;
+            portable.IntervalHours = IntervalHours;
+            portable.ConfigPath = ConfigPath;
+            portable.RegisterUrl = RegisterUrl;
+            portable.WebEamUrl = WebEamUrl;
+            portable.Language = Language;
+            portable.StartWithWindows = StartWithWindows;
+            portable.LogVerbose = LogVerbose;
+            portable.MinimizeToTray = MinimizeToTray;
+            portable.MinimizeOnClose = MinimizeOnClose;
+            portable.UseSystemProxy = UseSystemProxy;
+            portable.BrowserPasswordHintOnAuthFail = BrowserPasswordHintOnAuthFail;
+            portable.PasswordRotateRemindHours = PasswordRotateRemindHours;
+            portable.ThemeMode = ThemeMode;
+            portable.AuthCooldownMinutes = AuthCooldownMinutes;
+            portable.KeysBalloonEnabled = KeysBalloonEnabled;
+            portable.KeysStallAlertEnabled = KeysStallAlertEnabled;
+            portable.KeysPickupFolder = KeysPickupFolder;
+            portable.KeysStallMinutes = KeysStallMinutes;
+            portable.KeysAutoCopyVin = KeysAutoCopyVin;
+            portable.KeysRefreshSeconds = KeysRefreshSeconds;
+            portable.KeysVinTipSeconds = KeysVinTipSeconds;
+            portable.KeysUploaderLogDir = KeysUploaderLogDir;
+            portable.KeysKaiLogDir = KeysKaiLogDir;
+            portable.KeysSqlitePath = KeysSqlitePath;
+            var ser = new XmlSerializer(typeof(AppSettings));
+            using (var fs = File.Create(path))
+                ser.Serialize(fs, portable);
+        }
+
+        public void ImportPortable(string path)
+        {
+            var ser = new XmlSerializer(typeof(AppSettings));
+            AppSettings imported;
+            using (var fs = File.OpenRead(path))
+                imported = ser.Deserialize(fs) as AppSettings;
+            if (imported == null)
+                throw new InvalidOperationException("Invalid settings file.");
+            if (!string.IsNullOrWhiteSpace(imported.Email))
+                Email = imported.Email.Trim();
+            if (imported.IntervalHours >= 1 && imported.IntervalHours <= 168)
+                IntervalHours = imported.IntervalHours;
+            if (!string.IsNullOrWhiteSpace(imported.ConfigPath))
+                ConfigPath = imported.ConfigPath.Trim();
+            if (!string.IsNullOrWhiteSpace(imported.RegisterUrl))
+                RegisterUrl = imported.RegisterUrl.Trim();
+            if (imported.WebEamUrl != null)
+                WebEamUrl = imported.WebEamUrl.Trim();
+            if (!string.IsNullOrWhiteSpace(imported.Language))
+                Language = imported.Language.Trim();
+            StartWithWindows = imported.StartWithWindows;
+            LogVerbose = imported.LogVerbose;
+            MinimizeToTray = imported.MinimizeToTray;
+            MinimizeOnClose = imported.MinimizeOnClose;
+            UseSystemProxy = imported.UseSystemProxy;
+            BrowserPasswordHintOnAuthFail = imported.BrowserPasswordHintOnAuthFail;
+            if (imported.PasswordRotateRemindHours >= 1 && imported.PasswordRotateRemindHours <= 168)
+                PasswordRotateRemindHours = imported.PasswordRotateRemindHours;
+            if (!string.IsNullOrWhiteSpace(imported.ThemeMode))
+                ThemeMode = imported.ThemeMode.Trim();
+            AuthCooldownMinutes = imported.AuthCooldownMinutes;
+            KeysBalloonEnabled = imported.KeysBalloonEnabled;
+            KeysStallAlertEnabled = imported.KeysStallAlertEnabled;
+            KeysAutoCopyVin = imported.KeysAutoCopyVin;
+            if (!string.IsNullOrWhiteSpace(imported.KeysPickupFolder))
+                KeysPickupFolder = imported.KeysPickupFolder.Trim();
+            if (imported.KeysStallMinutes >= 1 && imported.KeysStallMinutes <= 60)
+                KeysStallMinutes = imported.KeysStallMinutes;
+            KeysRefreshSeconds = imported.KeysRefreshSeconds;
+            KeysVinTipSeconds = imported.KeysVinTipSeconds;
+            if (!string.IsNullOrWhiteSpace(imported.KeysUploaderLogDir))
+                KeysUploaderLogDir = imported.KeysUploaderLogDir.Trim();
+            if (!string.IsNullOrWhiteSpace(imported.KeysKaiLogDir))
+                KeysKaiLogDir = imported.KeysKaiLogDir.Trim();
+            if (!string.IsNullOrWhiteSpace(imported.KeysSqlitePath))
+                KeysSqlitePath = imported.KeysSqlitePath.Trim();
+            NormalizeClamps();
+        }
+    }
+}
