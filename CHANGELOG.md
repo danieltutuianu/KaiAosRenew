@@ -4,6 +4,10 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.13] - 2026-11-16
+
+- Browser password check: also scan `Login Data For Account`; copy WAL/SHM and checkpoint so open Chrome no longer yields empty logins
+
 ## [1.2.12] - 2026-11-16
 
 - Register tab (server + client): OK/Fail history with age, All/OK/Fail filter; loads from renew.log and syncs via registerSync

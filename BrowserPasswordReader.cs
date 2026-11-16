@@ -534,6 +534,12 @@ namespace KaiAosRenew
             return null;
         }
 
+        private static readonly string[] LoginDbFileNames =
+        {
+            "Login Data",
+            "Login Data For Account"
+        };
+
         private static void ScanBrowser(string browserName, string userDataDir, string email,
             List<Candidate> candidates, List<string> errors, List<string> diag)
         {
@@ -550,29 +556,62 @@ namespace KaiAosRenew
             foreach (var p in EnumerateProfiles(userDataDir))
                 profiles.Add(p);
             if (diag != null)
-                diag.Add(browserName + ": profiles with Login Data: " + profiles.Count);
+                diag.Add(browserName + ": profiles with login DB: " + profiles.Count);
 
             for (var i = 0; i < profiles.Count; i++)
             {
                 var profileDir = profiles[i];
-                var loginDb = Path.Combine(profileDir, "Login Data");
-                if (!File.Exists(loginDb))
-                    continue;
-                long size = 0;
-                try { size = new FileInfo(loginDb).Length; } catch { }
-                if (diag != null)
-                    diag.Add(browserName + ": scan " + profileDir + " (Login Data " + size + " bytes)");
-                try
+                for (var d = 0; d < LoginDbFileNames.Length; d++)
                 {
-                    ScanLoginDb(browserName, userDataDir, loginDb, email, candidates, diag);
-                }
-                catch (Exception ex)
-                {
-                    errors.Add(browserName + ": " + ex.Message);
+                    var loginDb = Path.Combine(profileDir, LoginDbFileNames[d]);
+                    if (!File.Exists(loginDb))
+                    {
+                        if (diag != null)
+                            diag.Add(browserName + ": " + LoginDbFileNames[d] + " missing in " + profileDir);
+                        continue;
+                    }
+                    long size = 0;
+                    try { size = new FileInfo(loginDb).Length; } catch { }
+                    var walSize = FileSizeOrZero(loginDb + "-wal");
+                    var shmSize = FileSizeOrZero(loginDb + "-shm");
                     if (diag != null)
-                        diag.Add(browserName + ": ERROR " + ex.Message);
+                    {
+                        diag.Add(browserName + ": scan " + loginDb
+                            + " (" + size + " bytes, wal=" + walSize + ", shm=" + shmSize + ")");
+                    }
+                    try
+                    {
+                        ScanLoginDb(browserName, userDataDir, loginDb, email, candidates, diag);
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add(browserName + ": " + ex.Message);
+                        if (diag != null)
+                            diag.Add(browserName + ": ERROR " + LoginDbFileNames[d] + " — " + ex.Message);
+                    }
                 }
             }
+        }
+
+        private static long FileSizeOrZero(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    return new FileInfo(path).Length;
+            }
+            catch { }
+            return 0;
+        }
+
+        private static bool ProfileHasLoginDb(string profileDir)
+        {
+            for (var i = 0; i < LoginDbFileNames.Length; i++)
+            {
+                if (File.Exists(Path.Combine(profileDir, LoginDbFileNames[i])))
+                    return true;
+            }
+            return false;
         }
 
         private static IEnumerable<string> EnumerateProfiles(string userDataDir)
@@ -580,14 +619,14 @@ namespace KaiAosRenew
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             // Opera often stores Login Data directly in the Stable folder.
-            if (File.Exists(Path.Combine(userDataDir, "Login Data")))
+            if (ProfileHasLoginDb(userDataDir))
             {
                 seen.Add(userDataDir);
                 yield return userDataDir;
             }
 
             var def = Path.Combine(userDataDir, "Default");
-            if (Directory.Exists(def) && File.Exists(Path.Combine(def, "Login Data")) && seen.Add(def))
+            if (Directory.Exists(def) && ProfileHasLoginDb(def) && seen.Add(def))
                 yield return def;
 
             string[] dirs;
@@ -596,7 +635,7 @@ namespace KaiAosRenew
             for (var i = 0; i < dirs.Length; i++)
             {
                 var name = Path.GetFileName(dirs[i]) ?? "";
-                // Skip Chrome cache/system folders; keep Profile *, Default, and any other profile with Login Data.
+                // Skip Chrome cache/system folders; keep Profile *, Default, and any other profile with login DB.
                 if (string.Equals(name, "System Profile", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(name, "Guest Profile", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(name, "Crashpad", StringComparison.OrdinalIgnoreCase)
@@ -607,7 +646,7 @@ namespace KaiAosRenew
                     || string.Equals(name, "Component", StringComparison.OrdinalIgnoreCase)
                     || name.StartsWith(".", StringComparison.Ordinal))
                     continue;
-                if (!File.Exists(Path.Combine(dirs[i], "Login Data")))
+                if (!ProfileHasLoginDb(dirs[i]))
                     continue;
                 if (!seen.Add(dirs[i]))
                     continue;
@@ -615,18 +654,32 @@ namespace KaiAosRenew
             }
         }
 
+        private static void CopySqliteSidecars(string loginDbPath, string temp)
+        {
+            File.Copy(loginDbPath, temp, true);
+            TryCopySidecar(loginDbPath + "-wal", temp + "-wal");
+            TryCopySidecar(loginDbPath + "-shm", temp + "-shm");
+            TryCopySidecar(loginDbPath + "-journal", temp + "-journal");
+        }
+
+        private static void TryCopySidecar(string src, string dest)
+        {
+            try
+            {
+                if (File.Exists(src))
+                    File.Copy(src, dest, true);
+            }
+            catch { }
+        }
+
         private static void ScanLoginDb(string browserName, string userDataDir, string loginDbPath, string email,
             List<Candidate> candidates, List<string> diag)
         {
             var temp = Path.Combine(Path.GetTempPath(), "KaiAosRenew-LoginMeta-" + Guid.NewGuid().ToString("N"));
+            var dbLabel = Path.GetFileName(loginDbPath) ?? "Login Data";
             try
             {
-                File.Copy(loginDbPath, temp, true);
-                var wal = loginDbPath + "-wal";
-                if (File.Exists(wal))
-                {
-                    try { File.Copy(wal, temp + "-wal", true); } catch { }
-                }
+                CopySqliteSidecars(loginDbPath, temp);
 
                 var totalRows = 0;
                 var bmwHostRows = 0;
@@ -634,10 +687,22 @@ namespace KaiAosRenew
                 var bmwMatched = 0;
                 var bmwOtherUsers = new List<string>();
                 var bmwLikeHosts = new List<string>();
+                var sampleOrigins = new List<string>();
 
-                using (var conn = new SQLiteConnection("Data Source=" + temp + ";Version=3;Read Only=True;"))
+                // Writable copy so SQLite can apply WAL; ReadOnly often shows 0 rows while Chrome is open.
+                using (var conn = new SQLiteConnection("Data Source=" + temp + ";Version=3;"))
                 {
                     conn.Open();
+                    try
+                    {
+                        using (var ck = conn.CreateCommand())
+                        {
+                            ck.CommandText = "PRAGMA wal_checkpoint(PASSIVE);";
+                            ck.ExecuteNonQuery();
+                        }
+                    }
+                    catch { }
+
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText =
@@ -651,6 +716,14 @@ namespace KaiAosRenew
                                 totalRows++;
                                 var origin = reader.IsDBNull(0) ? "" : reader.GetString(0);
                                 var user = reader.IsDBNull(1) ? "" : reader.GetString(1);
+
+                                if (sampleOrigins.Count < 8)
+                                {
+                                    var sample = SafeHost(origin) + " | user="
+                                        + (string.IsNullOrWhiteSpace(user) ? "(empty)" : user.Trim());
+                                    if (!sampleOrigins.Contains(sample))
+                                        sampleOrigins.Add(sample);
+                                }
 
                                 if (LooksBmwRelatedHost(origin) && bmwLikeHosts.Count < 12)
                                 {
@@ -707,17 +780,27 @@ namespace KaiAosRenew
 
                 if (diag != null)
                 {
-                    diag.Add(browserName + ": rows=" + totalRows
+                    diag.Add(browserName + " [" + dbLabel + "]: rows=" + totalRows
                         + " bmwgroup.com=" + bmwHostRows
                         + " emailMismatch=" + bmwEmailMismatch
                         + " matched=" + bmwMatched);
                     for (var i = 0; i < bmwOtherUsers.Count; i++)
-                        diag.Add(browserName + ": bmwgroup other user — " + bmwOtherUsers[i]);
+                        diag.Add(browserName + " [" + dbLabel + "]: bmwgroup other user — " + bmwOtherUsers[i]);
                     if (bmwHostRows == 0 && bmwLikeHosts.Count > 0)
                     {
-                        diag.Add(browserName + ": no *.bmwgroup.com host; bmw-related origins (first " + bmwLikeHosts.Count + "):");
+                        diag.Add(browserName + " [" + dbLabel + "]: no *.bmwgroup.com; bmw-related:");
                         for (var i = 0; i < bmwLikeHosts.Count; i++)
-                            diag.Add(browserName + ":   " + bmwLikeHosts[i]);
+                            diag.Add(browserName + " [" + dbLabel + "]:   " + bmwLikeHosts[i]);
+                    }
+                    if (totalRows == 0)
+                    {
+                        diag.Add(browserName + " [" + dbLabel + "]: empty logins table — if Chrome Password Manager shows passwords, try closing Chrome completely and re-check; or passwords may be cloud-only / extension.");
+                    }
+                    else if (bmwHostRows == 0 && bmwLikeHosts.Count == 0)
+                    {
+                        diag.Add(browserName + " [" + dbLabel + "]: sample origins (first " + sampleOrigins.Count + "):");
+                        for (var i = 0; i < sampleOrigins.Count; i++)
+                            diag.Add(browserName + " [" + dbLabel + "]:   " + sampleOrigins[i]);
                     }
                 }
             }
@@ -725,6 +808,8 @@ namespace KaiAosRenew
             {
                 try { if (File.Exists(temp)) File.Delete(temp); } catch { }
                 try { if (File.Exists(temp + "-wal")) File.Delete(temp + "-wal"); } catch { }
+                try { if (File.Exists(temp + "-shm")) File.Delete(temp + "-shm"); } catch { }
+                try { if (File.Exists(temp + "-journal")) File.Delete(temp + "-journal"); } catch { }
             }
         }
 
