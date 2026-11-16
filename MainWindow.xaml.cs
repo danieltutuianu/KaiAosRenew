@@ -169,6 +169,7 @@ namespace KaiAosRenew
         private DateTime _aboutVersionClickUtc = DateTime.MinValue;
         private DateTime _lastKeys403RemediateUtc = DateTime.MinValue;
         private string _lastKeys403RemediateKey;
+        private readonly HashSet<string> _bmwFailVinTipKeys = new HashSet<string>(StringComparer.Ordinal);
         private string _pending403RetryVin;
         private string _pending403RetryReaderId;
         private bool _keysRetryBusy;
@@ -894,7 +895,10 @@ namespace KaiAosRenew
             if (KeysEventsSection != null) KeysEventsSection.Text = UiStrings.T("KeysEventsSection");
             if (KeysHintText != null) KeysHintText.Text = UiStrings.T("KeysHint");
             if (KeysBalloonCheck != null) KeysBalloonCheck.Content = UiStrings.T("KeysBalloonOption");
+            if (KeysVinBmwFailOnlyCheck != null)
+                KeysVinBmwFailOnlyCheck.Content = UiStrings.T("KeysVinBmwFailOnly");
             if (KeysStallAlertCheck != null) KeysStallAlertCheck.Content = UiStrings.T("KeysStallAlertOption");
+            SyncKeysVinBmwFailOnlyUi();
             if (TestBalloonTipsBtn != null) TestBalloonTipsBtn.Content = UiStrings.T("TrayTestBalloon");
             if (KeysAutoCopyVinCheck != null) KeysAutoCopyVinCheck.Content = UiStrings.T("KeysAutoCopyVin");
             if (KeysColVin != null) KeysColVin.Header = UiStrings.T("KeysColVin");
@@ -1267,6 +1271,11 @@ namespace KaiAosRenew
             if (_loadingUi || _settings == null) return;
             if (KeysBalloonCheck != null)
                 _settings.KeysBalloonEnabled = KeysBalloonCheck.IsChecked == true;
+            SyncKeysVinBmwFailOnlyUi();
+            if (KeysVinBmwFailOnlyCheck != null && KeysVinBmwFailOnlyCheck.IsEnabled)
+                _settings.KeysVinTipBmwFailOnly = KeysVinBmwFailOnlyCheck.IsChecked == true;
+            else
+                _settings.KeysVinTipBmwFailOnly = false;
             if (KeysStallAlertCheck != null)
                 _settings.KeysStallAlertEnabled = KeysStallAlertCheck.IsChecked == true;
             if (KeysAutoCopyVinCheck != null)
@@ -1274,6 +1283,19 @@ namespace KaiAosRenew
             try { _settings.Save(); }
             catch { }
             UpdateKeysAlertFromCache();
+        }
+
+        private void SyncKeysVinBmwFailOnlyUi()
+        {
+            if (KeysVinBmwFailOnlyCheck == null) return;
+            var parentOn = KeysBalloonCheck != null && KeysBalloonCheck.IsChecked == true;
+            KeysVinBmwFailOnlyCheck.IsEnabled = parentOn;
+            if (!parentOn)
+            {
+                KeysVinBmwFailOnlyCheck.IsChecked = false;
+                if (_settings != null)
+                    _settings.KeysVinTipBmwFailOnly = false;
+            }
         }
 
         private void ApplyKeysMonitorSettings()
@@ -1877,6 +1899,11 @@ namespace KaiAosRenew
         {
             if (KeysBalloonCheck != null && !_loadingUi && _settings != null)
                 KeysBalloonCheck.IsChecked = _settings.KeysBalloonEnabled;
+            if (KeysVinBmwFailOnlyCheck != null && !_loadingUi && _settings != null)
+            {
+                KeysVinBmwFailOnlyCheck.IsChecked = _settings.KeysBalloonEnabled && _settings.KeysVinTipBmwFailOnly;
+                SyncKeysVinBmwFailOnlyUi();
+            }
             if (KeysStallAlertCheck != null && !_loadingUi && _settings != null)
                 KeysStallAlertCheck.IsChecked = _settings.KeysStallAlertEnabled;
             if (KeysAutoCopyVinCheck != null && !_loadingUi && _settings != null)
@@ -2264,6 +2291,7 @@ namespace KaiAosRenew
             if (snap == null || _settings == null) return;
             // VIN tips: local balloon is optional; remote clients always get the broadcast.
             MaybeShowVinInfoBalloons(snap);
+            MaybeShowVinBmwFailTips(snap);
             var balloonOn = _settings.KeysBalloonEnabled;
             if (_settings.KeysStallAlertEnabled && snap.StallEvents != null)
             {
@@ -2335,12 +2363,16 @@ namespace KaiAosRenew
         /// <summary>
         /// Info tip as soon as VIN is read from .bin/Sqlite — does not wait for BMW Server upload.
         /// Dedup is done in KeyActivityMonitor.NewVinReads.
+        /// When KeysVinTipBmwFailOnly is on, skip local tip here (see MaybeShowVinBmwFailTips).
         /// </summary>
         private void MaybeShowVinInfoBalloons(KeyActivitySnapshot snap)
         {
             if (snap.NewVinReads == null || snap.NewVinReads.Count == 0)
                 return;
             HighlightNewVinRows(snap.NewVinReads);
+            var showLocal = _settings != null
+                && _settings.KeysBalloonEnabled
+                && !_settings.KeysVinTipBmwFailOnly;
             foreach (var vin in snap.NewVinReads)
             {
                 if (string.IsNullOrEmpty(vin)) continue;
@@ -2348,8 +2380,44 @@ namespace KaiAosRenew
                 AppendLog(msg, LogLevel.Info);
                 if (_settings != null && _settings.KeysAutoCopyVin)
                     CopyVinToClipboard(vin);
-                // Local tip only if enabled; clients always receive (own ShowVinTips filter).
-                ShowVinInfoBalloon(vin, msg, _settings == null || _settings.KeysBalloonEnabled);
+                // Local tip only if enabled (and not fail-only mode); clients always receive broadcast.
+                ShowVinInfoBalloon(vin, msg, showLocal);
+            }
+        }
+
+        /// <summary>
+        /// When KeysVinTipBmwFailOnly: info tip after BMW upload fails for a recent VIN.
+        /// </summary>
+        private void MaybeShowVinBmwFailTips(KeyActivitySnapshot snap)
+        {
+            if (_settings == null || !_settings.KeysBalloonEnabled || !_settings.KeysVinTipBmwFailOnly)
+                return;
+            if (snap == null || snap.Events == null) return;
+            var now = DateTime.Now;
+            foreach (var ev in snap.Events)
+            {
+                if (ev == null || !ev.Failed || ev.BmwUploaded) continue;
+                if (string.IsNullOrEmpty(ev.Vin)) continue;
+                if ((now - ev.DetectedLocal).TotalMinutes > 15) continue;
+                var key = (!string.IsNullOrEmpty(ev.FileId) ? ("F:" + ev.FileId) : null)
+                    ?? ("T:" + ev.DetectedLocal.ToString("yyyyMMddHHmmss") + ":V:" + ev.Vin);
+                if (!_bmwFailVinTipKeys.Add(key)) continue;
+                while (_bmwFailVinTipKeys.Count > 200)
+                {
+                    // Trim oldest-ish by clearing half when oversized.
+                    var drop = new List<string>();
+                    var n = 0;
+                    foreach (var k in _bmwFailVinTipKeys)
+                    {
+                        drop.Add(k);
+                        if (++n >= 100) break;
+                    }
+                    for (var i = 0; i < drop.Count; i++)
+                        _bmwFailVinTipKeys.Remove(drop[i]);
+                }
+                var msg = string.Format(UiStrings.T("KeysVinBmwFailTip"), ev.Vin);
+                AppendLog(msg, LogLevel.Warning);
+                ShowVinInfoBalloon(ev.Vin, msg, true);
             }
         }
 
@@ -4502,6 +4570,11 @@ namespace KaiAosRenew
                     BrowserPassHintCheck.IsChecked = _settings.BrowserPasswordHintOnAuthFail;
                 if (KeysBalloonCheck != null)
                     KeysBalloonCheck.IsChecked = _settings.KeysBalloonEnabled;
+                if (KeysVinBmwFailOnlyCheck != null)
+                {
+                    KeysVinBmwFailOnlyCheck.IsChecked = _settings.KeysBalloonEnabled && _settings.KeysVinTipBmwFailOnly;
+                    SyncKeysVinBmwFailOnlyUi();
+                }
                 if (KeysStallAlertCheck != null)
                     KeysStallAlertCheck.IsChecked = _settings.KeysStallAlertEnabled;
                 if (KeysAutoCopyVinCheck != null)
@@ -5652,6 +5725,11 @@ namespace KaiAosRenew
                 _settings.BrowserPasswordHintOnAuthFail = BrowserPassHintCheck.IsChecked == true;
             if (KeysBalloonCheck != null)
                 _settings.KeysBalloonEnabled = KeysBalloonCheck.IsChecked == true;
+            SyncKeysVinBmwFailOnlyUi();
+            if (KeysVinBmwFailOnlyCheck != null && KeysVinBmwFailOnlyCheck.IsEnabled)
+                _settings.KeysVinTipBmwFailOnly = KeysVinBmwFailOnlyCheck.IsChecked == true;
+            else
+                _settings.KeysVinTipBmwFailOnly = false;
             if (KeysStallAlertCheck != null)
                 _settings.KeysStallAlertEnabled = KeysStallAlertCheck.IsChecked == true;
             if (KeysAutoCopyVinCheck != null)
@@ -7465,6 +7543,11 @@ namespace KaiAosRenew
                         BrowserPassHintCheck.IsChecked = _settings.BrowserPasswordHintOnAuthFail;
                     if (KeysBalloonCheck != null)
                         KeysBalloonCheck.IsChecked = _settings.KeysBalloonEnabled;
+                    if (KeysVinBmwFailOnlyCheck != null)
+                    {
+                        KeysVinBmwFailOnlyCheck.IsChecked = _settings.KeysBalloonEnabled && _settings.KeysVinTipBmwFailOnly;
+                        SyncKeysVinBmwFailOnlyUi();
+                    }
                     if (KeysStallAlertCheck != null)
                         KeysStallAlertCheck.IsChecked = _settings.KeysStallAlertEnabled;
                     if (KeysAutoCopyVinCheck != null)

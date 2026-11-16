@@ -533,6 +533,10 @@
                   <CheckBox x:Name="ShowVinTipsCheck" Content="Info tip when VIN is read" Margin="0,0,0,6"
                             Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
+                  <CheckBox x:Name="ShowVinTipsBmwFailOnlyCheck"
+                            Content="Info tip only when VIN is read and upload to BMW server fails"
+                            Margin="18,0,0,6" Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
+                            Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
                   <CheckBox x:Name="AutoCopyVinCheck" Content="Auto-copy VIN when read" Margin="0,0,0,6"
                             Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />

@@ -374,6 +374,9 @@ namespace KaiAosNotifyClient
             if (KeysSettingsGroup != null) KeysSettingsGroup.Header = ClientUiStrings.T("TabKeys");
             if (VinTipDurationLabel != null) VinTipDurationLabel.Text = ClientUiStrings.T("VinTipDuration");
             if (ShowVinTipsCheck != null) ShowVinTipsCheck.Content = ClientUiStrings.T("ShowVinTips");
+            if (ShowVinTipsBmwFailOnlyCheck != null)
+                ShowVinTipsBmwFailOnlyCheck.Content = ClientUiStrings.T("ShowVinTipsBmwFailOnly");
+            SyncShowVinTipsBmwFailOnlyUi();
             if (AutoCopyVinCheck != null) AutoCopyVinCheck.Content = ClientUiStrings.T("AutoCopyVin");
             if (ShowAlertTipsCheck != null) ShowAlertTipsCheck.Content = ClientUiStrings.T("ShowAlertTips");
             if (TestBalloonTipsBtn != null) TestBalloonTipsBtn.Content = ClientUiStrings.T("TrayTestTips");
@@ -861,8 +864,8 @@ namespace KaiAosNotifyClient
                     ? string.Format(ClientUiStrings.T("UpdateChannelTooltip"), UpdateService.ServerChannel)
                     : null;
                 FooterServerUpdateBtn.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-                FooterServerUpdateBtn.IsEnabled = show;
             }
+            UpdateAosControlsEnabled();
             RefreshTrayOutdatedIcon();
         }
 
@@ -883,11 +886,9 @@ namespace KaiAosNotifyClient
             if (FooterServerUpdateBtn != null)
             {
                 FooterServerUpdateBtn.Content = string.Format(ClientUiStrings.T("UpdateServerBtn"), ver);
-                FooterServerUpdateBtn.ToolTip = string.Format(
-                    ClientUiStrings.T("UpdateChannelTooltip"), UpdateService.ServerChannel);
                 FooterServerUpdateBtn.Visibility = Visibility.Visible;
-                FooterServerUpdateBtn.IsEnabled = true;
             }
+            UpdateAosControlsEnabled();
             RefreshTrayOutdatedIcon();
         }
 
@@ -1372,6 +1373,11 @@ namespace KaiAosNotifyClient
                 VinTipSecondsBox.Text = _settings.VinTipSeconds.ToString();
             if (ShowVinTipsCheck != null)
                 ShowVinTipsCheck.IsChecked = _settings.ShowVinTips;
+            if (ShowVinTipsBmwFailOnlyCheck != null)
+            {
+                ShowVinTipsBmwFailOnlyCheck.IsChecked = _settings.ShowVinTips && _settings.ShowVinTipsBmwFailOnly;
+                SyncShowVinTipsBmwFailOnlyUi();
+            }
             if (AutoCopyVinCheck != null)
                 AutoCopyVinCheck.IsChecked = _settings.AutoCopyVin;
             if (ShowAlertTipsCheck != null)
@@ -1455,6 +1461,11 @@ namespace KaiAosNotifyClient
                 _settings.AutoUpdate = AutoUpdateCheck.IsChecked == true;
             if (ShowVinTipsCheck != null)
                 _settings.ShowVinTips = ShowVinTipsCheck.IsChecked == true;
+            SyncShowVinTipsBmwFailOnlyUi();
+            if (ShowVinTipsBmwFailOnlyCheck != null && ShowVinTipsBmwFailOnlyCheck.IsEnabled)
+                _settings.ShowVinTipsBmwFailOnly = ShowVinTipsBmwFailOnlyCheck.IsChecked == true;
+            else
+                _settings.ShowVinTipsBmwFailOnly = false;
             if (AutoCopyVinCheck != null)
                 _settings.AutoCopyVin = AutoCopyVinCheck.IsChecked == true;
             if (ShowAlertTipsCheck != null)
@@ -1501,7 +1512,22 @@ namespace KaiAosNotifyClient
 
         private void SettingsCheck_Changed(object sender, RoutedEventArgs e)
         {
+            if (!_loadingUi)
+                SyncShowVinTipsBmwFailOnlyUi();
             PersistSettingsFromUi();
+        }
+
+        private void SyncShowVinTipsBmwFailOnlyUi()
+        {
+            if (ShowVinTipsBmwFailOnlyCheck == null) return;
+            var parentOn = ShowVinTipsCheck != null && ShowVinTipsCheck.IsChecked == true;
+            ShowVinTipsBmwFailOnlyCheck.IsEnabled = parentOn;
+            if (!parentOn)
+            {
+                ShowVinTipsBmwFailOnlyCheck.IsChecked = false;
+                if (_settings != null)
+                    _settings.ShowVinTipsBmwFailOnly = false;
+            }
         }
 
         private void SettingsField_Changed(object sender, RoutedEventArgs e)
@@ -1616,7 +1642,12 @@ namespace KaiAosNotifyClient
             var on = _client != null && _client.IsConnected;
             var newest = _keyAllRows.Count > 0 ? _keyAllRows[0] : null;
             var failed = newest != null && string.Equals(newest.Status, "Failed", StringComparison.OrdinalIgnoreCase);
-            KeysRetryBmwBtn.IsEnabled = on && failed;
+            var enable = on && failed;
+            KeysRetryBmwBtn.IsEnabled = enable;
+            if (!on)
+                KeysRetryBmwBtn.ToolTip = ClientUiStrings.T("TipAosOffline");
+            else
+                KeysRetryBmwBtn.ToolTip = ClientUiStrings.T("KeysRetryBmwTip");
         }
 
         private void ApplyKeysFilter()
@@ -1733,11 +1764,11 @@ namespace KaiAosNotifyClient
             if (AosPasswordPlainBox != null) AosPasswordPlainBox.IsEnabled = on && !updating;
             if (AosShowPasswordCheck != null) AosShowPasswordCheck.IsEnabled = on && !updating;
 
-            // Save stays clickable offline (offline modal). Disabled while updating or awaiting ack.
             string saveTip = null;
-            var saveOn = true;
-            if (updating) { saveOn = false; saveTip = "TipAosUpdating"; }
-            else if (_aosAwaitingAck) { saveOn = false; saveTip = "TipAosBusy"; }
+            var saveOn = on && !updating && !_aosAwaitingAck;
+            if (!on) saveTip = "TipAosOffline";
+            else if (updating) saveTip = "TipAosUpdating";
+            else if (_aosAwaitingAck) saveTip = "TipAosBusy";
             SetActionEnabled(AosSaveBtn, saveOn, saveTip);
 
             string cmdTip = null;
@@ -1756,13 +1787,28 @@ namespace KaiAosNotifyClient
             SetActionEnabled(KaiStopServicesBtn, on && !updating && !_kaiBusy,
                 !on ? "TipAosOffline" : (updating ? "TipAosUpdating" : (_kaiBusy ? "TipAosBusy" : null)));
 
+            SetActionEnabled(KeysRefreshBtn, on && !updating,
+                !on ? "TipAosOffline" : (updating ? "TipAosUpdating" : null));
+
             if (AosCheckBrowserPassBtn != null) AosCheckBrowserPassBtn.IsEnabled = true;
             if (AosOpenBmwBtn != null) AosOpenBmwBtn.IsEnabled = true;
 
-            if (FooterServerUpdateBtn != null && (updating || (_aosAwaitingAck || _kaiBusy)))
+            if (FooterServerUpdateBtn != null)
             {
-                SetActionEnabled(FooterServerUpdateBtn, false,
-                    updating ? "TipAosUpdating" : "TipAosBusy");
+                var show = FooterServerUpdateBtn.Visibility == Visibility.Visible;
+                var enable = on && show && !updating && !busy;
+                FooterServerUpdateBtn.IsEnabled = enable;
+                if (!enable)
+                {
+                    if (!on) FooterServerUpdateBtn.ToolTip = ClientUiStrings.T("TipAosOffline");
+                    else if (updating) FooterServerUpdateBtn.ToolTip = ClientUiStrings.T("TipAosUpdating");
+                    else if (busy) FooterServerUpdateBtn.ToolTip = ClientUiStrings.T("TipAosBusy");
+                }
+                else
+                {
+                    FooterServerUpdateBtn.ToolTip = string.Format(
+                        ClientUiStrings.T("UpdateChannelTooltip"), UpdateService.ServerChannel);
+                }
             }
 
             UpdateKeysRetryButton();
@@ -2630,12 +2676,24 @@ namespace KaiAosNotifyClient
             }
 
             var level = (msg.Level ?? msg.Kind ?? "info").ToLowerInvariant();
-            if (kind == "vin" || (!string.IsNullOrEmpty(msg.Vin) && level == "info" && kind != "warning" && kind != "error"))
+            var isVinInfo = kind == "vin"
+                || (!string.IsNullOrEmpty(msg.Vin) && level == "info" && kind != "warning" && kind != "error");
+            if (isVinInfo)
             {
                 if (!_settings.ShowVinTips)
                 {
                     RefreshTrayStatus();
                     return;
+                }
+                if (_settings.ShowVinTipsBmwFailOnly)
+                {
+                    var bmwFailed = msg.Failed == 1
+                        || string.Equals(msg.Status, "Failed", StringComparison.OrdinalIgnoreCase);
+                    if (!bmwFailed)
+                    {
+                        RefreshTrayStatus();
+                        return;
+                    }
                 }
             }
             else if (level == "warning" || level == "error" || kind == "warning" || kind == "error")

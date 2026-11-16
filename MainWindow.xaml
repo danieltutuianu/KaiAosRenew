@@ -629,6 +629,11 @@
                 <CheckBox x:Name="KeysBalloonCheck" Content="Info tip when VIN is read (Copy)" Style="{DynamicResource KaiCheckBox}"
                           Margin="0,4,0,6" Checked="KeysOptions_Changed" Unchecked="KeysOptions_Changed"
                           ToolTip="Show in-app tip with Copy when a new VIN is read; double-click opens Keys" />
+                <CheckBox x:Name="KeysVinBmwFailOnlyCheck"
+                          Content="Info tip only when VIN is read and upload to BMW server fails"
+                          Style="{DynamicResource KaiCheckBox}"
+                          Margin="18,0,0,6" Checked="KeysOptions_Changed" Unchecked="KeysOptions_Changed"
+                          ToolTip="Requires VIN tip above; suppress tip on every read and show only after BMW upload fails" />
                 <CheckBox x:Name="KeysAutoCopyVinCheck" Content="Auto-copy VIN when read" Style="{DynamicResource KaiCheckBox}"
                           Margin="0,0,0,6" Checked="KeysOptions_Changed" Unchecked="KeysOptions_Changed"
                           ToolTip="Copy VIN to clipboard automatically on each new read" />

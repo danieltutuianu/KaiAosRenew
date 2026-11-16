@@ -21,6 +21,8 @@ namespace KaiAosNotifyClient
         public string Port { get; set; }
         public int VinTipSeconds { get; set; }
         public bool ShowVinTips { get; set; }
+        /// <summary>When ShowVinTips, show tip only after BMW upload fails (not on every VIN read).</summary>
+        public bool ShowVinTipsBmwFailOnly { get; set; }
         public bool AutoCopyVin { get; set; }
         public bool ShowAlertTips { get; set; }
         public int OfflineMinutes { get; set; }
@@ -47,6 +49,7 @@ namespace KaiAosNotifyClient
             Port = "17890";
             VinTipSeconds = 8;
             ShowVinTips = true;
+            ShowVinTipsBmwFailOnly = false;
             AutoCopyVin = false;
             ShowAlertTips = true;
             OfflineMinutes = 2;
@@ -73,6 +76,8 @@ namespace KaiAosNotifyClient
                 if (Language == SupportedLanguages[i]) { langOk = true; break; }
             }
             if (!langOk) Language = "en";
+            if (!ShowVinTips)
+                ShowVinTipsBmwFailOnly = false;
             Theme = ClientThemeManager.NormalizeMode(Theme);
             if (RecentHosts == null) RecentHosts = new List<string>();
             while (RecentHosts.Count > 3)
@@ -108,6 +113,7 @@ namespace KaiAosNotifyClient
                     s.AutoUpdate = ReadBool(key, "AutoUpdate", true);
                     s.AutoConnect = ReadBool(key, "AutoConnect", true);
                     s.ShowVinTips = ReadBool(key, "ShowVinTips", true);
+                    s.ShowVinTipsBmwFailOnly = ReadBool(key, "ShowVinTipsBmwFailOnly", false);
                     s.AutoCopyVin = ReadBool(key, "AutoCopyVin", false);
                     s.ShowAlertTips = ReadBool(key, "ShowAlertTips", true);
                     s.DebugMode = ReadBool(key, "DebugMode", false);
@@ -153,6 +159,7 @@ namespace KaiAosNotifyClient
                     key.SetValue("AutoUpdate", AutoUpdate ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("AutoConnect", AutoConnect ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("ShowVinTips", ShowVinTips ? 1 : 0, RegistryValueKind.DWord);
+                    key.SetValue("ShowVinTipsBmwFailOnly", ShowVinTipsBmwFailOnly ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("AutoCopyVin", AutoCopyVin ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("ShowAlertTips", ShowAlertTips ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("DebugMode", DebugMode ? 1 : 0, RegistryValueKind.DWord);

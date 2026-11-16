@@ -4,6 +4,11 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.14] - 2026-11-16
+
+- Settings: optional VIN info tip only when BMW upload fails (dependent on existing VIN tip checkbox; local per machine)
+- Client: disable server-synced controls (AOS Save, Keys Refresh, Update server, etc.) while disconnected; re-enable on reconnect
+
 ## [1.2.13] - 2026-11-16
 
 - Browser password check: also scan `Login Data For Account`; copy WAL/SHM and checkpoint so open Chrome no longer yields empty logins

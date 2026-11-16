@@ -55,6 +55,8 @@ namespace KaiAosRenew
         public int AuthCooldownMinutes { get; set; }
         /// <summary>Tray balloon when a new key is detected.</summary>
         public bool KeysBalloonEnabled { get; set; }
+        /// <summary>When KeysBalloonEnabled, show VIN info tip only after BMW upload fails (not on every read).</summary>
+        public bool KeysVinTipBmwFailOnly { get; set; }
         /// <summary>Alert when Local OK but BMW upload missing for &gt; stall minutes.</summary>
         public bool KeysStallAlertEnabled { get; set; }
         /// <summary>Folder watched for keyreader.bin (default C:\Users\Public\keyreader).</summary>
@@ -92,6 +94,7 @@ namespace KaiAosRenew
             AutoUpdate = true;
             AuthCooldownMinutes = 60;
             KeysBalloonEnabled = true;
+            KeysVinTipBmwFailOnly = false;
             KeysStallAlertEnabled = true;
             KeysPickupFolder = @"C:\Users\Public\keyreader";
             KeysStallMinutes = 2;
@@ -197,6 +200,10 @@ namespace KaiAosRenew
                             loaded.PasswordRotateRemindHours = 1;
                         if (xml.IndexOf("KeysBalloonEnabled", StringComparison.OrdinalIgnoreCase) < 0)
                             loaded.KeysBalloonEnabled = true;
+                        if (xml.IndexOf("KeysVinTipBmwFailOnly", StringComparison.OrdinalIgnoreCase) < 0)
+                            loaded.KeysVinTipBmwFailOnly = false;
+                        if (!loaded.KeysBalloonEnabled)
+                            loaded.KeysVinTipBmwFailOnly = false;
                         if (xml.IndexOf("KeysStallAlertEnabled", StringComparison.OrdinalIgnoreCase) < 0)
                             loaded.KeysStallAlertEnabled = true;
                         if (xml.IndexOf("KeysStallMinutes", StringComparison.OrdinalIgnoreCase) < 0
@@ -268,6 +275,7 @@ namespace KaiAosRenew
             portable.ThemeMode = ThemeMode;
             portable.AuthCooldownMinutes = AuthCooldownMinutes;
             portable.KeysBalloonEnabled = KeysBalloonEnabled;
+            portable.KeysVinTipBmwFailOnly = KeysBalloonEnabled && KeysVinTipBmwFailOnly;
             portable.KeysStallAlertEnabled = KeysStallAlertEnabled;
             portable.KeysPickupFolder = KeysPickupFolder;
             portable.KeysStallMinutes = KeysStallMinutes;
@@ -315,6 +323,7 @@ namespace KaiAosRenew
                 ThemeMode = imported.ThemeMode.Trim();
             AuthCooldownMinutes = imported.AuthCooldownMinutes;
             KeysBalloonEnabled = imported.KeysBalloonEnabled;
+            KeysVinTipBmwFailOnly = imported.KeysBalloonEnabled && imported.KeysVinTipBmwFailOnly;
             KeysStallAlertEnabled = imported.KeysStallAlertEnabled;
             KeysAutoCopyVin = imported.KeysAutoCopyVin;
             if (!string.IsNullOrWhiteSpace(imported.KeysPickupFolder))
