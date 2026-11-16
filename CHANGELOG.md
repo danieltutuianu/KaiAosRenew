@@ -4,6 +4,10 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.15] - 2026-11-16
+
+- Setup.exe (server + client): pack with app.ico so installers show the KAI icon in Explorer
+
 ## [1.2.14] - 2026-11-16
 
 - Settings: optional VIN info tip only when BMW upload fails (dependent on existing VIN tip checkbox; local per machine)

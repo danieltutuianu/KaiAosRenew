@@ -116,9 +116,9 @@ if errorlevel 1 exit /b 1
 
 echo Packing server...
 if defined SIGN_ENABLED (
-  vpk pack -u KaiAosRenew -v !SERVER_VER! -p "%PACK_SERVER%" -e "KAI - AOS Renew.exe" -c server-win-x86 --packTitle "KAI - AOS Renew" -o "%VELO_SERVER%" --noPortable --releaseNotes "%NOTES%" --signParams "!SIGN_PARAMS!"
+  vpk pack -u KaiAosRenew -v !SERVER_VER! -p "%PACK_SERVER%" -e "KAI - AOS Renew.exe" -c server-win-x86 --packTitle "KAI - AOS Renew" -i "%ROOT%assets\app.ico" -o "%VELO_SERVER%" --noPortable --releaseNotes "%NOTES%" --signParams "!SIGN_PARAMS!"
 ) else (
-  vpk pack -u KaiAosRenew -v !SERVER_VER! -p "%PACK_SERVER%" -e "KAI - AOS Renew.exe" -c server-win-x86 --packTitle "KAI - AOS Renew" -o "%VELO_SERVER%" --noPortable --releaseNotes "%NOTES%"
+  vpk pack -u KaiAosRenew -v !SERVER_VER! -p "%PACK_SERVER%" -e "KAI - AOS Renew.exe" -c server-win-x86 --packTitle "KAI - AOS Renew" -i "%ROOT%assets\app.ico" -o "%VELO_SERVER%" --noPortable --releaseNotes "%NOTES%"
 )
 if errorlevel 1 exit /b 1
 
@@ -128,9 +128,9 @@ if errorlevel 1 exit /b 1
 
 echo Packing client...
 if defined SIGN_ENABLED (
-  vpk pack -u KaiAosNotifyClient -v !CLIENT_VER! -p "%PACK_CLIENT%" -e "KAI - AOS Renew - Client.exe" -c client-win-x86 --packTitle "KAI - AOS Renew - Client" -o "%VELO_CLIENT%" --noPortable --releaseNotes "%NOTES%" --signParams "!SIGN_PARAMS!"
+  vpk pack -u KaiAosNotifyClient -v !CLIENT_VER! -p "%PACK_CLIENT%" -e "KAI - AOS Renew - Client.exe" -c client-win-x86 --packTitle "KAI - AOS Renew - Client" -i "%CLIENT_ROOT%\app.ico" -o "%VELO_CLIENT%" --noPortable --releaseNotes "%NOTES%" --signParams "!SIGN_PARAMS!"
 ) else (
-  vpk pack -u KaiAosNotifyClient -v !CLIENT_VER! -p "%PACK_CLIENT%" -e "KAI - AOS Renew - Client.exe" -c client-win-x86 --packTitle "KAI - AOS Renew - Client" -o "%VELO_CLIENT%" --noPortable --releaseNotes "%NOTES%"
+  vpk pack -u KaiAosNotifyClient -v !CLIENT_VER! -p "%PACK_CLIENT%" -e "KAI - AOS Renew - Client.exe" -c client-win-x86 --packTitle "KAI - AOS Renew - Client" -i "%CLIENT_ROOT%\app.ico" -o "%VELO_CLIENT%" --noPortable --releaseNotes "%NOTES%"
 )
 if errorlevel 1 exit /b 1
 
