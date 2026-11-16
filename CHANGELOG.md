@@ -4,6 +4,11 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.12] - 2026-11-16
+
+- Register tab (server + client): OK/Fail history with age, All/OK/Fail filter; loads from renew.log and syncs via registerSync
+- Browser password check: write diagnostics to `%AppData%\KaiAosRenew\browser-pass-check.log`; scan all Chrome profiles with Login Data
+
 ## [1.2.11] - 2026-11-15
 
 - Keys: Clear button on server and client — server clear is local only (no empty keySync); client clear is local + history

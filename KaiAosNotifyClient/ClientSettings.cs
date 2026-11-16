@@ -298,4 +298,31 @@ namespace KaiAosNotifyClient
             };
         }
     }
+
+    public sealed class RegisterHistoryRow
+    {
+        public DateTime At { get; set; }
+        public bool Ok { get; set; }
+        public string Text { get; set; }
+        public string AgeText { get; set; }
+        public string ResultText { get; set; }
+
+        public string TimeText
+        {
+            get { return At.ToString("yyyy-MM-dd HH:mm:ss"); }
+        }
+
+        internal static RegisterHistoryRow FromWire(RegisterWireRow row)
+        {
+            if (row == null) return null;
+            return new RegisterHistoryRow
+            {
+                At = row.At,
+                Ok = row.Ok,
+                Text = row.Text ?? "",
+                AgeText = "",
+                ResultText = ""
+            };
+        }
+    }
 }

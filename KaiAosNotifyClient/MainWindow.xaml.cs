@@ -30,13 +30,17 @@ namespace KaiAosNotifyClient
         private readonly List<ClientKeyRow> _keyAllRows = new List<ClientKeyRow>();
         private readonly ObservableCollection<ClientKeyRow> _keyRows = new ObservableCollection<ClientKeyRow>();
         private readonly ObservableCollection<ActivityRow> _activityRows = new ObservableCollection<ActivityRow>();
+        private readonly List<RegisterHistoryRow> _registerHistory = new List<RegisterHistoryRow>();
         private const int ActivityMaxRows = 500;
+        private const int RegisterHistoryMax = 200;
         private bool _aboutVisible;
         private bool _suppressTabChange;
         private int _tabIndexBeforeAbout = -1;
         private string _keysFilter = "all";
         private string _keysSearchText = "";
         private bool _keysFilterReady;
+        private string _registerFilter = "all";
+        private bool _registerFilterReady;
         private bool _servicesFail;
         private bool _servicesBlinkOn = true;
         private readonly DispatcherTimer _servicesBlinkTimer = new DispatcherTimer();
@@ -227,6 +231,7 @@ namespace KaiAosNotifyClient
                 if (_activityView != null)
                     _activityView.Filter = ShouldShowActivityRow;
                 InitLogFilterCombo();
+                InitRegisterFilterCombo();
                 UpdateKeysTodayBadge();
                 UpdateAosSyncStatus();
                 UpdateAosControlsEnabled();
@@ -275,6 +280,8 @@ namespace KaiAosNotifyClient
             if (TabKeysHeaderText != null) TabKeysHeaderText.Text = ClientUiStrings.T("TabKeys");
             if (TabAosHeaderText != null) TabAosHeaderText.Text = ClientUiStrings.T("TabAos");
             if (TabActivityHeaderText != null) TabActivityHeaderText.Text = ClientUiStrings.T("TabActivity");
+            if (TabRegisterHeaderText != null) TabRegisterHeaderText.Text = ClientUiStrings.T("TabRegister");
+            ApplyRegisterTabStrings();
             if (TabKaiHeaderText != null) TabKaiHeaderText.Text = TL("TabKai", "KAI");
             if (KaiInstallSection != null) KaiInstallSection.Text = TL("KaiInstall", "Installation:");
             if (KaiUrlsSection != null) KaiUrlsSection.Text = TL("KaiUrls", "Kai Zentral URLs:");
@@ -1696,7 +1703,15 @@ namespace KaiAosNotifyClient
                 if (AboutTabBtn != null) AboutTabBtn.Tag = null;
             }
             if (!_aboutVisible && TabActivity != null && TabActivity.IsSelected)
+            {
                 ClearActivityAlert();
+                ScrollActivityToEnd();
+            }
+            if (!_aboutVisible && TabRegister != null && TabRegister.IsSelected)
+            {
+                RefreshRegisterAges();
+                ScrollRegisterHistoryToEnd();
+            }
             UpdateAosButtonsVisibility();
         }
 
@@ -2552,6 +2567,12 @@ namespace KaiAosNotifyClient
                 RefreshTrayStatus();
                 return;
             }
+            if (kind == "registersync")
+            {
+                ApplyRegisterSync(msg.Text);
+                RefreshTrayStatus();
+                return;
+            }
             if (kind == "activity")
             {
                 AppendActivityRow(msg.At, msg.Level ?? "info", msg.Text ?? "");
@@ -2725,6 +2746,135 @@ namespace KaiAosNotifyClient
             ScrollActivityToEnd();
         }
 
+        private void ApplyRegisterSync(string text)
+        {
+            _registerHistory.Clear();
+            var rows = NotifyMessage.ParseRegisterSync(text);
+            foreach (var row in rows)
+            {
+                if (row == null) continue;
+                var local = RegisterHistoryRow.FromWire(row);
+                if (local == null) continue;
+                local.ResultText = local.Ok
+                    ? ClientUiStrings.T("RegisterResultOk")
+                    : ClientUiStrings.T("RegisterResultFail");
+                _registerHistory.Add(local);
+            }
+            while (_registerHistory.Count > RegisterHistoryMax)
+                _registerHistory.RemoveAt(0);
+            RefreshRegisterAges();
+            ApplyRegisterFilter();
+            if (TabRegister != null && TabRegister.IsSelected)
+                ScrollRegisterHistoryToEnd();
+        }
+
+        private void ApplyRegisterTabStrings()
+        {
+            if (RegisterHistoryLabel != null) RegisterHistoryLabel.Text = ClientUiStrings.T("RegisterHistory");
+            if (RegisterFilterLabel != null) RegisterFilterLabel.Text = ClientUiStrings.T("RegisterFilter");
+            if (RegisterColTime != null) RegisterColTime.Header = ClientUiStrings.T("RegisterColTime");
+            if (RegisterColResult != null) RegisterColResult.Header = ClientUiStrings.T("RegisterColResult");
+            if (RegisterColAge != null) RegisterColAge.Header = ClientUiStrings.T("RegisterColAge");
+            if (RegisterColDetail != null) RegisterColDetail.Header = ClientUiStrings.T("RegisterColDetail");
+            InitRegisterFilterCombo();
+            for (var i = 0; i < _registerHistory.Count; i++)
+            {
+                var r = _registerHistory[i];
+                if (r == null) continue;
+                r.ResultText = r.Ok
+                    ? ClientUiStrings.T("RegisterResultOk")
+                    : ClientUiStrings.T("RegisterResultFail");
+            }
+            ApplyRegisterFilter();
+        }
+
+        private void InitRegisterFilterCombo()
+        {
+            if (RegisterFilterCombo == null) return;
+            var prev = _registerFilter;
+            _registerFilterReady = false;
+            RegisterFilterCombo.DisplayMemberPath = "Name";
+            RegisterFilterCombo.SelectedValuePath = "Code";
+            RegisterFilterCombo.ItemsSource = new List<LangItem>
+            {
+                new LangItem { Code = "all", Name = ClientUiStrings.T("RegisterFilterAll") },
+                new LangItem { Code = "ok", Name = ClientUiStrings.T("RegisterFilterOk") },
+                new LangItem { Code = "fail", Name = ClientUiStrings.T("RegisterFilterFail") }
+            };
+            RegisterFilterCombo.SelectedValue = string.IsNullOrEmpty(prev) ? "all" : prev;
+            if (RegisterFilterCombo.SelectedValue == null)
+                RegisterFilterCombo.SelectedValue = "all";
+            _registerFilter = (RegisterFilterCombo.SelectedValue as string) ?? "all";
+            _registerFilterReady = true;
+        }
+
+        private void RegisterFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_registerFilterReady || RegisterFilterCombo == null) return;
+            var code = RegisterFilterCombo.SelectedValue as string;
+            if (string.IsNullOrEmpty(code)) code = "all";
+            _registerFilter = code;
+            ApplyRegisterFilter();
+        }
+
+        private void RefreshRegisterAges()
+        {
+            var now = DateTime.Now;
+            for (var i = 0; i < _registerHistory.Count; i++)
+            {
+                var r = _registerHistory[i];
+                if (r == null) continue;
+                var span = now - r.At;
+                if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+                r.AgeText = string.Format(ClientUiStrings.T("TimeAgo"), FormatAge(span));
+            }
+            ApplyRegisterFilter();
+        }
+
+        private void ApplyRegisterFilter()
+        {
+            if (RegisterHistoryList == null) return;
+            IEnumerable<RegisterHistoryRow> src = _registerHistory;
+            if (string.Equals(_registerFilter, "ok", StringComparison.OrdinalIgnoreCase))
+            {
+                var list = new List<RegisterHistoryRow>();
+                for (var i = 0; i < _registerHistory.Count; i++)
+                {
+                    var r = _registerHistory[i];
+                    if (r != null && r.Ok) list.Add(r);
+                }
+                src = list;
+            }
+            else if (string.Equals(_registerFilter, "fail", StringComparison.OrdinalIgnoreCase))
+            {
+                var list = new List<RegisterHistoryRow>();
+                for (var i = 0; i < _registerHistory.Count; i++)
+                {
+                    var r = _registerHistory[i];
+                    if (r != null && !r.Ok) list.Add(r);
+                }
+                src = list;
+            }
+            RegisterHistoryList.ItemsSource = null;
+            RegisterHistoryList.ItemsSource = src;
+        }
+
+        private void ScrollRegisterHistoryToEnd()
+        {
+            if (RegisterHistoryList == null || RegisterHistoryList.Items.Count == 0) return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    if (RegisterHistoryList == null || RegisterHistoryList.Items.Count == 0) return;
+                    RegisterHistoryList.UpdateLayout();
+                    var last = RegisterHistoryList.Items[RegisterHistoryList.Items.Count - 1];
+                    RegisterHistoryList.ScrollIntoView(last);
+                }
+                catch { }
+            }), DispatcherPriority.Loaded);
+        }
+
         private void AppendActivityRow(string atText, string level, string text)
         {
             DateTime at;
@@ -2748,8 +2898,18 @@ namespace KaiAosNotifyClient
         private void ScrollActivityToEnd()
         {
             if (ActivityList == null || ActivityList.Items.Count == 0) return;
-            try { ActivityList.ScrollIntoView(ActivityList.Items[ActivityList.Items.Count - 1]); }
-            catch { }
+            // Defer until layout is ready — immediate ScrollIntoView often no-ops on tab switch.
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    if (ActivityList == null || ActivityList.Items.Count == 0) return;
+                    ActivityList.UpdateLayout();
+                    var last = ActivityList.Items[ActivityList.Items.Count - 1];
+                    ActivityList.ScrollIntoView(last);
+                }
+                catch { }
+            }), DispatcherPriority.Loaded);
         }
 
         private void ActivityClear_Click(object sender, RoutedEventArgs e)
@@ -3324,6 +3484,8 @@ namespace KaiAosNotifyClient
             RefreshTrayStatus();
             MaybeAlertOffline();
             UpdateKeysAlert(); // time-based stall detection
+            if (TabRegister != null && TabRegister.IsSelected)
+                RefreshRegisterAges();
         }
 
         private void MaybeAlertOffline()

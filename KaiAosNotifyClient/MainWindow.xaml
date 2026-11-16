@@ -308,6 +308,62 @@
           </Grid>
         </TabItem>
 
+        <TabItem x:Name="TabRegister">
+          <TabItem.Header>
+            <TextBlock x:Name="TabRegisterHeaderText" Text="Register" VerticalAlignment="Center" />
+          </TabItem.Header>
+          <Grid Margin="4" Background="{DynamicResource WindowBgBrush}">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <DockPanel Margin="0,0,0,4" LastChildFill="False">
+              <TextBlock x:Name="RegisterHistoryLabel" Style="{DynamicResource SectionText}"
+                         Text="Register history:" VerticalAlignment="Center" />
+              <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                <TextBlock x:Name="RegisterFilterLabel" Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
+                <ComboBox x:Name="RegisterFilterCombo" Width="120" VerticalAlignment="Center"
+                          Style="{DynamicResource KaiComboBox}"
+                          DisplayMemberPath="Name" SelectedValuePath="Code"
+                          SelectionChanged="RegisterFilter_SelectionChanged" />
+              </StackPanel>
+            </DockPanel>
+            <ListView x:Name="RegisterHistoryList" Grid.Row="1"
+                      BorderBrush="{DynamicResource FieldBorderBrush}" BorderThickness="1"
+                      Background="{DynamicResource FieldBgBrush}" FontFamily="Consolas" FontSize="11"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto"
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
+              <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource KaiListViewItem}">
+                  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                  <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Ok}" Value="True">
+                      <Setter Property="Foreground" Value="{DynamicResource StatusOkBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Ok}" Value="False">
+                      <Setter Property="Foreground" Value="{DynamicResource StatusErrorBrush}" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </ListView.ItemContainerStyle>
+              <ListView.View>
+                <GridView>
+                  <GridViewColumn x:Name="RegisterColTime" Header="Time" Width="140"
+                                  DisplayMemberBinding="{Binding TimeText}" />
+                  <GridViewColumn x:Name="RegisterColResult" Header="Result" Width="70"
+                                  DisplayMemberBinding="{Binding ResultText}" />
+                  <GridViewColumn x:Name="RegisterColAge" Header="Age" Width="110"
+                                  DisplayMemberBinding="{Binding AgeText}" />
+                  <GridViewColumn x:Name="RegisterColDetail" Header="Detail" Width="520"
+                                  DisplayMemberBinding="{Binding Text}" />
+                </GridView>
+              </ListView.View>
+            </ListView>
+          </Grid>
+        </TabItem>
+
         <TabItem x:Name="TabKai">
           <TabItem.Header>
             <StackPanel Orientation="Horizontal">

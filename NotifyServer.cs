@@ -604,6 +604,21 @@ namespace KaiAosRenew
             return sb.ToString();
         }
 
+        public static string EncodeRegisterSync(IList<RegisterWireRow> rows)
+        {
+            if (rows == null || rows.Count == 0) return "";
+            var sb = new StringBuilder();
+            foreach (var row in rows)
+            {
+                if (row == null) continue;
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append(row.At.ToString("yyyy-MM-ddTHH:mm:ss"));
+                sb.Append('|').Append(row.Ok ? "1" : "0");
+                sb.Append('|').Append(EscPipe(row.Text ?? ""));
+            }
+            return sb.ToString();
+        }
+
         /// <summary>
         /// kind=kaiSync text. Line 1: install|registerUrl|webEamUrl|uploadUrl|tokenExpiryText|allOk|anyRunning|svcAlert
         /// then up to 2 lines: name|statusText|startTypeText|ok
@@ -725,6 +740,30 @@ namespace KaiAosRenew
             return list;
         }
 
+        public static List<RegisterWireRow> ParseRegisterSync(string text)
+        {
+            var list = new List<RegisterWireRow>();
+            if (string.IsNullOrWhiteSpace(text)) return list;
+            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            foreach (var raw in lines)
+            {
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                var parts = SplitPipe(raw);
+                if (parts.Count < 3) continue;
+                DateTime at;
+                if (!DateTime.TryParse(parts[0], out at))
+                    at = DateTime.Now;
+                var okFlag = (parts[1] ?? "").Trim();
+                list.Add(new RegisterWireRow
+                {
+                    At = DateTime.SpecifyKind(at, DateTimeKind.Local),
+                    Ok = okFlag == "1" || string.Equals(okFlag, "ok", StringComparison.OrdinalIgnoreCase),
+                    Text = parts[2] ?? ""
+                });
+            }
+            return list;
+        }
+
         private static List<string> SplitPipe(string line)
         {
             var parts = new List<string>();
@@ -824,6 +863,13 @@ namespace KaiAosRenew
     {
         public DateTime At { get; set; }
         public string Level { get; set; }
+        public string Text { get; set; }
+    }
+
+    internal sealed class RegisterWireRow
+    {
+        public DateTime At { get; set; }
+        public bool Ok { get; set; }
         public string Text { get; set; }
     }
 }

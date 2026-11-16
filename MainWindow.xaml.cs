@@ -46,8 +46,26 @@ namespace KaiAosRenew
             public string Text { get; set; }
         }
 
+        private sealed class RegisterHistoryRow
+        {
+            public DateTime At { get; set; }
+            public bool Ok { get; set; }
+            public string Text { get; set; }
+            public string AgeText { get; set; }
+            public string ResultText { get; set; }
+
+            public string TimeText
+            {
+                get { return At.ToString("yyyy-MM-dd HH:mm:ss"); }
+            }
+        }
+
         private readonly DispatcherTimer _timer = new DispatcherTimer();
         private readonly List<LogEntry> _logEntries = new List<LogEntry>();
+        private readonly List<RegisterHistoryRow> _registerHistory = new List<RegisterHistoryRow>();
+        private const int RegisterHistoryMax = 200;
+        private string _registerFilter = "all";
+        private bool _registerFilterReady;
         private WinForms.NotifyIcon _tray;
         private Drawing.Icon _appIcon;
         private Drawing.Icon _errorIcon;
@@ -210,6 +228,8 @@ namespace KaiAosRenew
             SetTimerStatus(false);
             SeedRegisterTimesFromLog();
             SeedRegisterActivityFromRenewLog();
+            LoadRegisterHistoryFromLog();
+            InitRegisterFilterCombo();
             UpdateTokenAgeText();
             InitTokenFooterFromSettings();
             _debugMode = _settings != null && _settings.DebugMode;
@@ -566,6 +586,8 @@ namespace KaiAosRenew
             if (TabKaiHeaderText != null) TabKaiHeaderText.Text = UiStrings.T("TabKai");
             if (TabKeysHeaderText != null) TabKeysHeaderText.Text = UiStrings.T("TabKeys");
             if (TabActivityHeaderText != null) TabActivityHeaderText.Text = UiStrings.T("TabActivity");
+            if (TabRegisterHeaderText != null) TabRegisterHeaderText.Text = UiStrings.T("TabRegister");
+            ApplyRegisterTabStrings();
             if (TabSettingsHeaderText != null) TabSettingsHeaderText.Text = UiStrings.T("TabSettings");
             if (AboutTabBtn != null) AboutTabBtn.Content = UiStrings.T("TabAbout");
             ApplyKeysTabStrings();
@@ -687,6 +709,13 @@ namespace KaiAosRenew
             UpdateKeysTabPolling();
             if (!_aboutVisible && TabKeys != null && TabKeys.IsSelected)
                 RefreshKeysTab(false);
+            if (!_aboutVisible && TabActivity != null && TabActivity.IsSelected)
+                ScrollActivityLogToEnd();
+            if (!_aboutVisible && TabRegister != null && TabRegister.IsSelected)
+            {
+                RefreshRegisterAges();
+                ScrollRegisterHistoryToEnd();
+            }
         }
 
         private void AboutTabBtn_Click(object sender, RoutedEventArgs e)
@@ -763,12 +792,88 @@ namespace KaiAosRenew
             if (ButtonsBorder == null) return;
             var showButtons = !_aboutVisible && TabRenew != null && TabRenew.IsSelected;
             ButtonsBorder.Visibility = showButtons ? Visibility.Visible : Visibility.Collapsed;
-            if (!_aboutVisible && TabActivity != null && TabActivity.IsSelected && LogBox != null)
+            if (!_aboutVisible && TabActivity != null && TabActivity.IsSelected)
+                ScrollActivityLogToEnd();
+            if (!_aboutVisible && TabRegister != null && TabRegister.IsSelected)
             {
-                try { LogBox.ScrollToEnd(); }
-                catch { }
+                RefreshRegisterAges();
+                ScrollRegisterHistoryToEnd();
             }
             UpdateKeysTabPolling();
+        }
+
+        private void ScrollActivityLogToEnd()
+        {
+            if (LogBox == null) return;
+            // Defer until layout is ready — immediate ScrollToEnd often no-ops on tab switch.
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    if (LogBox == null) return;
+                    LogBox.UpdateLayout();
+                    LogBox.ScrollToEnd();
+                }
+                catch { }
+            }), DispatcherPriority.Loaded);
+        }
+
+        private void ScrollRegisterHistoryToEnd()
+        {
+            if (RegisterHistoryList == null || RegisterHistoryList.Items.Count == 0) return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    if (RegisterHistoryList == null || RegisterHistoryList.Items.Count == 0) return;
+                    RegisterHistoryList.UpdateLayout();
+                    var last = RegisterHistoryList.Items[RegisterHistoryList.Items.Count - 1];
+                    RegisterHistoryList.ScrollIntoView(last);
+                }
+                catch { }
+            }), DispatcherPriority.Loaded);
+        }
+
+        private void ApplyRegisterTabStrings()
+        {
+            if (RegisterHistoryLabel != null) RegisterHistoryLabel.Text = UiStrings.T("RegisterHistory");
+            if (RegisterFilterLabel != null) RegisterFilterLabel.Text = UiStrings.T("RegisterFilter");
+            if (RegisterColTime != null) RegisterColTime.Header = UiStrings.T("RegisterColTime");
+            if (RegisterColResult != null) RegisterColResult.Header = UiStrings.T("RegisterColResult");
+            if (RegisterColAge != null) RegisterColAge.Header = UiStrings.T("RegisterColAge");
+            if (RegisterColDetail != null) RegisterColDetail.Header = UiStrings.T("RegisterColDetail");
+            InitRegisterFilterCombo();
+            RefreshRegisterResultTexts();
+            ApplyRegisterFilter();
+        }
+
+        private void InitRegisterFilterCombo()
+        {
+            if (RegisterFilterCombo == null) return;
+            var prev = _registerFilter;
+            _registerFilterReady = false;
+            RegisterFilterCombo.DisplayMemberPath = "Name";
+            RegisterFilterCombo.SelectedValuePath = "Code";
+            RegisterFilterCombo.ItemsSource = new List<LangItem>
+            {
+                new LangItem { Code = "all", Name = UiStrings.T("RegisterFilterAll") },
+                new LangItem { Code = "ok", Name = UiStrings.T("RegisterFilterOk") },
+                new LangItem { Code = "fail", Name = UiStrings.T("RegisterFilterFail") }
+            };
+            RegisterFilterCombo.SelectedValue = string.IsNullOrEmpty(prev) ? "all" : prev;
+            if (RegisterFilterCombo.SelectedValue == null)
+                RegisterFilterCombo.SelectedValue = "all";
+            _registerFilter = (RegisterFilterCombo.SelectedValue as string) ?? "all";
+            _registerFilterReady = true;
+        }
+
+        private void RegisterFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_registerFilterReady || RegisterFilterCombo == null) return;
+            var code = RegisterFilterCombo.SelectedValue as string;
+            if (string.IsNullOrEmpty(code)) code = "all";
+            _registerFilter = code;
+            ApplyRegisterFilter();
         }
 
         private void ApplyKeysTabStrings()
@@ -3979,6 +4084,7 @@ namespace KaiAosRenew
             {
                 SendFooterTo(idCopy);
                 SendActivitySyncTo(idCopy);
+                SendRegisterSyncTo(idCopy);
                 SendAosSyncTo(idCopy);
                 SendKaiSyncTo(idCopy);
                 SendUpdateFeedTo(idCopy);
@@ -6007,6 +6113,8 @@ namespace KaiAosRenew
             UpdateNextLabel();
             UpdateTrayTooltip();
             UpdateTokenAgeText();
+            if (TabRegister != null && TabRegister.IsSelected)
+                RefreshRegisterAges();
             UpdateTokenFooterDisplay();
             RefreshAuthCooldownBanner();
             RefreshPasswordHintBanners(true);
@@ -6574,6 +6682,160 @@ namespace KaiAosRenew
                 || text.IndexOf("Register returned empty", StringComparison.OrdinalIgnoreCase) >= 0)
                 return LogLevel.Error;
             return LogLevel.Info;
+        }
+
+        private static bool TryClassifyRegisterHistory(string text, out bool ok)
+        {
+            ok = false;
+            if (string.IsNullOrEmpty(text)) return false;
+            var t = text.Trim();
+            if (t.StartsWith("OK:", StringComparison.OrdinalIgnoreCase))
+                t = t.Substring(3).TrimStart();
+            else if (t.StartsWith("FAIL:", StringComparison.OrdinalIgnoreCase))
+                t = t.Substring(5).TrimStart();
+            if (t.IndexOf("Registration OK", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                ok = true;
+                return true;
+            }
+            if (t.IndexOf("Register failed", StringComparison.OrdinalIgnoreCase) >= 0
+                || t.IndexOf("Register rejected", StringComparison.OrdinalIgnoreCase) >= 0
+                || t.IndexOf("Register returned empty", StringComparison.OrdinalIgnoreCase) >= 0
+                || t.IndexOf("KAI_Properties.cfg was not created", StringComparison.OrdinalIgnoreCase) >= 0
+                || t.IndexOf("KAI_Properties.cfg invalid", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                ok = false;
+                return true;
+            }
+            return false;
+        }
+
+        private void LoadRegisterHistoryFromLog()
+        {
+            try
+            {
+                _registerHistory.Clear();
+                var paths = new[] { AppSettings.LogPath + ".1", AppSettings.LogPath };
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                for (var p = 0; p < paths.Length; p++)
+                {
+                    if (!File.Exists(paths[p])) continue;
+                    foreach (var line in File.ReadLines(paths[p]))
+                    {
+                        if (line == null || line.Length < 21) continue;
+                        DateTime local;
+                        if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
+                            CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
+                            continue;
+                        var text = line.Substring(19).TrimStart();
+                        bool ok;
+                        if (!TryClassifyRegisterHistory(text, out ok)) continue;
+                        var key = local.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + (ok ? "1" : "0") + "\t" + text;
+                        if (!seen.Add(key)) continue;
+                        _registerHistory.Add(new RegisterHistoryRow
+                        {
+                            At = local,
+                            Ok = ok,
+                            Text = text,
+                            AgeText = "",
+                            ResultText = ok ? UiStrings.T("RegisterResultOk") : UiStrings.T("RegisterResultFail")
+                        });
+                    }
+                }
+                _registerHistory.Sort((a, b) => a.At.CompareTo(b.At));
+                while (_registerHistory.Count > RegisterHistoryMax)
+                    _registerHistory.RemoveAt(0);
+                RefreshRegisterAges();
+                ApplyRegisterFilter();
+            }
+            catch { }
+        }
+
+        private void MaybeAppendRegisterHistory(string text, DateTime at)
+        {
+            bool ok;
+            if (!TryClassifyRegisterHistory(text, out ok)) return;
+            var clean = text ?? "";
+            if (clean.StartsWith("OK:", StringComparison.OrdinalIgnoreCase))
+                clean = clean.Substring(3).TrimStart();
+            else if (clean.StartsWith("FAIL:", StringComparison.OrdinalIgnoreCase))
+                clean = clean.Substring(5).TrimStart();
+            var key = at.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + (ok ? "1" : "0") + "\t" + clean;
+            for (var i = 0; i < _registerHistory.Count; i++)
+            {
+                var r = _registerHistory[i];
+                if (r == null) continue;
+                var existing = r.At.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + (r.Ok ? "1" : "0") + "\t" + (r.Text ?? "");
+                if (string.Equals(existing, key, StringComparison.Ordinal)) return;
+            }
+            var span = DateTime.Now - at;
+            if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+            _registerHistory.Add(new RegisterHistoryRow
+            {
+                At = at,
+                Ok = ok,
+                Text = clean,
+                AgeText = string.Format(UiStrings.T("TimeAgo"), FormatAge(span)),
+                ResultText = ok ? UiStrings.T("RegisterResultOk") : UiStrings.T("RegisterResultFail")
+            });
+            while (_registerHistory.Count > RegisterHistoryMax)
+                _registerHistory.RemoveAt(0);
+            ApplyRegisterFilter();
+            if (TabRegister != null && TabRegister.IsSelected)
+                ScrollRegisterHistoryToEnd();
+            BroadcastRegisterSync();
+        }
+
+        private void RefreshRegisterResultTexts()
+        {
+            for (var i = 0; i < _registerHistory.Count; i++)
+            {
+                var r = _registerHistory[i];
+                if (r == null) continue;
+                r.ResultText = r.Ok ? UiStrings.T("RegisterResultOk") : UiStrings.T("RegisterResultFail");
+            }
+        }
+
+        private void RefreshRegisterAges()
+        {
+            var now = DateTime.Now;
+            for (var i = 0; i < _registerHistory.Count; i++)
+            {
+                var r = _registerHistory[i];
+                if (r == null) continue;
+                var span = now - r.At;
+                if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+                r.AgeText = string.Format(UiStrings.T("TimeAgo"), FormatAge(span));
+            }
+            ApplyRegisterFilter();
+        }
+
+        private void ApplyRegisterFilter()
+        {
+            if (RegisterHistoryList == null) return;
+            IEnumerable<RegisterHistoryRow> src = _registerHistory;
+            if (string.Equals(_registerFilter, "ok", StringComparison.OrdinalIgnoreCase))
+            {
+                var list = new List<RegisterHistoryRow>();
+                for (var i = 0; i < _registerHistory.Count; i++)
+                {
+                    var r = _registerHistory[i];
+                    if (r != null && r.Ok) list.Add(r);
+                }
+                src = list;
+            }
+            else if (string.Equals(_registerFilter, "fail", StringComparison.OrdinalIgnoreCase))
+            {
+                var list = new List<RegisterHistoryRow>();
+                for (var i = 0; i < _registerHistory.Count; i++)
+                {
+                    var r = _registerHistory[i];
+                    if (r != null && !r.Ok) list.Add(r);
+                }
+                src = list;
+            }
+            RegisterHistoryList.ItemsSource = null;
+            RegisterHistoryList.ItemsSource = src;
         }
 
         private static bool IsRegistrationFilterMatch(string text)
@@ -7294,6 +7556,7 @@ namespace KaiAosRenew
                     LogBox.ScrollToEnd();
             }
             BroadcastActivityEntry(entry);
+            MaybeAppendRegisterHistory(entry.Text, entry.Time);
         }
 
         private static LogLevel InferLogLevel(string line, bool verboseOnly)
@@ -7439,6 +7702,72 @@ namespace KaiAosRenew
             catch (Exception ex)
             {
                 try { RenewEngine.Log("Notify activitySync: " + ex.Message); }
+                catch { }
+            }
+        }
+
+        private void SendRegisterSyncTo(int clientId)
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled) return;
+            try
+            {
+                var list = new List<RegisterWireRow>();
+                for (var i = 0; i < _registerHistory.Count; i++)
+                {
+                    var r = _registerHistory[i];
+                    if (r == null) continue;
+                    list.Add(new RegisterWireRow
+                    {
+                        At = r.At,
+                        Ok = r.Ok,
+                        Text = r.Text ?? ""
+                    });
+                }
+                var payload = NotifyMessage.EncodeRegisterSync(list);
+                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                {
+                    Kind = "registerSync",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = payload ?? ""
+                });
+            }
+            catch (Exception ex)
+            {
+                try { RenewEngine.Log("Notify registerSync: " + ex.Message); }
+                catch { }
+            }
+        }
+
+        private void BroadcastRegisterSync()
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled) return;
+            try
+            {
+                var list = new List<RegisterWireRow>();
+                for (var i = 0; i < _registerHistory.Count; i++)
+                {
+                    var r = _registerHistory[i];
+                    if (r == null) continue;
+                    list.Add(new RegisterWireRow
+                    {
+                        At = r.At,
+                        Ok = r.Ok,
+                        Text = r.Text ?? ""
+                    });
+                }
+                var payload = NotifyMessage.EncodeRegisterSync(list);
+                BroadcastNotify(new NotifyMessage
+                {
+                    Kind = "registerSync",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = payload ?? ""
+                });
+            }
+            catch (Exception ex)
+            {
+                try { RenewEngine.Log("Notify registerSync broadcast: " + ex.Message); }
                 catch { }
             }
         }

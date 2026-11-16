@@ -31,6 +31,21 @@ namespace KaiAosRenew
             public ChromiumCrypto.DecryptStatus DecryptStatus { get; set; }
             public string DecryptError { get; set; }
             public string Error { get; set; }
+            /// <summary>Human-readable scan steps (no passwords). Written to browser-pass-check.log.</summary>
+            public string Diagnostics { get; set; }
+        }
+
+        /// <summary>%AppData%\KaiAosRenew\browser-pass-check.log — overwrite each Check browser password.</summary>
+        public static string DiagnosticsLogPath
+        {
+            get
+            {
+                var dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "KaiAosRenew");
+                try { Directory.CreateDirectory(dir); } catch { }
+                return Path.Combine(dir, "browser-pass-check.log");
+            }
         }
 
         private sealed class Candidate
@@ -60,8 +75,16 @@ namespace KaiAosRenew
             email = string.IsNullOrWhiteSpace(email) ? "" : email.Trim();
             var candidates = new List<Candidate>();
             var errors = new List<string>();
+            var diag = new List<string>();
             var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+            diag.Add("=== Browser password check " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " ===");
+            diag.Add("Email filter: " + (email.Length == 0 ? "(any)" : email));
+            diag.Add("User: " + (Environment.UserName ?? "?"));
+            diag.Add("LocalAppData: " + local);
+            diag.Add("RoamingAppData: " + roaming);
+            diag.Add("Match rule: host is bmwgroup.com or ends with .bmwgroup.com; username equals email (case-insensitive) when email set.");
 
             var targets = new[]
             {
@@ -75,7 +98,12 @@ namespace KaiAosRenew
             };
 
             for (var i = 0; i < targets.Length; i++)
-                ScanBrowser(targets[i].Name, targets[i].UserDataDir, email, candidates, errors);
+                ScanBrowser(targets[i].Name, targets[i].UserDataDir, email, candidates, errors, diag);
+
+            diag.Add("--- Summary ---");
+            diag.Add("Matching candidates: " + candidates.Count);
+            if (errors.Count > 0)
+                diag.Add("Errors: " + string.Join(" | ", errors.ToArray()));
 
             if (candidates.Count == 0)
             {
@@ -84,6 +112,9 @@ namespace KaiAosRenew
                     : (email.Length == 0
                         ? "No *.bmwgroup.com login found in Chrome/Edge/Brave/Opera/Vivaldi."
                         : "No *.bmwgroup.com login found in Chrome/Edge/Brave/Opera/Vivaldi for this email.");
+                diag.Add("Result: NOT FOUND — " + result.Error);
+                result.Diagnostics = string.Join(Environment.NewLine, diag.ToArray());
+                WriteDiagnosticsFile(result.Diagnostics);
                 return result;
             }
 
@@ -94,8 +125,22 @@ namespace KaiAosRenew
             result.Username = best.Username;
             result.BrowserName = best.BrowserName;
             result.LastSavedLocal = best.LastSavedLocal;
+            diag.Add("Best match: " + best.BrowserName + " | " + (best.SourceUrl ?? "") + " | user=" + (best.Username ?? ""));
             TryDecryptCandidate(best, result);
+            diag.Add("Decrypt: " + result.DecryptStatus + (string.IsNullOrEmpty(result.DecryptError) ? "" : (" — " + result.DecryptError)));
+            diag.Add("Result: FOUND");
+            result.Diagnostics = string.Join(Environment.NewLine, diag.ToArray());
+            WriteDiagnosticsFile(result.Diagnostics);
             return result;
+        }
+
+        private static void WriteDiagnosticsFile(string text)
+        {
+            try
+            {
+                File.WriteAllText(DiagnosticsLogPath, text ?? "", Encoding.UTF8);
+            }
+            catch { }
         }
 
         private static void TryDecryptCandidate(Candidate best, Result result)
@@ -490,46 +535,88 @@ namespace KaiAosRenew
         }
 
         private static void ScanBrowser(string browserName, string userDataDir, string email,
-            List<Candidate> candidates, List<string> errors)
+            List<Candidate> candidates, List<string> errors, List<string> diag)
         {
             if (!Directory.Exists(userDataDir))
-                return;
-
-            foreach (var profileDir in EnumerateProfiles(userDataDir))
             {
+                if (diag != null)
+                    diag.Add(browserName + ": User Data missing — " + userDataDir);
+                return;
+            }
+            if (diag != null)
+                diag.Add(browserName + ": User Data OK — " + userDataDir);
+
+            var profiles = new List<string>();
+            foreach (var p in EnumerateProfiles(userDataDir))
+                profiles.Add(p);
+            if (diag != null)
+                diag.Add(browserName + ": profiles with Login Data: " + profiles.Count);
+
+            for (var i = 0; i < profiles.Count; i++)
+            {
+                var profileDir = profiles[i];
                 var loginDb = Path.Combine(profileDir, "Login Data");
                 if (!File.Exists(loginDb))
                     continue;
+                long size = 0;
+                try { size = new FileInfo(loginDb).Length; } catch { }
+                if (diag != null)
+                    diag.Add(browserName + ": scan " + profileDir + " (Login Data " + size + " bytes)");
                 try
                 {
-                    ScanLoginDb(browserName, userDataDir, loginDb, email, candidates);
+                    ScanLoginDb(browserName, userDataDir, loginDb, email, candidates, diag);
                 }
                 catch (Exception ex)
                 {
                     errors.Add(browserName + ": " + ex.Message);
+                    if (diag != null)
+                        diag.Add(browserName + ": ERROR " + ex.Message);
                 }
             }
         }
 
         private static IEnumerable<string> EnumerateProfiles(string userDataDir)
         {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             // Opera often stores Login Data directly in the Stable folder.
             if (File.Exists(Path.Combine(userDataDir, "Login Data")))
+            {
+                seen.Add(userDataDir);
                 yield return userDataDir;
+            }
 
             var def = Path.Combine(userDataDir, "Default");
-            if (Directory.Exists(def))
+            if (Directory.Exists(def) && File.Exists(Path.Combine(def, "Login Data")) && seen.Add(def))
                 yield return def;
 
             string[] dirs;
-            try { dirs = Directory.GetDirectories(userDataDir, "Profile *"); }
+            try { dirs = Directory.GetDirectories(userDataDir); }
             catch { yield break; }
             for (var i = 0; i < dirs.Length; i++)
+            {
+                var name = Path.GetFileName(dirs[i]) ?? "";
+                // Skip Chrome cache/system folders; keep Profile *, Default, and any other profile with Login Data.
+                if (string.Equals(name, "System Profile", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "Guest Profile", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "Crashpad", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "ShaderCache", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "GrShaderCache", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "GraphiteDawnCache", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "BrowserMetrics", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "Component", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith(".", StringComparison.Ordinal))
+                    continue;
+                if (!File.Exists(Path.Combine(dirs[i], "Login Data")))
+                    continue;
+                if (!seen.Add(dirs[i]))
+                    continue;
                 yield return dirs[i];
+            }
         }
 
         private static void ScanLoginDb(string browserName, string userDataDir, string loginDbPath, string email,
-            List<Candidate> candidates)
+            List<Candidate> candidates, List<string> diag)
         {
             var temp = Path.Combine(Path.GetTempPath(), "KaiAosRenew-LoginMeta-" + Guid.NewGuid().ToString("N"));
             try
@@ -540,6 +627,13 @@ namespace KaiAosRenew
                 {
                     try { File.Copy(wal, temp + "-wal", true); } catch { }
                 }
+
+                var totalRows = 0;
+                var bmwHostRows = 0;
+                var bmwEmailMismatch = 0;
+                var bmwMatched = 0;
+                var bmwOtherUsers = new List<string>();
+                var bmwLikeHosts = new List<string>();
 
                 using (var conn = new SQLiteConnection("Data Source=" + temp + ";Version=3;Read Only=True;"))
                 {
@@ -554,14 +648,37 @@ namespace KaiAosRenew
                         {
                             while (reader.Read())
                             {
+                                totalRows++;
                                 var origin = reader.IsDBNull(0) ? "" : reader.GetString(0);
                                 var user = reader.IsDBNull(1) ? "" : reader.GetString(1);
+
+                                if (LooksBmwRelatedHost(origin) && bmwLikeHosts.Count < 12)
+                                {
+                                    var host = SafeHost(origin);
+                                    var line = host + " | user=" + (string.IsNullOrWhiteSpace(user) ? "(empty)" : user.Trim());
+                                    if (!bmwLikeHosts.Contains(line))
+                                        bmwLikeHosts.Add(line);
+                                }
+
                                 if (!IsBmwGroupHost(origin))
                                     continue;
+                                bmwHostRows++;
+
                                 if (!string.IsNullOrWhiteSpace(email)
                                     && !string.Equals(user.Trim(), email, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    bmwEmailMismatch++;
+                                    if (bmwOtherUsers.Count < 8)
+                                    {
+                                        var other = SafeHost(origin) + " | user="
+                                            + (string.IsNullOrWhiteSpace(user) ? "(empty)" : user.Trim());
+                                        if (!bmwOtherUsers.Contains(other))
+                                            bmwOtherUsers.Add(other);
+                                    }
                                     continue;
+                                }
 
+                                bmwMatched++;
                                 long mod = 0, used = 0;
                                 try { mod = reader.GetInt64(2); } catch { }
                                 try { used = reader.GetInt64(3); } catch { }
@@ -587,12 +704,43 @@ namespace KaiAosRenew
                         }
                     }
                 }
+
+                if (diag != null)
+                {
+                    diag.Add(browserName + ": rows=" + totalRows
+                        + " bmwgroup.com=" + bmwHostRows
+                        + " emailMismatch=" + bmwEmailMismatch
+                        + " matched=" + bmwMatched);
+                    for (var i = 0; i < bmwOtherUsers.Count; i++)
+                        diag.Add(browserName + ": bmwgroup other user — " + bmwOtherUsers[i]);
+                    if (bmwHostRows == 0 && bmwLikeHosts.Count > 0)
+                    {
+                        diag.Add(browserName + ": no *.bmwgroup.com host; bmw-related origins (first " + bmwLikeHosts.Count + "):");
+                        for (var i = 0; i < bmwLikeHosts.Count; i++)
+                            diag.Add(browserName + ":   " + bmwLikeHosts[i]);
+                    }
+                }
             }
             finally
             {
                 try { if (File.Exists(temp)) File.Delete(temp); } catch { }
                 try { if (File.Exists(temp + "-wal")) File.Delete(temp + "-wal"); } catch { }
             }
+        }
+
+        private static string SafeHost(string originUrl)
+        {
+            if (string.IsNullOrWhiteSpace(originUrl)) return "(empty)";
+            Uri uri;
+            if (Uri.TryCreate(originUrl, UriKind.Absolute, out uri) && !string.IsNullOrEmpty(uri.Host))
+                return uri.Host;
+            return originUrl.Length > 80 ? originUrl.Substring(0, 80) + "…" : originUrl;
+        }
+
+        private static bool LooksBmwRelatedHost(string originUrl)
+        {
+            if (string.IsNullOrWhiteSpace(originUrl)) return false;
+            return originUrl.IndexOf("bmw", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         internal static bool IsBmwGroupHost(string originUrl)
