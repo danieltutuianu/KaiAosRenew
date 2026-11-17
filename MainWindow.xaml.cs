@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
@@ -44,11 +46,33 @@ namespace KaiAosRenew
             public DateTime Time { get; set; }
             public LogLevel Level { get; set; }
             public string Text { get; set; }
+
+            public string TimeText
+            {
+                get { return Time.ToString("yyyy-MM-dd HH:mm:ss"); }
+            }
+
+            public string LevelText
+            {
+                get
+                {
+                    switch (Level)
+                    {
+                        case LogLevel.Success: return "success";
+                        case LogLevel.Warning: return "warning";
+                        case LogLevel.Error: return "error";
+                        case LogLevel.Verbose: return "verbose";
+                        default: return "info";
+                    }
+                }
+            }
         }
 
         private sealed class RegisterHistoryRow
         {
             public DateTime At { get; set; }
+            /// <summary>0=fail, 1=ok, 2=info.</summary>
+            public int Kind { get; set; }
             public bool Ok { get; set; }
             public string Text { get; set; }
             public string AgeText { get; set; }
@@ -62,6 +86,7 @@ namespace KaiAosRenew
 
         private readonly DispatcherTimer _timer = new DispatcherTimer();
         private readonly List<LogEntry> _logEntries = new List<LogEntry>();
+        private readonly ObservableCollection<LogEntry> _activityRows = new ObservableCollection<LogEntry>();
         private readonly List<RegisterHistoryRow> _registerHistory = new List<RegisterHistoryRow>();
         private const int RegisterHistoryMax = 200;
         private string _registerFilter = "all";
@@ -76,6 +101,9 @@ namespace KaiAosRenew
         private bool _busy;
         private bool _kaiServiceCmdBusy;
         private bool _loadingUi;
+        private bool _aosCredentialsDirty;
+        private string _aosSavedEmail = "";
+        private string _aosSavedPass = "";
         private bool _saveInFlight;
         private DateTime _saveClickUtc = DateTime.MinValue;
         private bool _retrySchedule;
@@ -135,6 +163,7 @@ namespace KaiAosRenew
         private readonly DispatcherTimer _keysRefreshTimer = new DispatcherTimer();
         private readonly DispatcherTimer _keysHighlightTimer = new DispatcherTimer();
         private bool _keysAlert;
+        private bool _activityAlert;
         private List<KeyActivityEvent> _keysAllEvents = new List<KeyActivityEvent>();
         private string _keysFilter = "all";
         private string _keysSearchText = "";
@@ -169,10 +198,12 @@ namespace KaiAosRenew
         private DateTime _aboutVersionClickUtc = DateTime.MinValue;
         private DateTime _lastKeys403RemediateUtc = DateTime.MinValue;
         private string _lastKeys403RemediateKey;
+        private bool _aosBmw403Fail;
         private readonly HashSet<string> _bmwFailVinTipKeys = new HashSet<string>(StringComparer.Ordinal);
         private string _pending403RetryVin;
         private string _pending403RetryReaderId;
         private bool _keysRetryBusy;
+        private bool _registerStrikeNotedThisRun;
         private static readonly SolidColorBrush KeysSearchHitBrush =
             new SolidColorBrush(Color.FromArgb(0xFF, 0xF9, 0xE2, 0xA8));
         private static readonly SolidColorBrush KeysCopyOkBrush =
@@ -192,12 +223,17 @@ namespace KaiAosRenew
             if (KeysEventsList != null)
                 KeysEventsList.AddHandler(GridViewColumnHeader.ClickEvent,
                     new RoutedEventHandler(KeysColumnHeader_Click));
-            LogBox.Document = new FlowDocument
+            if (ActivityList != null)
             {
-                PagePadding = new Thickness(6),
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 11
-            };
+                ActivityList.ItemsSource = _activityRows;
+                ActivityList.SizeChanged += ActivityList_SizeChanged;
+                ActivityList.Loaded += ActivityList_SizeChanged;
+            }
+            if (RegisterHistoryList != null)
+            {
+                RegisterHistoryList.SizeChanged += RegisterHistoryList_SizeChanged;
+                RegisterHistoryList.Loaded += RegisterHistoryList_SizeChanged;
+            }
 
             _timer.Interval = TimeSpan.FromSeconds(30);
             _timer.Tick += Timer_Tick;
@@ -492,25 +528,23 @@ namespace KaiAosRenew
         {
             Title = UiStrings.T("WindowTitle");
             HeaderTitleText.Text = UiStrings.T("HeaderTitle");
-            SectionScheduleText.Text = UiStrings.T("SectionSchedule");
-            IntervalLabel.Text = UiStrings.T("IntervalHours");
-            StartWithWindowsLabel.Text = UiStrings.T("StartWithWindows");
-            StartWithWindowsCheck.Content = UiStrings.T("Yes");
-            MinimizeToTrayLabel.Text = UiStrings.T("MinimizeToTray");
-            MinimizeToTrayCheck.Content = UiStrings.T("Yes");
-            if (LogVerboseCheck != null)
-                LogVerboseCheck.Content = UiStrings.T("LogVerboseOption");
+            if (IntervalLabel != null) IntervalLabel.Text = UiStrings.T("CheckHealthInterval");
+            if (StartWithWindowsCheck != null)
+                StartWithWindowsCheck.Content = CheckboxLabel(UiStrings.T("StartWithWindows"));
+            if (MinimizeToTrayCheck != null)
+                MinimizeToTrayCheck.Content = CheckboxLabel(UiStrings.T("MinimizeToTray"));
             if (AuthCooldownMinutesLabel != null)
                 AuthCooldownMinutesLabel.Text = UiStrings.T("AuthCooldownMinutes");
-            if (MinimizeOnCloseLabel != null)
-                MinimizeOnCloseLabel.Text = UiStrings.T("MinimizeOnClose");
+            if (AuthRegisterBlockAfterLabel != null)
+                AuthRegisterBlockAfterLabel.Text = UiStrings.T("AuthRegisterBlockAfter");
+            if (SaveActivityLogBtn != null) SaveActivityLogBtn.Content = UiStrings.T("SaveLog");
+            if (SaveRegisterLogBtn != null) SaveRegisterLogBtn.Content = UiStrings.T("SaveLog");
+            if (ClearRegisterLogBtn != null) ClearRegisterLogBtn.Content = UiStrings.T("ClearLog");
             if (MinimizeOnCloseCheck != null)
-                MinimizeOnCloseCheck.Content = UiStrings.T("MinimizeOnCloseYes");
-            if (AutoUpdateLabel != null)
-                AutoUpdateLabel.Text = UiStrings.T("AutoUpdate");
+                MinimizeOnCloseCheck.Content = CheckboxLabel(UiStrings.T("MinimizeOnClose"));
             if (AutoUpdateCheck != null)
             {
-                AutoUpdateCheck.Content = UiStrings.T("Yes");
+                AutoUpdateCheck.Content = CheckboxLabel(UiStrings.T("AutoUpdate"));
                 AutoUpdateCheck.ToolTip = UiStrings.T("TipAutoUpdate");
             }
             if (CheckForUpdatesBtn != null)
@@ -524,6 +558,43 @@ namespace KaiAosRenew
             if (SectionConfigText != null) SectionConfigText.Text = UiStrings.T("SectionConfig");
             if (ConfigPathLabel != null) ConfigPathLabel.Text = UiStrings.T("ConfigPath");
             if (BrowseBtn != null) BrowseBtn.Content = UiStrings.T("Browse");
+            var openExplorer = UiStrings.T("OpenInExplorer");
+            var tipOpenExplorer = UiStrings.T("TipOpenInExplorer");
+            if (ConfigPathOpenBtn != null)
+            {
+                ConfigPathOpenBtn.Content = openExplorer;
+                ConfigPathOpenBtn.ToolTip = tipOpenExplorer;
+            }
+            if (KeyReaderDataBinOpenBtn != null)
+            {
+                KeyReaderDataBinOpenBtn.Content = openExplorer;
+                KeyReaderDataBinOpenBtn.ToolTip = tipOpenExplorer;
+            }
+            if (KeyReaderLogPathOpenBtn != null)
+            {
+                KeyReaderLogPathOpenBtn.Content = openExplorer;
+                KeyReaderLogPathOpenBtn.ToolTip = tipOpenExplorer;
+            }
+            if (KeysSqlitePathOpenBtn != null)
+            {
+                KeysSqlitePathOpenBtn.Content = openExplorer;
+                KeysSqlitePathOpenBtn.ToolTip = tipOpenExplorer;
+            }
+            if (KeyReaderEncPathOpenBtn != null)
+            {
+                KeyReaderEncPathOpenBtn.Content = openExplorer;
+                KeyReaderEncPathOpenBtn.ToolTip = tipOpenExplorer;
+            }
+            if (KeysUploaderLogDirOpenBtn != null)
+            {
+                KeysUploaderLogDirOpenBtn.Content = openExplorer;
+                KeysUploaderLogDirOpenBtn.ToolTip = tipOpenExplorer;
+            }
+            if (KeysKaiLogDirOpenBtn != null)
+            {
+                KeysKaiLogDirOpenBtn.Content = openExplorer;
+                KeysKaiLogDirOpenBtn.ToolTip = tipOpenExplorer;
+            }
             if (SettingsKeyReaderSection != null)
                 SettingsKeyReaderSection.Text = UiStrings.T("SettingsKeyReader");
             if (KeyReaderDataBinLabel != null)
@@ -554,10 +625,9 @@ namespace KaiAosRenew
             ThemeLabel.Text = UiStrings.T("Theme");
             RefreshThemeComboItems();
             RefreshLogFilterComboItems();
-            OpenLogBtn.Content = UiStrings.T("OpenLog");
             ExportBtn.Content = UiStrings.T("ExportSettings");
             ImportBtn.Content = UiStrings.T("ImportSettings");
-            SectionAosText.Text = UiStrings.T("SectionAos");
+            if (AosLoginStatusText != null) UpdateAosLoginStatus();
             AosUserLabel.Text = UiStrings.T("AosUsername");
             AosPassLabel.Text = UiStrings.T("AosPassword");
             ShowPasswordCheck.Content = UiStrings.T("ShowPassword");
@@ -577,10 +647,10 @@ namespace KaiAosRenew
                     ClipboardPassClipText.Text = string.Format(UiStrings.T("ClipboardPassClip"),
                         _clipboardPassCandidate);
             }
-            if (CheckBrowserPassBtn != null)
-                CheckBrowserPassBtn.Content = UiStrings.T("CheckBrowserPass");
-            if (OpenBmwSsoBtn != null)
-                OpenBmwSsoBtn.Content = UiStrings.T("OpenBmwSso");
+            if (CheckBrowserPassBtnText != null)
+                CheckBrowserPassBtnText.Text = UiStrings.T("CheckBrowserPass");
+            if (OpenBmwSsoBtnText != null)
+                OpenBmwSsoBtnText.Text = UiStrings.T("OpenBmwSso");
             if (BrowserPassHintCheck != null)
                 BrowserPassHintCheck.Content = UiStrings.T("BrowserPassHintOption");
             if (TabRenewHeaderText != null) TabRenewHeaderText.Text = UiStrings.T("TabRenew");
@@ -599,8 +669,6 @@ namespace KaiAosRenew
                 DebugModeText.Text = UiStrings.T("DebugModeOn");
                 DebugModeText.Visibility = _debugMode ? Visibility.Visible : Visibility.Collapsed;
             }
-            if (AboutSettingsPathText != null)
-                AboutSettingsPathText.Text = UiStrings.T("AboutSettingsPath") + " " + AppSettings.SettingsPath;
             if (AboutOpenSettingsBtn != null)
                 AboutOpenSettingsBtn.Content = UiStrings.T("AboutOpenSettings");
             if (AboutOpenLogsBtn != null)
@@ -624,6 +692,8 @@ namespace KaiAosRenew
                 NotifyServerPortLabel.Text = UiStrings.T("NotifyServerPort");
             if (NotifyServerIpLabel != null)
                 NotifyServerIpLabel.Text = UiStrings.T("NotifyServerIpLabel");
+            if (NotifyServerIpCopyBtn != null)
+                NotifyServerIpCopyBtn.ToolTip = UiStrings.T("NotifyServerIpCopyTip");
             if (NotifySendToLabel != null)
                 NotifySendToLabel.Text = UiStrings.T("NotifySendTo");
             if (NotifyRefreshClientsBtn != null)
@@ -660,7 +730,9 @@ namespace KaiAosRenew
             if (KaiSvcColName != null) KaiSvcColName.Text = UiStrings.T("KaiSvcColName");
             if (KaiSvcColStatus != null) KaiSvcColStatus.Text = UiStrings.T("KaiSvcColStatus");
             if (KaiSvcColStart != null) KaiSvcColStart.Text = UiStrings.T("KaiSvcColStart");
-            SaveAosBtn.Content = UiStrings.T("Save");
+            if (SaveAosBtnText != null)
+                SaveAosBtnText.Text = UiStrings.T("Save");
+            UpdateAosDirtyStatus();
             if (ForceRegisterBtn != null)
             {
                 ForceRegisterBtn.Content = UiStrings.T("ForceRegister");
@@ -672,8 +744,22 @@ namespace KaiAosRenew
                 AuthCooldownExplainText.Text = UiStrings.T("AuthCooldownExplain");
             if (AuthRegisterBlockedExplainText != null)
                 AuthRegisterBlockedExplainText.Text = UiStrings.T("AuthRegisterBlockedExplain");
+            if (ClearAuthCooldownBtn != null)
+            {
+                ClearAuthCooldownBtn.Content = UiStrings.T("AuthGuardClear");
+                ClearAuthCooldownBtn.ToolTip = UiStrings.T("TipAuthGuardClearCooldown");
+            }
+            if (ClearAuthRegisterBlockedBtn != null)
+            {
+                ClearAuthRegisterBlockedBtn.Content = UiStrings.T("AuthGuardClear");
+                ClearAuthRegisterBlockedBtn.ToolTip = UiStrings.T("TipAuthGuardClearBlocked");
+            }
             RefreshAuthCooldownBanner();
             ActivityLogLabel.Text = UiStrings.T("ActivityLog");
+            if (ActivityFilterLabel != null) ActivityFilterLabel.Text = UiStrings.T("RegisterFilter");
+            if (ActivityColTime != null) ActivityColTime.Header = UiStrings.T("KeysColTime");
+            if (ActivityColLevel != null) ActivityColLevel.Header = UiStrings.T("ActivityColLevel");
+            if (ActivityColText != null) ActivityColText.Header = UiStrings.T("ActivityColText");
             ClearLogBtn.Content = UiStrings.T("ClearLog");
             CheckTokenBtn.Content = UiStrings.T("CheckToken");
             StartTimerBtn.Content = UiStrings.T("StartTimer");
@@ -711,7 +797,10 @@ namespace KaiAosRenew
             if (!_aboutVisible && TabKeys != null && TabKeys.IsSelected)
                 RefreshKeysTab(false);
             if (!_aboutVisible && TabActivity != null && TabActivity.IsSelected)
+            {
+                ClearActivityAlert();
                 ScrollActivityLogToEnd();
+            }
             if (!_aboutVisible && TabRegister != null && TabRegister.IsSelected)
             {
                 RefreshRegisterAges();
@@ -790,11 +879,13 @@ namespace KaiAosRenew
 
         private void ApplyTabLayoutVisibility()
         {
-            if (ButtonsBorder == null) return;
-            var showButtons = !_aboutVisible && TabRenew != null && TabRenew.IsSelected;
-            ButtonsBorder.Visibility = showButtons ? Visibility.Visible : Visibility.Collapsed;
+            if (ButtonsBorder != null)
+                ButtonsBorder.Visibility = Visibility.Collapsed;
             if (!_aboutVisible && TabActivity != null && TabActivity.IsSelected)
+            {
+                ClearActivityAlert();
                 ScrollActivityLogToEnd();
+            }
             if (!_aboutVisible && TabRegister != null && TabRegister.IsSelected)
             {
                 RefreshRegisterAges();
@@ -805,18 +896,54 @@ namespace KaiAosRenew
 
         private void ScrollActivityLogToEnd()
         {
-            if (LogBox == null) return;
-            // Defer until layout is ready — immediate ScrollToEnd often no-ops on tab switch.
+            if (ActivityList == null || _activityRows.Count == 0) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 try
                 {
-                    if (LogBox == null) return;
-                    LogBox.UpdateLayout();
-                    LogBox.ScrollToEnd();
+                    if (ActivityList == null || _activityRows.Count == 0) return;
+                    ActivityList.UpdateLayout();
+                    ActivityList.ScrollIntoView(_activityRows[_activityRows.Count - 1]);
                 }
                 catch { }
             }), DispatcherPriority.Loaded);
+        }
+
+        private void ActivityList_SizeChanged(object sender, EventArgs e)
+        {
+            ResizeActivityMessageColumn();
+        }
+
+        private void ResizeActivityMessageColumn()
+        {
+            if (ActivityList == null || ActivityColText == null) return;
+            var width = ActivityList.ActualWidth;
+            if (width <= 0) return;
+            const double timeW = 120;
+            const double levelW = 70;
+            const double pad = 36;
+            var msgW = width - timeW - levelW - pad;
+            if (msgW < 120) msgW = 120;
+            ActivityColText.Width = msgW;
+        }
+
+        private void RegisterHistoryList_SizeChanged(object sender, EventArgs e)
+        {
+            ResizeRegisterDetailColumn();
+        }
+
+        private void ResizeRegisterDetailColumn()
+        {
+            if (RegisterHistoryList == null || RegisterColDetail == null) return;
+            var width = RegisterHistoryList.ActualWidth;
+            if (width <= 0) return;
+            const double timeW = 140;
+            const double resultW = 70;
+            const double ageW = 110;
+            const double pad = 36;
+            var detailW = width - timeW - resultW - ageW - pad;
+            if (detailW < 120) detailW = 120;
+            RegisterColDetail.Width = detailW;
         }
 
         private void ScrollRegisterHistoryToEnd()
@@ -889,6 +1016,9 @@ namespace KaiAosRenew
             if (KeysOpenUploaderLogBtn != null) KeysOpenUploaderLogBtn.Content = UiStrings.T("KeysOpenUploaderLog");
             if (KeysOpenKaiLogBtn != null) KeysOpenKaiLogBtn.Content = UiStrings.T("KeysOpenKaiLog");
             if (KeysFilterLabel != null) KeysFilterLabel.Text = UiStrings.T("KeysFilter");
+            if (KeysNoMatchesHint != null) KeysNoMatchesHint.Text = UiStrings.T("NoMatchesHint");
+            if (ActivityNoMatchesHint != null) ActivityNoMatchesHint.Text = UiStrings.T("NoMatchesHint");
+            if (RegisterNoMatchesHint != null) RegisterNoMatchesHint.Text = UiStrings.T("NoMatchesHint");
             if (KeysSearchLabel != null) KeysSearchLabel.Text = UiStrings.T("KeysSearch");
             if (KeysSearchBox != null) KeysSearchBox.ToolTip = UiStrings.T("KeysSearchTip");
             if (KeysReaderSection != null) KeysReaderSection.Text = UiStrings.T("KeysReaderSection");
@@ -1088,6 +1218,11 @@ namespace KaiAosRenew
 
         private void KeysClear_Click(object sender, RoutedEventArgs e)
         {
+            if (_keysAllEvents == null || _keysAllEvents.Count == 0)
+            {
+                UpdateClearButtonsEnabled();
+                return;
+            }
             var confirm = MessageBox.Show(
                 this,
                 UiStrings.T("ClearKeysConfirm"),
@@ -1107,6 +1242,7 @@ namespace KaiAosRenew
             // Do not broadcast empty keySync — clients keep their existing lists.
             _lastKeySyncSignature = "";
             AppendLog(UiStrings.T("ClearKeysDone"), LogLevel.Info);
+            UpdateClearButtonsEnabled();
         }
 
         private void KeysOpenUploaderLog_Click(object sender, RoutedEventArgs e)
@@ -1193,7 +1329,7 @@ namespace KaiAosRenew
                     AppendLog(UiStrings.T("KeysBmw403RetryUpload"), LogLevel.Info);
                 AppendLog(string.Format(UiStrings.T("KeysRetryBmwStart"), vin), LogLevel.Info);
 
-                await System.Threading.Tasks.Task.Run(() =>
+                var probe = await System.Threading.Tasks.Task.Run(() =>
                 {
                     try
                     {
@@ -1213,23 +1349,33 @@ namespace KaiAosRenew
                     try { File.SetLastWriteTimeUtc(dest, DateTime.UtcNow); }
                     catch { }
 
-                    var probe = KeyUploadProbe.ProbeTransferredBin(_settings, readerId);
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        var msg = string.Format(UiStrings.T("KeysRetryBmwProbe"),
-                            probe != null ? probe.Summary : "?");
-                        AppendLog(msg, probe != null && probe.Ok ? LogLevel.Success : LogLevel.Warning);
-                        if (probe != null && !string.IsNullOrEmpty(probe.Body))
-                        {
-                            RenewEngine.Log("BMW upload probe body: " + probe.Body);
-                            AppendLog("BMW response body: " + TruncateForLog(probe.Body, 500), LogLevel.Info);
-                        }
-                        else if (probe != null)
-                            RenewEngine.Log("BMW upload probe: " + probe.Summary);
-                    }));
+                    return KeyUploadProbe.ProbeTransferredBin(_settings, readerId);
                 });
 
+                if (probe != null && probe.Ok)
+                {
+                    AppendLog(string.Format(UiStrings.T("KeysRetryBmwProbe"), probe.Summary), LogLevel.Success);
+                }
+                else if (probe != null && probe.HttpStatus > 0)
+                {
+                    AppendLog(string.Format(UiStrings.T("KeysRetryBmwProbe"), probe.Summary), LogLevel.Warning);
+                    if (!string.IsNullOrEmpty(probe.Body))
+                    {
+                        RenewEngine.Log("BMW upload probe body: " + probe.Body);
+                        AppendLog("BMW response body: " + TruncateForLog(probe.Body, 500), LogLevel.Info);
+                    }
+                }
+                else
+                {
+                    var summary = probe != null ? probe.Summary : "?";
+                    AppendLog(string.Format(UiStrings.T("KeysRetryBmwProbeSkip"), summary), LogLevel.Info);
+                    RenewEngine.Log("BMW upload probe: " + summary);
+                }
+
                 AppendLog(UiStrings.T("KeysRetryBmwOk"), LogLevel.Success);
+                // After 403 auto-retry: if probe still shows real upload failure, tip immediately.
+                if (from403Auto && probe != null && !probe.Ok && probe.HttpStatus > 0)
+                    ShowBmw403StillFailTip(vin);
                 RefreshKeysTab(true);
             }
             catch (Exception ex)
@@ -1240,6 +1386,21 @@ namespace KaiAosRenew
             {
                 _keysRetryBusy = false;
                 UpdateKeysRetryButton();
+            }
+        }
+
+        private void ShowBmw403StillFailTip(string vin)
+        {
+            var msg = string.Format(UiStrings.T("KeysBmw403StillFail"),
+                string.IsNullOrEmpty(vin) ? "?" : vin);
+            AppendLog(msg, LogLevel.Warning);
+            try
+            {
+                TrayBalloonWindow.ShowSticky("KAI - AOS Renew", msg, WinForms.ToolTipIcon.Warning);
+            }
+            catch
+            {
+                ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(msg));
             }
         }
 
@@ -1283,6 +1444,7 @@ namespace KaiAosRenew
             try { _settings.Save(); }
             catch { }
             UpdateKeysAlertFromCache();
+            BroadcastServerSettings();
         }
 
         private void SyncKeysVinBmwFailOnlyUi()
@@ -1363,6 +1525,7 @@ namespace KaiAosRenew
             catch { }
             ApplyKeysMonitorSettings();
             UpdateKeysAlertFromCache();
+            BroadcastServerSettings();
         }
 
         private void LoadKeyReaderPathsToUi()
@@ -1435,6 +1598,7 @@ namespace KaiAosRenew
             }
 
             StartKeyReaderLogTailer(paths);
+            BroadcastServerSettings();
 
             if (!syncPickup || string.IsNullOrEmpty(paths.DataBin) || _settings == null)
                 return;
@@ -1593,8 +1757,9 @@ namespace KaiAosRenew
                 KeysVinTipSecondsBox.Text = _settings.KeysVinTipSeconds.ToString();
             if (AuthCooldownMinutesBox != null)
                 AuthCooldownMinutesBox.Text = _settings.AuthCooldownMinutes.ToString();
-            if (LogVerboseCheck != null)
-                LogVerboseCheck.IsChecked = _settings.LogVerbose;
+            if (AuthRegisterBlockAfterBox != null)
+                AuthRegisterBlockAfterBox.Text = GetAuthRegisterBlockAfter().ToString();
+            _settings.LogVerbose = true;
             if (MinimizeOnCloseCheck != null)
                 MinimizeOnCloseCheck.IsChecked = _settings.MinimizeOnClose;
             if (AutoUpdateCheck != null)
@@ -1685,6 +1850,7 @@ namespace KaiAosRenew
             try { if (_settings != null) _settings.Save(); }
             catch { }
             ApplyKeysRefreshInterval();
+            BroadcastServerSettings();
         }
 
         private void KeysVinTipSeconds_LostFocus(object sender, RoutedEventArgs e)
@@ -1693,6 +1859,7 @@ namespace KaiAosRenew
             ParseAndSetKeysVinTipSeconds();
             try { if (_settings != null) _settings.Save(); }
             catch { }
+            BroadcastServerSettings();
         }
 
         private void AuthCooldownMinutes_LostFocus(object sender, RoutedEventArgs e)
@@ -1701,14 +1868,7 @@ namespace KaiAosRenew
             ParseAndSetAuthCooldownMinutes();
             try { if (_settings != null) _settings.Save(); }
             catch { }
-        }
-
-        private void LogVerbose_Changed(object sender, RoutedEventArgs e)
-        {
-            if (_loadingUi || _settings == null) return;
-            _settings.LogVerbose = LogVerboseCheck != null && LogVerboseCheck.IsChecked == true;
-            try { _settings.Save(); }
-            catch { }
+            BroadcastServerSettings();
         }
 
         private void MinimizeOnClose_Changed(object sender, RoutedEventArgs e)
@@ -1717,6 +1877,7 @@ namespace KaiAosRenew
             _settings.MinimizeOnClose = MinimizeOnCloseCheck == null || MinimizeOnCloseCheck.IsChecked == true;
             try { _settings.Save(); }
             catch { }
+            BroadcastServerSettings();
         }
 
         private void ParseAndSetKeysRefreshSeconds()
@@ -1738,12 +1899,12 @@ namespace KaiAosRenew
         private void ParseAndSetKeysVinTipSeconds()
         {
             if (_settings == null) return;
-            var sec = 8;
+            var sec = 10;
             if (KeysVinTipSecondsBox != null)
             {
                 int parsed;
                 if (!int.TryParse(KeysVinTipSecondsBox.Text.Trim(), out parsed) || parsed < 3)
-                    parsed = 8;
+                    parsed = 10;
                 if (parsed > 60) parsed = 60;
                 sec = parsed;
                 KeysVinTipSecondsBox.Text = sec.ToString();
@@ -1777,6 +1938,8 @@ namespace KaiAosRenew
                 MinimizeOnCloseCheck.ToolTip = UiStrings.T("TipMinimizeOnClose");
             if (AuthCooldownMinutesBox != null)
                 AuthCooldownMinutesBox.ToolTip = UiStrings.T("TipAuthCooldown");
+            if (AuthRegisterBlockAfterBox != null)
+                AuthRegisterBlockAfterBox.ToolTip = UiStrings.T("TipAuthRegisterBlockAfter");
         }
 
         private void KeysEventsList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -1893,6 +2056,59 @@ namespace KaiAosRenew
                 });
             }
             catch { }
+        }
+
+        private static void OpenPathInExplorer(string path)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(path)) return;
+                path = path.Trim();
+                if (File.Exists(path))
+                {
+                    var dir = Path.GetDirectoryName(path);
+                    if (!string.IsNullOrEmpty(dir))
+                        OpenFolder(dir);
+                    return;
+                }
+                OpenFolder(path);
+            }
+            catch { }
+        }
+
+        private void ConfigPathOpen_Click(object sender, RoutedEventArgs e)
+        {
+            OpenPathInExplorer(ConfigPathBox != null ? ConfigPathBox.Text : null);
+        }
+
+        private void KeyReaderDataBinOpen_Click(object sender, RoutedEventArgs e)
+        {
+            OpenPathInExplorer(KeyReaderDataBinBox != null ? KeyReaderDataBinBox.Text : null);
+        }
+
+        private void KeyReaderLogPathOpen_Click(object sender, RoutedEventArgs e)
+        {
+            OpenPathInExplorer(KeyReaderLogPathBox != null ? KeyReaderLogPathBox.Text : null);
+        }
+
+        private void KeysSqlitePathOpen_Click(object sender, RoutedEventArgs e)
+        {
+            OpenPathInExplorer(KeysSqlitePathBox != null ? KeysSqlitePathBox.Text : null);
+        }
+
+        private void KeyReaderEncPathOpen_Click(object sender, RoutedEventArgs e)
+        {
+            OpenPathInExplorer(KeyReaderEncPathBox != null ? KeyReaderEncPathBox.Text : null);
+        }
+
+        private void KeysUploaderLogDirOpen_Click(object sender, RoutedEventArgs e)
+        {
+            OpenPathInExplorer(KeysUploaderLogDirBox != null ? KeysUploaderLogDirBox.Text : null);
+        }
+
+        private void KeysKaiLogDirOpen_Click(object sender, RoutedEventArgs e)
+        {
+            OpenPathInExplorer(KeysKaiLogDirBox != null ? KeysKaiLogDirBox.Text : null);
         }
 
         private void RefreshKeysTab(bool announce)
@@ -2114,6 +2330,28 @@ namespace KaiAosRenew
                 KeysEventsList.SelectedItem = restore;
             ReapplyKeysRowHighlightIfNeeded();
             UpdateKeysRetryButton();
+            UpdateNoMatchesHint(KeysNoMatchesHint,
+                _keysAllEvents != null && _keysAllEvents.Count > 0,
+                list.Count);
+            UpdateClearButtonsEnabled();
+        }
+
+        private void UpdateClearButtonsEnabled()
+        {
+            if (ClearLogBtn != null)
+                ClearLogBtn.IsEnabled = _logEntries != null && _logEntries.Count > 0;
+            if (ClearRegisterLogBtn != null)
+                ClearRegisterLogBtn.IsEnabled = _registerHistory != null && _registerHistory.Count > 0;
+            if (KeysClearBtn != null)
+                KeysClearBtn.IsEnabled = _keysAllEvents != null && _keysAllEvents.Count > 0;
+        }
+
+        private static void UpdateNoMatchesHint(TextBlock hint, bool hasSourceItems, int visibleCount)
+        {
+            if (hint == null) return;
+            hint.Visibility = (hasSourceItems && visibleCount == 0)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
         private static bool KeysListUnchanged(
@@ -2339,6 +2577,8 @@ namespace KaiAosRenew
 
             _lastKeys403RemediateKey = key;
             _lastKeys403RemediateUtc = DateTime.UtcNow;
+            _aosBmw403Fail = true;
+            SetTokenFooter(false);
 
             var vin = string.IsNullOrEmpty(hit.Vin) ? "?" : hit.Vin;
             var balloon = string.Format(UiStrings.T("KeysBmw403Balloon"), vin);
@@ -2352,12 +2592,16 @@ namespace KaiAosRenew
                 return;
             }
 
-            AppendLog(UiStrings.T("KeysBmw403AutoRegister"), LogLevel.Warning);
+            var limit = GetAuthRegisterBlockAfter();
+            var nextStrike = _settings.AuthRegisterStrikeCount + 1;
+            var willLock = nextStrike >= limit;
+            AppendLog(string.Format(UiStrings.T("KeysBmw403AutoRegister"), nextStrike, limit), LogLevel.Warning);
             _pending403RetryVin = hit.Vin;
             _pending403RetryReaderId = hit.ReaderId;
-            // One Register (bypass cooldown for this shot), then lock auto Register until password change,
-            // then retry key upload once.
-            RunNowAsync(false, true, null, true, true);
+            // Register (bypass cooldown); lock only when strike count reaches AuthRegisterBlockAfter.
+            _registerStrikeNotedThisRun = true;
+            NoteAuthRegisterStrike("BMW 403");
+            RunNowAsync(false, true, null, true, willLock);
         }
 
         /// <summary>
@@ -2429,7 +2673,7 @@ namespace KaiAosRenew
                 return;
             }
             var text = TruncateBalloon(message);
-            var tipSec = _settings != null ? _settings.KeysVinTipSeconds : 8;
+            var tipSec = _settings != null ? _settings.KeysVinTipSeconds : 10;
             if (tipSec < 3) tipSec = 3;
             if (tipSec > 60) tipSec = 60;
             var capture = vin;
@@ -2816,9 +3060,9 @@ namespace KaiAosRenew
             {
                 AppendLog(UiStrings.T("StartupAuto"));
                 RunAutoHealthWithLimitedRegister();
-                StartTimer(false);
             }
-            else if (!_timer.IsEnabled)
+            EnsureAutoTimer(false);
+            if (!_timer.IsEnabled)
             {
                 // Wake-up tick so IntervalHours service recheck can fire
                 _timer.Start();
@@ -2833,6 +3077,8 @@ namespace KaiAosRenew
             }
             RunStartupSelfCheck();
             MaybeCheckForUpdatesOnStart();
+            UpdateClearButtonsEnabled();
+            UpdateAosLoginStatus();
         }
 
         private bool _updateCheckStarted;
@@ -3145,18 +3391,14 @@ namespace KaiAosRenew
                 if (ackClientId.HasValue)
                     SendAosAck(ackClientId.Value, true, "serverUpdate " + ver);
 
-                if (UpdateAvailableText != null)
-                {
-                    UpdateAvailableText.Text = UiStrings.T("ServerRestarting");
-                    UpdateAvailableText.Visibility = Visibility.Visible;
-                }
                 if (FooterUpdateBtn != null)
                     FooterUpdateBtn.IsEnabled = false;
 
                 await System.Threading.Tasks.Task.Delay(2500);
 
                 AppendLog(string.Format(UiStrings.T("UpdateApplied"), ver), LogLevel.Info);
-                await UpdateService.ApplyUpdateAsync(this, update, UiStrings.T, false);
+                await UpdateService.ApplyUpdateAsync(this, update, UiStrings.T, false,
+                    (stage, pct) => ShowSelfUpdateProgress(stage, ver, pct));
             }
             catch (Exception ex)
             {
@@ -3168,6 +3410,7 @@ namespace KaiAosRenew
                     try { SendAosAck(ackClientId.Value, false, err); }
                     catch { }
                 }
+                HideUpdateProgressBar();
                 ShowPendingUpdate(_pendingUpdate ?? update);
             }
             finally
@@ -3177,11 +3420,53 @@ namespace KaiAosRenew
             }
         }
 
+        private void ShowSelfUpdateProgress(string stage, string version, int percent)
+        {
+            if (UpdateAvailableText == null) return;
+            var ver = version ?? "?";
+            if (string.Equals(stage, "downloading", StringComparison.OrdinalIgnoreCase))
+            {
+                var pct = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+                UpdateAvailableText.Text = string.Format(UiStrings.T("UpdateDownloadingPct"), ver, pct);
+                if (UpdateProgressBar != null)
+                {
+                    UpdateProgressBar.IsIndeterminate = false;
+                    UpdateProgressBar.Value = pct;
+                    UpdateProgressBar.Visibility = Visibility.Visible;
+                }
+            }
+            else if (string.Equals(stage, "installing", StringComparison.OrdinalIgnoreCase))
+            {
+                UpdateAvailableText.Text = string.Format(UiStrings.T("UpdateInstalling"), ver);
+                if (UpdateProgressBar != null)
+                {
+                    UpdateProgressBar.IsIndeterminate = false;
+                    UpdateProgressBar.Value = 100;
+                    UpdateProgressBar.Visibility = Visibility.Visible;
+                }
+            }
+            else
+            {
+                UpdateAvailableText.Text = string.Format(UiStrings.T("UpdateRestarting"), ver);
+                HideUpdateProgressBar();
+            }
+            UpdateAvailableText.Visibility = Visibility.Visible;
+        }
+
+        private void HideUpdateProgressBar()
+        {
+            if (UpdateProgressBar == null) return;
+            UpdateProgressBar.Visibility = Visibility.Collapsed;
+            UpdateProgressBar.Value = 0;
+            UpdateProgressBar.IsIndeterminate = false;
+        }
+
         private void AutoUpdate_Changed(object sender, RoutedEventArgs e)
         {
             if (_loadingUi || _settings == null) return;
             _settings.AutoUpdate = AutoUpdateCheck != null && AutoUpdateCheck.IsChecked == true;
             _settings.Save();
+            BroadcastServerSettings();
         }
 
         private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
@@ -3379,15 +3664,10 @@ namespace KaiAosRenew
         /// <summary>Like CredentialsChangedInUi, but with an explicit new password (before SaveFromUi).</summary>
         private bool CredentialsWouldChange(string newPassword)
         {
-            if (_settings == null) return true;
             var email = EmailBox != null ? EmailBox.Text.Trim() : "";
-            var oldEmail = (_settings.Email ?? "").Trim();
-            if (!string.Equals(email, oldEmail, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(email, _aosSavedEmail ?? "", StringComparison.OrdinalIgnoreCase))
                 return true;
-            string oldPass = null;
-            try { oldPass = _settings.GetPassword(); }
-            catch { oldPass = null; }
-            return !string.Equals(newPassword ?? "", oldPass ?? "", StringComparison.Ordinal);
+            return !string.Equals((newPassword ?? "").Trim(), _aosSavedPass ?? "", StringComparison.Ordinal);
         }
 
         private static string NormalizeClipboardPassword(string raw)
@@ -3507,13 +3787,11 @@ namespace KaiAosRenew
         private void LoadAboutChangelog()
         {
             if (AboutChangelogBox == null) return;
-            if (AboutSettingsPathText != null)
-                AboutSettingsPathText.Text = UiStrings.T("AboutSettingsPath") + " " + AppSettings.SettingsPath;
             try
             {
                 var path = FindChangelogPath();
                 if (path != null && File.Exists(path))
-                    AboutChangelogBox.Text = File.ReadAllText(path);
+                    AboutChangelogBox.Text = FormatChangelogForAbout(File.ReadAllText(path));
                 else
                     AboutChangelogBox.Text = UiStrings.T("AboutChangelogMissing");
             }
@@ -3521,6 +3799,29 @@ namespace KaiAosRenew
             {
                 AboutChangelogBox.Text = ex.Message;
             }
+        }
+
+        private static string FormatChangelogForAbout(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return raw ?? "";
+            var lines = raw.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            var outLines = new List<string>();
+            var skippingPreamble = true;
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                var trim = (line ?? "").Trim();
+                if (skippingPreamble)
+                {
+                    if (trim.Length == 0) continue;
+                    if (trim.StartsWith("Format:", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (trim.StartsWith("# Changelog", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (string.Equals(trim, "## [Unreleased]", StringComparison.OrdinalIgnoreCase)) continue;
+                    skippingPreamble = false;
+                }
+                outLines.Add(line);
+            }
+            return string.Join(Environment.NewLine, outLines.ToArray()).TrimStart();
         }
 
         private static string FindChangelogPath()
@@ -3690,6 +3991,9 @@ namespace KaiAosRenew
             if (IsAuthCooldownActive()) authCooldownMode = "on";
             if (IsAuthRegisterBlocked()) authBlockedMode = "on";
             var authTip = AuthGuardsFooterText != null ? (AuthGuardsFooterText.ToolTip as string ?? "") : "";
+            var cooldownUntilUtc = "";
+            if (authCooldownMode == "on" && _settings != null && _settings.AuthCooldownUntilUtc.HasValue)
+                cooldownUntilUtc = _settings.AuthCooldownUntilUtc.Value.ToUniversalTime().ToString("o");
             var parts = new[]
             {
                 _footerStatusMode ?? "stopped",
@@ -3709,7 +4013,8 @@ namespace KaiAosRenew
                 authCooldown ?? "",
                 authBlockedMode,
                 authBlocked ?? "",
-                authTip ?? ""
+                authTip ?? "",
+                cooldownUntilUtc
             };
             return string.Join("\u001f", parts);
         }
@@ -3729,6 +4034,11 @@ namespace KaiAosRenew
             if (kind == "aosapply")
             {
                 ApplyAosFromClient(clientId, msg.Text);
+                return;
+            }
+            if (kind == "aosinterval")
+            {
+                ApplyAosIntervalFromClient(clientId, msg.Text);
                 return;
             }
             if (kind == "aoscmd")
@@ -3751,6 +4061,36 @@ namespace KaiAosRenew
                 SendAosSyncTo(clientId);
                 return;
             }
+            if (kind == "settingssyncreq")
+            {
+                SendServerSettingsTo(clientId);
+                return;
+            }
+            if (kind == "settingsexportreq")
+            {
+                SendServerSettingsExportTo(clientId);
+                return;
+            }
+            if (kind == "settingsimport")
+            {
+                ImportServerSettingsFromClient(clientId, msg.Text);
+                return;
+            }
+            if (kind == "settingsapply")
+            {
+                ApplyServerSettingsFromClient(clientId, msg.Text);
+                return;
+            }
+            if (kind == "notifyclientsreq")
+            {
+                SendNotifyClientsListTo(clientId);
+                return;
+            }
+            if (kind == "notifytest")
+            {
+                HandleNotifyTestFromClient(clientId, msg.Text);
+                return;
+            }
             if (kind == "updatefeedreq")
             {
                 var ignore = HandleUpdateFeedReqAsync(clientId);
@@ -3766,6 +4106,23 @@ namespace KaiAosRenew
                 MarkClientUpdating(clientId, false, null);
                 return;
             }
+            if (kind == "clienthello")
+            {
+                NotifyServer.Instance.SetClientVersion(clientId, msg.Text);
+                RefreshNotifyClientsCombo();
+                BroadcastNotifyClientsList();
+                return;
+            }
+        }
+
+        private static string FormatNotifyClientLabel(string display, string version)
+        {
+            var label = string.IsNullOrWhiteSpace(display) ? "" : display.Trim();
+            var ver = (version ?? "").Trim();
+            if (ver.Length == 0) return label;
+            if (ver.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+                return label + " (" + ver + ")";
+            return label + " (v" + ver + ")";
         }
 
         private async Task HandleUpdateFeedReqAsync(int clientId)
@@ -3819,12 +4176,13 @@ namespace KaiAosRenew
 
         private string BuildAosSyncPayload()
         {
-            if (_settings == null) return NotifyMessage.EncodeAosSync(1, "", "");
+            if (_settings == null) return NotifyMessage.EncodeAosSync(1, "", "", null, 3);
             var hours = _settings.IntervalHours < 1 ? 1 : _settings.IntervalHours;
             string pass = "";
             try { pass = _settings.GetPassword() ?? ""; }
             catch { pass = ""; }
-            return NotifyMessage.EncodeAosSync(hours, _settings.Email ?? "", pass);
+            var blockAfter = _settings.AuthRegisterBlockAfter < 1 ? 3 : _settings.AuthRegisterBlockAfter;
+            return NotifyMessage.EncodeAosSync(hours, _settings.Email ?? "", pass, null, blockAfter);
         }
 
         private void BroadcastAosSync()
@@ -3857,6 +4215,326 @@ namespace KaiAosRenew
                 });
             }
             catch { }
+        }
+
+        private Dictionary<string, string> BuildServerSettingsMap()
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (_settings == null) return map;
+            map["language"] = _settings.Language ?? "en";
+            map["themeMode"] = _settings.ThemeMode ?? "system";
+            map["logVerbose"] = "1";
+            map["startWithWindows"] = _settings.StartWithWindows ? "1" : "0";
+            map["minimizeToTray"] = _settings.MinimizeToTray ? "1" : "0";
+            map["minimizeOnClose"] = _settings.MinimizeOnClose ? "1" : "0";
+            map["autoUpdate"] = _settings.AutoUpdate ? "1" : "0";
+            map["keysRefreshSeconds"] = _settings.KeysRefreshSeconds.ToString();
+            map["keysVinTipSeconds"] = _settings.KeysVinTipSeconds.ToString();
+            map["keysStallMinutes"] = _settings.KeysStallMinutes.ToString();
+            map["keysBalloon"] = _settings.KeysBalloonEnabled ? "1" : "0";
+            map["keysVinBmwFailOnly"] = _settings.KeysVinTipBmwFailOnly ? "1" : "0";
+            map["keysAutoCopyVin"] = _settings.KeysAutoCopyVin ? "1" : "0";
+            map["keysStallAlert"] = _settings.KeysStallAlertEnabled ? "1" : "0";
+            map["browserPassHint"] = _settings.BrowserPasswordHintOnAuthFail ? "1" : "0";
+            map["useSystemProxy"] = _settings.UseSystemProxy ? "1" : "0";
+            map["authCooldownMinutes"] = _settings.AuthCooldownMinutes.ToString();
+            map["authRegisterBlockAfter"] = GetAuthRegisterBlockAfter().ToString();
+            map["authRegisterBlocked"] = _settings.AuthRegisterBlocked ? "1" : "0";
+            map["configPath"] = _settings.ConfigPath ?? "";
+            map["keysUploaderLogDir"] = _settings.KeysUploaderLogDir ?? "";
+            map["keysKaiLogDir"] = _settings.KeysKaiLogDir ?? "";
+            map["keysSqlitePath"] = _settings.KeysSqlitePath ?? "";
+            map["notifyEnabled"] = _settings.NotifyServerEnabled ? "1" : "0";
+            map["notifyPort"] = _settings.NotifyServerPort.ToString();
+            try { map["notifyIps"] = NotifyServer.GetLocalIpv4Summary() ?? ""; }
+            catch { map["notifyIps"] = ""; }
+            try
+            {
+                var paths = DesktopKeyReaderReg.ReadAbsolute();
+                map["keyReaderDataBin"] = paths.DataBin ?? "";
+                map["keyReaderLogPath"] = paths.LogPath ?? "";
+                map["keyReaderEncPath"] = paths.EncPath ?? "";
+                map["keyReaderLogLevel"] = paths.LogLevel.ToString();
+            }
+            catch
+            {
+                map["keyReaderDataBin"] = "";
+                map["keyReaderLogPath"] = "";
+                map["keyReaderEncPath"] = "";
+                map["keyReaderLogLevel"] = "4";
+            }
+            return map;
+        }
+
+        private string BuildServerSettingsPayload()
+        {
+            return NotifyMessage.EncodeKvMap(BuildServerSettingsMap());
+        }
+
+        private void BroadcastServerSettings()
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled) return;
+            try
+            {
+                BroadcastNotify(new NotifyMessage
+                {
+                    Kind = "settingsSync",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = BuildServerSettingsPayload()
+                });
+            }
+            catch { }
+        }
+
+        private void SendServerSettingsTo(int clientId)
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled) return;
+            try
+            {
+                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                {
+                    Kind = "settingsSync",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = BuildServerSettingsPayload()
+                });
+            }
+            catch { }
+        }
+
+
+        private void SendServerSettingsExportTo(int clientId)
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled) return;
+            try
+            {
+                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                {
+                    Kind = "settingsExport",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = _settings.ExportPortableToString() ?? ""
+                });
+            }
+            catch { }
+        }
+
+        private void ImportServerSettingsFromClient(int clientId, string xml)
+        {
+            if (_settings == null)
+            {
+                SendAosAck(clientId, false, "No settings");
+                return;
+            }
+            try
+            {
+                if (string.IsNullOrWhiteSpace(xml))
+                {
+                    SendAosAck(clientId, false, "Empty settings import");
+                    return;
+                }
+                _settings.ImportPortableFromString(xml);
+                _settings.Save();
+                _loadingUi = true;
+                try
+                {
+                    if (EmailBox != null) EmailBox.Text = _settings.Email ?? "";
+                    var hours = _settings.IntervalHours <= 0 ? 1 : _settings.IntervalHours;
+                    if (hours < 1) hours = 1;
+                    if (hours > 168) hours = 168;
+                    if (IntervalBox != null) IntervalBox.Text = hours.ToString();
+                    if (ConfigPathBox != null) ConfigPathBox.Text = _settings.ConfigPath ?? "";
+                    _lastValidConfigPath = _settings.ConfigPath;
+                    if (StartWithWindowsCheck != null) StartWithWindowsCheck.IsChecked = _settings.StartWithWindows;
+                    if (MinimizeToTrayCheck != null) MinimizeToTrayCheck.IsChecked = _settings.MinimizeToTray;
+                    UpdateMinimizeToTrayEnabled();
+                    if (MinimizeOnCloseCheck != null) MinimizeOnCloseCheck.IsChecked = _settings.MinimizeOnClose;
+                    if (AutoUpdateCheck != null) AutoUpdateCheck.IsChecked = _settings.AutoUpdate;
+                    if (UseSystemProxyCheck != null) UseSystemProxyCheck.IsChecked = _settings.UseSystemProxy;
+                    if (BrowserPassHintCheck != null)
+                        BrowserPassHintCheck.IsChecked = _settings.BrowserPasswordHintOnAuthFail;
+                    if (KeysBalloonCheck != null)
+                        KeysBalloonCheck.IsChecked = _settings.KeysBalloonEnabled;
+                    if (KeysVinBmwFailOnlyCheck != null)
+                    {
+                        KeysVinBmwFailOnlyCheck.IsChecked = _settings.KeysBalloonEnabled && _settings.KeysVinTipBmwFailOnly;
+                        SyncKeysVinBmwFailOnlyUi();
+                    }
+                    if (KeysStallAlertCheck != null)
+                        KeysStallAlertCheck.IsChecked = _settings.KeysStallAlertEnabled;
+                    if (KeysAutoCopyVinCheck != null)
+                        KeysAutoCopyVinCheck.IsChecked = _settings.KeysAutoCopyVin;
+                    _settings.LogVerbose = true;
+                    if (KeysRefreshSecondsBox != null)
+                        KeysRefreshSecondsBox.Text = _settings.KeysRefreshSeconds.ToString();
+                    if (KeysVinTipSecondsBox != null)
+                        KeysVinTipSecondsBox.Text = _settings.KeysVinTipSeconds.ToString();
+                    if (KeysStallMinutesBox != null)
+                        KeysStallMinutesBox.Text = _settings.KeysStallMinutes.ToString();
+                    if (AuthCooldownMinutesBox != null)
+                        AuthCooldownMinutesBox.Text = _settings.AuthCooldownMinutes.ToString();
+                    if (AuthRegisterBlockAfterBox != null)
+                        AuthRegisterBlockAfterBox.Text = GetAuthRegisterBlockAfter().ToString();
+                    LoadKeyReaderPathsToUi();
+                    LoadKeysDataPathsToUi();
+                    var lang = string.IsNullOrWhiteSpace(_settings.Language) ? "en" : _settings.Language.Trim();
+                    UiStrings.SetLanguage(lang);
+                    if (LanguageCombo != null) LanguageCombo.SelectedValue = lang;
+                    var theme = ThemeManager.NormalizeMode(_settings.ThemeMode);
+                    _settings.ThemeMode = theme;
+                    if (ThemeCombo != null) ThemeCombo.SelectedValue = theme;
+                    ThemeManager.Apply(theme);
+                    ApplyThemeChrome();
+                    ApplyLanguage();
+                    ApplyStartup(_settings.StartWithWindows);
+                    ApplyKeysMonitorSettings();
+                    RefreshAuthCooldownBanner();
+                    RefreshPasswordHintBanners(false);
+                }
+                finally
+                {
+                    _loadingUi = false;
+                }
+                AppendLog("Server settings imported from client " + clientId, LogLevel.Info);
+                SendAosAck(clientId, true, "settingsImport");
+                BroadcastServerSettings();
+                BroadcastAosSync();
+            }
+            catch (Exception ex)
+            {
+                SendAosAck(clientId, false, ex.Message ?? "settingsImport failed");
+            }
+        }
+
+        private static bool MapFlag(Dictionary<string, string> map, string key, bool fallback)
+        {
+            string v;
+            if (map == null || !map.TryGetValue(key, out v) || string.IsNullOrEmpty(v))
+                return fallback;
+            return v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int MapInt(Dictionary<string, string> map, string key, int fallback, int min, int max)
+        {
+            string v;
+            int n;
+            if (map == null || !map.TryGetValue(key, out v) || !int.TryParse(v, out n))
+                return fallback;
+            if (n < min) n = min;
+            if (n > max) n = max;
+            return n;
+        }
+
+        private static string MapStr(Dictionary<string, string> map, string key, string fallback)
+        {
+            string v;
+            if (map == null || !map.TryGetValue(key, out v) || v == null)
+                return fallback;
+            return v;
+        }
+
+        private void ApplyServerSettingsFromClient(int clientId, string payload)
+        {
+            if (_settings == null)
+            {
+                SendAosAck(clientId, false, "No settings");
+                return;
+            }
+            try
+            {
+                var map = NotifyMessage.ParseKvMap(payload);
+                if (map.Count == 0)
+                {
+                    SendAosAck(clientId, false, "Empty settings");
+                    return;
+                }
+
+                _loadingUi = true;
+                try
+                {
+                    _settings.Language = MapStr(map, "language", _settings.Language ?? "en");
+                    _settings.ThemeMode = MapStr(map, "themeMode", _settings.ThemeMode ?? "system");
+                    _settings.LogVerbose = true;
+                    _settings.StartWithWindows = MapFlag(map, "startWithWindows", _settings.StartWithWindows);
+                    _settings.MinimizeToTray = MapFlag(map, "minimizeToTray", _settings.MinimizeToTray);
+                    _settings.MinimizeOnClose = MapFlag(map, "minimizeOnClose", _settings.MinimizeOnClose);
+                    _settings.AutoUpdate = MapFlag(map, "autoUpdate", _settings.AutoUpdate);
+                    _settings.KeysRefreshSeconds = MapInt(map, "keysRefreshSeconds", _settings.KeysRefreshSeconds, 1, 60);
+                    _settings.KeysVinTipSeconds = MapInt(map, "keysVinTipSeconds", _settings.KeysVinTipSeconds, 3, 60);
+                    _settings.KeysStallMinutes = MapInt(map, "keysStallMinutes", _settings.KeysStallMinutes, 1, 60);
+                    _settings.KeysBalloonEnabled = MapFlag(map, "keysBalloon", _settings.KeysBalloonEnabled);
+                    _settings.KeysVinTipBmwFailOnly = MapFlag(map, "keysVinBmwFailOnly", _settings.KeysVinTipBmwFailOnly);
+                    if (!_settings.KeysBalloonEnabled)
+                        _settings.KeysVinTipBmwFailOnly = false;
+                    _settings.KeysAutoCopyVin = MapFlag(map, "keysAutoCopyVin", _settings.KeysAutoCopyVin);
+                    _settings.KeysStallAlertEnabled = MapFlag(map, "keysStallAlert", _settings.KeysStallAlertEnabled);
+                    _settings.BrowserPasswordHintOnAuthFail = MapFlag(map, "browserPassHint", _settings.BrowserPasswordHintOnAuthFail);
+                    _settings.UseSystemProxy = MapFlag(map, "useSystemProxy", _settings.UseSystemProxy);
+                    _settings.AuthCooldownMinutes = MapInt(map, "authCooldownMinutes", _settings.AuthCooldownMinutes, 5, 240);
+                    _settings.AuthRegisterBlockAfter = MapInt(map, "authRegisterBlockAfter", GetAuthRegisterBlockAfter(), 1, 10);
+                    _settings.NormalizeClamps();
+                    _settings.Save();
+
+                    // Apply to server UI
+                    if (LanguageCombo != null) LanguageCombo.SelectedValue = _settings.Language;
+                    if (ThemeCombo != null) ThemeCombo.SelectedValue = _settings.ThemeMode;
+                    if (StartWithWindowsCheck != null) StartWithWindowsCheck.IsChecked = _settings.StartWithWindows;
+                    if (MinimizeToTrayCheck != null) MinimizeToTrayCheck.IsChecked = _settings.MinimizeToTray;
+                    if (MinimizeOnCloseCheck != null) MinimizeOnCloseCheck.IsChecked = _settings.MinimizeOnClose;
+                    if (AutoUpdateCheck != null) AutoUpdateCheck.IsChecked = _settings.AutoUpdate;
+                    if (KeysRefreshSecondsBox != null) KeysRefreshSecondsBox.Text = _settings.KeysRefreshSeconds.ToString();
+                    if (KeysVinTipSecondsBox != null) KeysVinTipSecondsBox.Text = _settings.KeysVinTipSeconds.ToString();
+                    if (KeysStallMinutesBox != null) KeysStallMinutesBox.Text = _settings.KeysStallMinutes.ToString();
+                    if (KeysBalloonCheck != null) KeysBalloonCheck.IsChecked = _settings.KeysBalloonEnabled;
+                    if (KeysVinBmwFailOnlyCheck != null) KeysVinBmwFailOnlyCheck.IsChecked = _settings.KeysVinTipBmwFailOnly;
+                    if (KeysAutoCopyVinCheck != null) KeysAutoCopyVinCheck.IsChecked = _settings.KeysAutoCopyVin;
+                    if (KeysStallAlertCheck != null) KeysStallAlertCheck.IsChecked = _settings.KeysStallAlertEnabled;
+                    if (BrowserPassHintCheck != null) BrowserPassHintCheck.IsChecked = _settings.BrowserPasswordHintOnAuthFail;
+                    if (UseSystemProxyCheck != null) UseSystemProxyCheck.IsChecked = _settings.UseSystemProxy;
+                    if (AuthCooldownMinutesBox != null) AuthCooldownMinutesBox.Text = _settings.AuthCooldownMinutes.ToString();
+                    if (AuthRegisterBlockAfterBox != null) AuthRegisterBlockAfterBox.Text = _settings.AuthRegisterBlockAfter.ToString();
+
+                    ApplyStartup(_settings.StartWithWindows);
+                    ApplyKeysMonitorSettings();
+                    UiStrings.SetLanguage(_settings.Language);
+                    ThemeManager.Apply(_settings.ThemeMode);
+                    ApplyLanguage();
+                    RefreshAuthCooldownBanner();
+
+                    if (map.ContainsKey("keyReaderLogLevel"))
+                    {
+                        var level = MapInt(map, "keyReaderLogLevel", 4, 0, 4);
+                        try
+                        {
+                            var paths = DesktopKeyReaderReg.ReadAbsolute();
+                            paths.LogLevel = level;
+                            DesktopKeyReaderReg.WriteAbsolute(paths);
+                            RefreshKeyReaderLogLevelCombo();
+                            if (KeyReaderLogLevelCombo != null)
+                                KeyReaderLogLevelCombo.SelectedValue = level.ToString();
+                            StartKeyReaderLogTailer(paths);
+                        }
+                        catch (Exception ex)
+                        {
+                            AppendLog("KeyReader log level: " + ex.Message, LogLevel.Warning);
+                        }
+                    }
+                }
+                finally
+                {
+                    _loadingUi = false;
+                }
+
+                AppendLog("Server settings updated from client " + clientId, LogLevel.Info);
+                SendAosAck(clientId, true, "settingsApply");
+                BroadcastServerSettings();
+                BroadcastAosSync();
+            }
+            catch (Exception ex)
+            {
+                SendAosAck(clientId, false, ex.Message ?? "settingsApply failed");
+            }
         }
 
         private string BuildKaiSyncPayload()
@@ -3968,6 +4646,53 @@ namespace KaiAosRenew
             catch { }
         }
 
+        private void ApplyAosIntervalFromClient(int clientId, string payload)
+        {
+            if (_remoteServerUpdateBusy)
+            {
+                SendAosAck(clientId, false, UiStrings.T("AosSaveUpdating"));
+                return;
+            }
+            int hours;
+            if (!int.TryParse((payload ?? "").Trim(), out hours) || hours < 1 || hours > 168)
+            {
+                SendAosAck(clientId, false, UiStrings.T("InvalidInterval"));
+                return;
+            }
+            try
+            {
+                var prevLoading = _loadingUi;
+                _loadingUi = true;
+                try
+                {
+                    if (IntervalBox != null) IntervalBox.Text = hours.ToString();
+                }
+                finally { _loadingUi = prevLoading; }
+                if (_settings != null)
+                {
+                    _settings.IntervalHours = hours;
+                    _settings.Save();
+                }
+                ScheduleNextServiceCheck();
+                if (_timerActive)
+                {
+                    _retrySchedule = false;
+                    ScheduleNext(true);
+                    AppendLog(string.Format(UiStrings.T("LogIntervalUpdated"), hours), true);
+                    UpdateNextLabel();
+                    UpdateTrayTooltip();
+                }
+                else
+                    EnsureAutoTimer(true);
+                SendAosAck(clientId, true, "OK");
+                BroadcastAosSync();
+            }
+            catch (Exception ex)
+            {
+                SendAosAck(clientId, false, ex.Message);
+            }
+        }
+
         private void ApplyAosFromClient(int clientId, string payload)
         {
             if (_remoteServerUpdateBusy)
@@ -3984,7 +4709,8 @@ namespace KaiAosRenew
             string email;
             string password;
             bool? forceRegisterOpt;
-            if (!NotifyMessage.TryParseAosSync(payload, out hours, out email, out password, out forceRegisterOpt))
+            int? registerBlockAfterOpt;
+            if (!NotifyMessage.TryParseAosSync(payload, out hours, out email, out password, out forceRegisterOpt, out registerBlockAfterOpt))
             {
                 SendAosAck(clientId, false, "Invalid AOS payload");
                 return;
@@ -4016,6 +4742,15 @@ namespace KaiAosRenew
                 if (EmailBox != null) EmailBox.Text = email;
                 SetPasswordUi(password);
                 if (IntervalBox != null) IntervalBox.Text = hours.ToString();
+                if (registerBlockAfterOpt.HasValue && _settings != null)
+                {
+                    var n = registerBlockAfterOpt.Value;
+                    if (n < 1) n = 1;
+                    if (n > 10) n = 10;
+                    _settings.AuthRegisterBlockAfter = n;
+                    if (AuthRegisterBlockAfterBox != null)
+                        AuthRegisterBlockAfterBox.Text = n.ToString();
+                }
                 var forceRegister = forceRegisterOpt.HasValue
                     ? forceRegisterOpt.Value
                     : CredentialsChangedInUi();
@@ -4066,6 +4801,30 @@ namespace KaiAosRenew
                     SendAosAck(clientId, true, "checkBrowserPass");
                     return;
                 }
+                if (c == "authclearcooldown")
+                {
+                    if (IsAuthCooldownActive())
+                    {
+                        ClearAuthCooldown();
+                        AppendLog(UiStrings.T("AuthCooldownCleared"), LogLevel.Info);
+                    }
+                    SendAosAck(clientId, true, "authClearCooldown");
+                    BroadcastAosSync();
+                    return;
+                }
+                if (c == "authclearblocked")
+                {
+                    if (IsAuthRegisterBlocked())
+                    {
+                        SetAuthRegisterBlocked(false);
+                        QueueFooterPublish();
+                        BroadcastServerSettings();
+                        AppendLog(UiStrings.T("AuthRegisterBlockedCleared"), LogLevel.Info);
+                    }
+                    SendAosAck(clientId, true, "authClearBlocked");
+                    BroadcastAosSync();
+                    return;
+                }
                 if (c == "forceregister")
                 {
                     ClearAuthCooldown();
@@ -4078,7 +4837,7 @@ namespace KaiAosRenew
                         SendAosAck(clientId, false, fail ?? "Preflight failed");
                         return;
                     }
-                    AppendLog(UiStrings.T("ForceRegisterStarted"), LogLevel.Warning);
+                    AppendLog(UiStrings.T("ForceRegisterStarted"), LogLevel.Info);
                     RunNowAsync(false, true, null, true);
                     SendAosAck(clientId, true, "forceRegister");
                     BroadcastAosSync();
@@ -4140,8 +4899,9 @@ namespace KaiAosRenew
             var idCopy = clientId;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (_clientsUpdating.Remove(idCopy))
-                    RefreshNotifyClientsCombo();
+                _clientsUpdating.Remove(idCopy);
+                RefreshNotifyClientsCombo();
+                BroadcastNotifyClientsList();
             }));
         }
 
@@ -4154,8 +4914,11 @@ namespace KaiAosRenew
                 SendActivitySyncTo(idCopy);
                 SendRegisterSyncTo(idCopy);
                 SendAosSyncTo(idCopy);
+                SendServerSettingsTo(idCopy);
                 SendKaiSyncTo(idCopy);
                 SendUpdateFeedTo(idCopy);
+                RefreshNotifyClientsCombo();
+                BroadcastNotifyClientsList();
             }));
             try
             {
@@ -4187,6 +4950,91 @@ namespace KaiAosRenew
             if (NotifyServerIpBox == null) return;
             try { NotifyServerIpBox.Text = NotifyServer.GetLocalIpv4Summary(); }
             catch { NotifyServerIpBox.Text = "127.0.0.1"; }
+            SizeTextBoxToContent(NotifyServerIpBox);
+        }
+
+        private static void SizeTextBoxToContent(TextBox box)
+        {
+            if (box == null) return;
+            var text = box.Text ?? "";
+            if (text.Length == 0)
+            {
+                box.Width = 80;
+                return;
+            }
+            try
+            {
+                var typeface = new Typeface(box.FontFamily, box.FontStyle, box.FontWeight, box.FontStretch);
+                double pixelsPerDip = 1.0;
+                try { pixelsPerDip = VisualTreeHelper.GetDpi(box).PixelsPerDip; }
+                catch { }
+                var ft = new FormattedText(
+                    text,
+                    CultureInfo.CurrentUICulture,
+                    FlowDirection.LeftToRight,
+                    typeface,
+                    box.FontSize > 0 ? box.FontSize : 12,
+                    Brushes.Black,
+                    pixelsPerDip);
+                var w = Math.Ceiling(ft.WidthIncludingTrailingWhitespace) + 24;
+                if (w < 80) w = 80;
+                box.Width = w;
+            }
+            catch
+            {
+                box.Width = Math.Max(80, text.Length * 8 + 24);
+            }
+        }
+
+        private static void SizeComboToLongestLabel(ComboBox combo, IEnumerable<string> labels)
+        {
+            if (combo == null) return;
+            const double minW = 160;
+            const double chrome = 36; // padding + dropdown glyph
+            double max = 0;
+            try
+            {
+                var typeface = new Typeface(combo.FontFamily, combo.FontStyle, combo.FontWeight, combo.FontStretch);
+                double pixelsPerDip = 1.0;
+                try { pixelsPerDip = VisualTreeHelper.GetDpi(combo).PixelsPerDip; }
+                catch { }
+                var fontSize = combo.FontSize > 0 ? combo.FontSize : 12;
+                if (labels != null)
+                {
+                    foreach (var label in labels)
+                    {
+                        var text = label ?? "";
+                        if (text.Length == 0) continue;
+                        var ft = new FormattedText(
+                            text,
+                            CultureInfo.CurrentUICulture,
+                            FlowDirection.LeftToRight,
+                            typeface,
+                            fontSize,
+                            Brushes.Black,
+                            pixelsPerDip);
+                        var w = ft.WidthIncludingTrailingWhitespace;
+                        if (w > max) max = w;
+                    }
+                }
+            }
+            catch { }
+            var width = Math.Ceiling(max) + chrome;
+            if (width < minW) width = minW;
+            combo.MinWidth = minW;
+            combo.Width = width;
+        }
+
+        private void NotifyServerIpCopy_Click(object sender, RoutedEventArgs e)
+        {
+            var text = NotifyServerIpBox != null ? (NotifyServerIpBox.Text ?? "").Trim() : "";
+            if (string.IsNullOrEmpty(text))
+            {
+                RefreshNotifyServerIpDisplay();
+                text = NotifyServerIpBox != null ? (NotifyServerIpBox.Text ?? "").Trim() : "";
+            }
+            if (string.IsNullOrEmpty(text)) return;
+            TryCopyTextToClipboard(text, UiStrings.T("NotifyServerIpCopied"));
         }
 
         private void ParseAndSetNotifyServerPort()
@@ -4263,7 +5111,7 @@ namespace KaiAosRenew
             {
                 foreach (var c in NotifyServer.Instance.GetClients())
                 {
-                    var label = c.Display ?? ("#" + c.Id);
+                    var label = FormatNotifyClientLabel(c.Display ?? ("#" + c.Id), c.Version);
                     if (_clientsUpdating.Contains(c.Id))
                         label = string.Format(UiStrings.T("ClientUpdatingLabel"), label);
                     items.Add(new NotifySendTarget
@@ -4289,6 +5137,7 @@ namespace KaiAosRenew
                 }
             }
             NotifySendToCombo.SelectedItem = select;
+            SizeComboToLongestLabel(NotifySendToCombo, items.ConvertAll(it => it.Label));
             UpdateNotifyFirewallHint();
         }
 
@@ -4320,7 +5169,8 @@ namespace KaiAosRenew
 
         private void NotifyTestVin_Click(object sender, RoutedEventArgs e)
         {
-            var tipSec = _settings != null ? _settings.KeysVinTipSeconds : 8;
+            SetNotifyTestResult(UiStrings.T("NotifyTestSending"), false);
+            var tipSec = _settings != null ? _settings.KeysVinTipSeconds : 10;
             if (tipSec < 3) tipSec = 3;
             SendNotifyTest(new NotifyMessage
             {
@@ -4336,6 +5186,7 @@ namespace KaiAosRenew
 
         private void NotifyTestInfo_Click(object sender, RoutedEventArgs e)
         {
+            SetNotifyTestResult(UiStrings.T("NotifyTestSending"), false);
             SendNotifyTest(new NotifyMessage
             {
                 Kind = "info",
@@ -4348,6 +5199,7 @@ namespace KaiAosRenew
 
         private void NotifyTestWarning_Click(object sender, RoutedEventArgs e)
         {
+            SetNotifyTestResult(UiStrings.T("NotifyTestSending"), false);
             SendNotifyTest(new NotifyMessage
             {
                 Kind = "warning",
@@ -4360,6 +5212,7 @@ namespace KaiAosRenew
 
         private void NotifyTestError_Click(object sender, RoutedEventArgs e)
         {
+            SetNotifyTestResult(UiStrings.T("NotifyTestSending"), false);
             SendNotifyTest(new NotifyMessage
             {
                 Kind = "error",
@@ -4372,37 +5225,245 @@ namespace KaiAosRenew
 
         private void SendNotifyTest(NotifyMessage msg, string kindLabel)
         {
+            int? targetId = null;
+            if (NotifySendToCombo != null)
+            {
+                var target = NotifySendToCombo.SelectedItem as NotifySendTarget;
+                if (target != null) targetId = target.ClientId;
+            }
+            SendNotifyTest(msg, kindLabel, targetId, 0);
+        }
+
+        private void SetNotifyTestResult(string text, bool error)
+        {
+            if (NotifyTestResultText == null) return;
+            NotifyTestResultText.Text = text ?? "";
+            NotifyTestResultText.Visibility = string.IsNullOrEmpty(NotifyTestResultText.Text)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            Brush brush = null;
+            try
+            {
+                brush = error
+                    ? (FindResource("StatusErrorBrush") as Brush)
+                    : (FindResource("TextMutedBrush") as Brush);
+            }
+            catch { }
+            if (brush != null)
+                NotifyTestResultText.Foreground = brush;
+        }
+
+        private static string FormatNotifyTestSuccess(int? targetClientId, string destLabel, int clientCount)
+        {
+            if (targetClientId == null || targetClientId.Value <= 0)
+                return string.Format(UiStrings.T("NotifyTestSentCount"), clientCount);
+            return string.Format(UiStrings.T("NotifyTestSentDest"), destLabel ?? "");
+        }
+
+        private Dictionary<string, string> BuildNotifyClientsMap(int youClientId)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            map["0"] = UiStrings.T("NotifyAllClients") + " (" + NotifyServer.Instance.ClientCount + ")";
+            try
+            {
+                foreach (var c in NotifyServer.Instance.GetClients())
+                {
+                    var label = FormatNotifyClientLabel(c.Display ?? ("#" + c.Id), c.Version);
+                    if (_clientsUpdating.Contains(c.Id))
+                        label = string.Format(UiStrings.T("ClientUpdatingLabel"), label);
+                    if (youClientId > 0 && c.Id == youClientId)
+                        label = label + " " + UiStrings.T("NotifyClientYou");
+                    map[c.Id.ToString()] = label;
+                }
+            }
+            catch { }
+            return map;
+        }
+
+        private void SendNotifyClientsListTo(int clientId)
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled) return;
+            try
+            {
+                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                {
+                    Kind = "notifyClients",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = NotifyMessage.EncodeKvMap(BuildNotifyClientsMap(clientId))
+                });
+            }
+            catch { }
+        }
+
+        private void BroadcastNotifyClientsList()
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled) return;
+            try
+            {
+                foreach (var c in NotifyServer.Instance.GetClients())
+                    SendNotifyClientsListTo(c.Id);
+            }
+            catch { }
+        }
+
+        private void HandleNotifyTestFromClient(int fromClientId, string payload)
+        {
+            var kind = "info";
+            var targetId = 0;
+            if (!string.IsNullOrWhiteSpace(payload))
+            {
+                var parts = payload.Split(new[] { '|' }, 2);
+                if (parts.Length >= 1 && !string.IsNullOrWhiteSpace(parts[0]))
+                    kind = parts[0].Trim().ToLowerInvariant();
+                if (parts.Length >= 2)
+                {
+                    int parsed;
+                    if (int.TryParse(parts[1].Trim(), out parsed) && parsed >= 0)
+                        targetId = parsed;
+                }
+            }
+
+            NotifyMessage msg;
+            string kindLabel;
+            switch (kind)
+            {
+                case "vin":
+                    {
+                        var tipSec = _settings != null ? _settings.KeysVinTipSeconds : 10;
+                        if (tipSec < 3) tipSec = 3;
+                        msg = new NotifyMessage
+                        {
+                            Kind = "vin",
+                            Level = "info",
+                            Title = "KAI - AOS Renew",
+                            Text = "Test VIN WBATESTVIN0000001",
+                            Vin = "WBATESTVIN0000001",
+                            Action = "copyVin",
+                            Seconds = tipSec
+                        };
+                        kindLabel = "VIN";
+                        break;
+                    }
+                case "warning":
+                    msg = new NotifyMessage
+                    {
+                        Kind = "warning",
+                        Level = "warning",
+                        Title = "KAI - AOS Renew",
+                        Text = "Test warning tip (remote)",
+                        Seconds = 8
+                    };
+                    kindLabel = "Warning";
+                    break;
+                case "error":
+                    msg = new NotifyMessage
+                    {
+                        Kind = "error",
+                        Level = "error",
+                        Title = "KAI - AOS Renew",
+                        Text = "Test error tip (remote)",
+                        Seconds = 8
+                    };
+                    kindLabel = "Error";
+                    break;
+                default:
+                    msg = new NotifyMessage
+                    {
+                        Kind = "info",
+                        Level = "info",
+                        Title = "KAI - AOS Renew",
+                        Text = "Test info tip (remote)",
+                        Seconds = 8
+                    };
+                    kindLabel = "Info";
+                    break;
+            }
+
+            string err;
+            var ok = SendNotifyTest(msg, kindLabel, targetId, fromClientId, out err);
+            try
+            {
+                var ackText = ok
+                    ? FormatNotifyTestSuccess(targetId, err, NotifyServer.Instance.ClientCount)
+                    : (err ?? UiStrings.T("NotifyTestNoClients"));
+                NotifyServer.Instance.SendTo(fromClientId, new NotifyMessage
+                {
+                    Kind = "notifyTestAck",
+                    Level = ok ? "info" : "error",
+                    Title = "KAI - AOS Renew",
+                    Text = ackText
+                });
+            }
+            catch { }
+        }
+
+        private bool SendNotifyTest(NotifyMessage msg, string kindLabel, int? targetClientId, int replyClientId)
+        {
+            string unused;
+            return SendNotifyTest(msg, kindLabel, targetClientId, replyClientId, out unused);
+        }
+
+        private bool SendNotifyTest(NotifyMessage msg, string kindLabel, int? targetClientId, int replyClientId, out string destOrError)
+        {
+            destOrError = null;
             if (_settings == null || !_settings.NotifyServerEnabled || !NotifyServer.Instance.IsRunning)
             {
-                AppendLog(UiStrings.T("NotifyTestServerOff"), LogLevel.Warning);
-                return;
+                destOrError = UiStrings.T("NotifyTestServerOff");
+                AppendLog(destOrError, LogLevel.Warning);
+                if (replyClientId == 0)
+                    SetNotifyTestResult(destOrError, true);
+                return false;
             }
-            RefreshNotifyClientsCombo();
+            if (replyClientId == 0)
+                RefreshNotifyClientsCombo();
             if (NotifyServer.Instance.ClientCount <= 0)
             {
-                AppendLog(UiStrings.T("NotifyTestNoClients"), LogLevel.Warning);
-                return;
+                destOrError = UiStrings.T("NotifyTestNoClients");
+                AppendLog(destOrError, LogLevel.Warning);
+                if (replyClientId == 0)
+                    SetNotifyTestResult(destOrError, true);
+                return false;
             }
-            var target = NotifySendToCombo != null
-                ? NotifySendToCombo.SelectedItem as NotifySendTarget
-                : null;
+            var targetId = targetClientId ?? 0;
             string destLabel;
-            if (target == null || target.ClientId == 0)
+            if (targetId <= 0)
             {
                 NotifyServer.Instance.Broadcast(msg);
                 destLabel = UiStrings.T("NotifyAllClients") + " (" + NotifyServer.Instance.ClientCount + ")";
             }
             else
             {
-                if (!NotifyServer.Instance.SendTo(target.ClientId, msg))
+                if (!NotifyServer.Instance.SendTo(targetId, msg))
                 {
-                    AppendLog(UiStrings.T("NotifyTestNoClients"), LogLevel.Warning);
-                    RefreshNotifyClientsCombo();
-                    return;
+                    destOrError = UiStrings.T("NotifyTestNoClients");
+                    AppendLog(destOrError, LogLevel.Warning);
+                    if (replyClientId == 0)
+                    {
+                        RefreshNotifyClientsCombo();
+                        SetNotifyTestResult(destOrError, true);
+                    }
+                    return false;
                 }
-                destLabel = target.Label;
+                destLabel = "#" + targetId;
+                try
+                {
+                    foreach (var c in NotifyServer.Instance.GetClients())
+                    {
+                        if (c.Id == targetId)
+                        {
+                            destLabel = c.Display ?? destLabel;
+                            break;
+                        }
+                    }
+                }
+                catch { }
             }
+            destOrError = destLabel;
             AppendLog(string.Format(UiStrings.T("NotifyTestSent"), kindLabel, destLabel), LogLevel.Info);
+            if (replyClientId == 0)
+                SetNotifyTestResult(FormatNotifyTestSuccess(targetId, destLabel, NotifyServer.Instance.ClientCount), false);
+            return true;
         }
 
         private void ShowFromTray()
@@ -4533,6 +5594,7 @@ namespace KaiAosRenew
             AppendLog(_settings.StartWithWindows
                 ? UiStrings.T("AutostartOn")
                 : UiStrings.T("AutostartOff"), true);
+            BroadcastServerSettings();
         }
 
         private void UpdateMinimizeToTrayEnabled()
@@ -4540,8 +5602,12 @@ namespace KaiAosRenew
             // Always editable; minimize-on-launch still requires Start with Windows at runtime.
             if (MinimizeToTrayCheck != null)
                 MinimizeToTrayCheck.IsEnabled = true;
-            if (MinimizeToTrayLabel != null)
-                MinimizeToTrayLabel.Opacity = 1.0;
+        }
+
+        private static string CheckboxLabel(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text ?? "";
+            return text.TrimEnd(' ', ':');
         }
 
         private void LoadSettingsToUi()
@@ -4628,6 +5694,9 @@ namespace KaiAosRenew
             finally
             {
                 _loadingUi = false;
+                CaptureAosSavedCredentials();
+                _aosCredentialsDirty = false;
+                UpdateAosDirtyStatus();
             }
         }
 
@@ -4636,6 +5705,7 @@ namespace KaiAosRenew
             if (_loadingUi || _settings == null) return;
             _settings.UseSystemProxy = UseSystemProxyCheck.IsChecked == true;
             _settings.Save();
+            BroadcastServerSettings();
         }
 
         private void BrowserPassHint_Changed(object sender, RoutedEventArgs e)
@@ -4643,6 +5713,7 @@ namespace KaiAosRenew
             if (_loadingUi || _settings == null) return;
             _settings.BrowserPasswordHintOnAuthFail = BrowserPassHintCheck.IsChecked == true;
             _settings.Save();
+            BroadcastServerSettings();
         }
 
         private void CheckBrowserPass_Click(object sender, RoutedEventArgs e)
@@ -5127,7 +6198,7 @@ namespace KaiAosRenew
 
         private void SyncAlertBlinkTimer()
         {
-            var any = _kaiServiceAlert || _renewAlert || _keysAlert;
+            var any = _kaiServiceAlert || _renewAlert || _keysAlert || _activityAlert;
             if (any)
             {
                 if (!_alertBlinkTimer.IsEnabled)
@@ -5160,6 +6231,8 @@ namespace KaiAosRenew
                 RenewTabAlertDot.Opacity = _renewAlert ? opacity : 1.0;
             if (KeysTabAlertDot != null)
                 KeysTabAlertDot.Opacity = _keysAlert ? opacity : 1.0;
+            if (ActivityTabAlertDot != null)
+                ActivityTabAlertDot.Opacity = _activityAlert ? opacity : 1.0;
             if (KaiFixServicesBtn != null)
                 KaiFixServicesBtn.Opacity = (_kaiServiceAlert
                     && KaiFixServicesBtn.Visibility == Visibility.Visible
@@ -5362,7 +6435,54 @@ namespace KaiAosRenew
                 TokenFooterText.Foreground = ok ? Brushes.LightGreen : Brushes.OrangeRed;
             }
             MaybeDebugTokenSticky(_footerTokenMode);
+            UpdateAosLoginStatus();
             QueueFooterPublish();
+        }
+
+        private void UpdateAosLoginStatus()
+        {
+            if (AosLoginStatusText == null && AosLoginStatusIcon == null) return;
+            var mode = _footerTokenMode ?? "none";
+            var connected = string.Equals(mode, "ok", StringComparison.OrdinalIgnoreCase)
+                && !IsAuthRegisterBlocked()
+                && !_aosBmw403Fail;
+            var fail = _aosBmw403Fail
+                || IsAuthRegisterBlocked()
+                || string.Equals(mode, "fail", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(mode, "error", StringComparison.OrdinalIgnoreCase);
+            Brush brush;
+            string glyph;
+            string text;
+            if (connected)
+            {
+                text = UiStrings.T("AosLoginConnected");
+                brush = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+                glyph = "\uE73E";
+            }
+            else
+            {
+                text = UiStrings.T("AosLoginNotConnected");
+                if (fail)
+                {
+                    brush = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                    glyph = "\uE711";
+                }
+                else
+                {
+                    brush = new SolidColorBrush(Color.FromRgb(0x8C, 0x8C, 0x8C));
+                    glyph = "\uE711";
+                }
+            }
+            if (AosLoginStatusText != null)
+            {
+                AosLoginStatusText.Text = text;
+                AosLoginStatusText.Foreground = brush;
+            }
+            if (AosLoginStatusIcon != null)
+            {
+                AosLoginStatusIcon.Text = glyph;
+                AosLoginStatusIcon.Foreground = brush;
+            }
         }
 
         private void MaybeDebugTokenSticky(string mode)
@@ -5423,6 +6543,7 @@ namespace KaiAosRenew
             _settings.Save();
             UiStrings.SetLanguage(code);
             ApplyLanguage();
+            BroadcastServerSettings();
         }
 
         private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -5436,6 +6557,7 @@ namespace KaiAosRenew
             ApplyThemeChrome();
             RefreshStatusBadge();
             RefreshLogView();
+            BroadcastServerSettings();
         }
 
         private void MinimizeToTray_Changed(object sender, RoutedEventArgs e)
@@ -5443,6 +6565,7 @@ namespace KaiAosRenew
             if (_loadingUi || _settings == null) return;
             _settings.MinimizeToTray = MinimizeToTrayCheck.IsChecked == true;
             _settings.Save();
+            BroadcastServerSettings();
         }
 
         private void LogFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -5459,6 +6582,217 @@ namespace KaiAosRenew
             _logEntries.Clear();
             RefreshLogView();
             BroadcastActivityClear();
+            UpdateClearButtonsEnabled();
+        }
+
+        private void ActivityList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (IsGridViewHeaderClick(e.OriginalSource as DependencyObject)) return;
+            CopySelectedActivityText();
+        }
+
+        private void ActivityList_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.C || (Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
+                return;
+            if (IsGridViewHeaderClick(e.OriginalSource as DependencyObject)) return;
+            if (CopySelectedActivityText())
+                e.Handled = true;
+        }
+
+        private bool CopySelectedActivityText()
+        {
+            var entry = ActivityList != null ? ActivityList.SelectedItem as LogEntry : null;
+            if (entry == null || string.IsNullOrEmpty(entry.Text)) return false;
+            TryCopyTextToClipboard(entry.Text, "Copied to clipboard.");
+            return true;
+        }
+
+        private void RegisterHistoryList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (IsGridViewHeaderClick(e.OriginalSource as DependencyObject)) return;
+            CopySelectedRegisterText();
+        }
+
+        private void RegisterHistoryList_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.C || (Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
+                return;
+            if (IsGridViewHeaderClick(e.OriginalSource as DependencyObject)) return;
+            if (CopySelectedRegisterText())
+                e.Handled = true;
+        }
+
+        private bool CopySelectedRegisterText()
+        {
+            var entry = RegisterHistoryList != null ? RegisterHistoryList.SelectedItem as RegisterHistoryRow : null;
+            if (entry == null || string.IsNullOrEmpty(entry.Text)) return false;
+            TryCopyTextToClipboard(entry.Text, "Copied to clipboard.");
+            return true;
+        }
+
+        private static bool IsGridViewHeaderClick(DependencyObject source)
+        {
+            var d = source;
+            while (d != null)
+            {
+                if (d is GridViewColumnHeader) return true;
+                d = VisualTreeHelper.GetParent(d);
+            }
+            return false;
+        }
+
+        private void TryCopyTextToClipboard(string text, string feedback)
+        {
+            try
+            {
+                Clipboard.SetText(text ?? "");
+                if (!string.IsNullOrEmpty(feedback))
+                    AppendLog(feedback, LogLevel.Info);
+            }
+            catch { }
+        }
+
+        private void SaveActivityLog_Click(object sender, RoutedEventArgs e)
+        {
+            ExportLogForDay("activity", UiStrings.T("SaveLogTitleActivity"), CollectActivityLogForDay);
+        }
+
+        private void SaveRegisterLog_Click(object sender, RoutedEventArgs e)
+        {
+            ExportLogForDay("register", UiStrings.T("SaveLogTitleRegister"), CollectRegisterLogForDay);
+        }
+
+        private void ClearRegisterLog_Click(object sender, RoutedEventArgs e)
+        {
+            _registerHistory.Clear();
+            RefreshRegisterAges();
+            ApplyRegisterFilter();
+            BroadcastRegisterSync();
+            UpdateClearButtonsEnabled();
+        }
+
+        private void ExportLogForDay(string filePrefix, string title, Func<DateTime, string> collector)
+        {
+            var dlg = new SaveLogDialog(title, DateTime.Today) { Owner = this };
+            if (dlg.ShowDialog() != true || !dlg.Confirmed) return;
+            var day = dlg.SelectedDay.Date;
+            string text;
+            try { text = collector(day) ?? ""; }
+            catch (Exception ex)
+            {
+                AppendLog(ex.Message, LogLevel.Error);
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                AppendLog(UiStrings.T("SaveLogEmpty"), LogLevel.Warning);
+                return;
+            }
+            if (dlg.ToClipboard)
+            {
+                try
+                {
+                    Clipboard.SetText(text);
+                    AppendLog(string.Format(UiStrings.T("SaveLogCopied"),
+                        SaveLogDialog.FormatDayFileName(filePrefix, day)), LogLevel.Success);
+                }
+                catch (Exception ex)
+                {
+                    AppendLog(ex.Message, LogLevel.Error);
+                }
+                return;
+            }
+            var path = SaveLogDialog.PromptSavePath(this, SaveLogDialog.FormatDayFileName(filePrefix, day));
+            if (string.IsNullOrEmpty(path)) return;
+            try
+            {
+                File.WriteAllText(path, text, Encoding.UTF8);
+                AppendLog(string.Format(UiStrings.T("SaveLogSaved"), path), LogLevel.Success);
+            }
+            catch (Exception ex)
+            {
+                AppendLog(ex.Message, LogLevel.Error);
+            }
+        }
+
+        private string CollectActivityLogForDay(DateTime day)
+        {
+            var sb = new StringBuilder();
+            var dayStart = day.Date;
+            var dayEnd = dayStart.AddDays(1);
+            var paths = new[] { AppSettings.LogPath + ".1", AppSettings.LogPath };
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (var p = 0; p < paths.Length; p++)
+            {
+                if (!File.Exists(paths[p])) continue;
+                foreach (var line in File.ReadLines(paths[p]))
+                {
+                    if (line == null || line.Length < 19) continue;
+                    DateTime local;
+                    if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
+                        CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
+                        continue;
+                    if (local < dayStart || local >= dayEnd) continue;
+                    if (!seen.Add(line)) continue;
+                    sb.AppendLine(line);
+                }
+            }
+            if (sb.Length == 0 && _logEntries != null)
+            {
+                for (var i = 0; i < _logEntries.Count; i++)
+                {
+                    var e = _logEntries[i];
+                    if (e == null) continue;
+                    if (e.Time < dayStart || e.Time >= dayEnd) continue;
+                    sb.Append(e.Time.ToString("yyyy-MM-dd HH:mm:ss"));
+                    sb.Append(' ').AppendLine(e.Text ?? "");
+                }
+            }
+            return sb.ToString();
+        }
+
+        private string CollectRegisterLogForDay(DateTime day)
+        {
+            var sb = new StringBuilder();
+            var dayStart = day.Date;
+            var dayEnd = dayStart.AddDays(1);
+            for (var i = 0; i < _registerHistory.Count; i++)
+            {
+                var r = _registerHistory[i];
+                if (r == null) continue;
+                if (r.At < dayStart || r.At >= dayEnd) continue;
+                sb.Append(r.At.ToString("yyyy-MM-dd HH:mm:ss"));
+                sb.Append('\t').Append(RegisterResultTextForKind(r.Kind));
+                sb.Append('\t').AppendLine(r.Text ?? "");
+            }
+            return sb.ToString();
+        }
+
+        private void AuthRegisterBlockAfter_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (_loadingUi || _settings == null) return;
+            ParseAndSetAuthRegisterBlockAfter();
+            try { _settings.Save(); }
+            catch { }
+            BroadcastAosSync();
+            BroadcastServerSettings();
+        }
+
+        private void ParseAndSetAuthRegisterBlockAfter()
+        {
+            if (_settings == null) return;
+            var n = 3;
+            if (AuthRegisterBlockAfterBox != null)
+            {
+                int parsed;
+                if (!int.TryParse(AuthRegisterBlockAfterBox.Text.Trim(), out parsed) || parsed < 1)
+                    parsed = 3;
+                if (parsed > 10) parsed = 10;
+                n = parsed;
+                AuthRegisterBlockAfterBox.Text = n.ToString();
+            }
+            _settings.AuthRegisterBlockAfter = n;
         }
 
         private void SyncStartupFromRegistry()
@@ -5591,7 +6925,7 @@ namespace KaiAosRenew
                 SaveFromUi(true);
                 if (!TrySavePreflight())
                     return;
-                AppendLog(UiStrings.T("ForceRegisterStarted"), LogLevel.Warning);
+                AppendLog(UiStrings.T("ForceRegisterStarted"), LogLevel.Info);
                 RunNowAsync(false, true, null, true);
                 BroadcastAosSync();
             }
@@ -5603,16 +6937,25 @@ namespace KaiAosRenew
 
         private bool CredentialsChangedInUi()
         {
-            if (_settings == null) return true;
             var email = EmailBox != null ? EmailBox.Text.Trim() : "";
-            var oldEmail = (_settings.Email ?? "").Trim();
-            if (!string.Equals(email, oldEmail, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(email, _aosSavedEmail ?? "", StringComparison.OrdinalIgnoreCase))
                 return true;
-            string oldPass = null;
-            try { oldPass = _settings.GetPassword(); }
-            catch { oldPass = null; }
-            var newPass = (GetPasswordUi() ?? "").Trim();
-            return !string.Equals(newPass, oldPass ?? "", StringComparison.Ordinal);
+            var newPass = (PeekPasswordUi() ?? "").Trim();
+            return !string.Equals(newPass, _aosSavedPass ?? "", StringComparison.Ordinal);
+        }
+
+        /// <summary>Read visible password without syncing the sibling box (avoids re-entrant dirty refresh).</summary>
+        private string PeekPasswordUi()
+        {
+            if (ShowPasswordCheck != null && ShowPasswordCheck.IsChecked == true)
+                return PasswordPlainBox != null ? (PasswordPlainBox.Text ?? "") : "";
+            return PasswordBox != null ? (PasswordBox.Password ?? "") : "";
+        }
+
+        private void CaptureAosSavedCredentials()
+        {
+            _aosSavedEmail = EmailBox != null ? (EmailBox.Text ?? "").Trim() : "";
+            _aosSavedPass = (PeekPasswordUi() ?? "").Trim();
         }
 
         /// <summary>Path + services must exist before renew after Save. Stopped services still OK.</summary>
@@ -5746,13 +7089,13 @@ namespace KaiAosRenew
                 _settings.KeysStallMinutes = stall;
                 KeysStallMinutesBox.Text = stall.ToString();
             }
-            if (LogVerboseCheck != null)
-                _settings.LogVerbose = LogVerboseCheck.IsChecked == true;
+            _settings.LogVerbose = true;
             if (MinimizeOnCloseCheck != null)
                 _settings.MinimizeOnClose = MinimizeOnCloseCheck.IsChecked == true;
             if (AutoUpdateCheck != null)
                 _settings.AutoUpdate = AutoUpdateCheck.IsChecked == true;
             ParseAndSetAuthCooldownMinutes();
+            ParseAndSetAuthRegisterBlockAfter();
             ParseAndSetKeysRefreshSeconds();
             ParseAndSetKeysVinTipSeconds();
             if (KeysUploaderLogDirBox != null && !string.IsNullOrWhiteSpace(KeysUploaderLogDirBox.Text))
@@ -5770,9 +7113,13 @@ namespace KaiAosRenew
             _settings.Save();
             ApplyStartup(_settings.StartWithWindows);
             ApplyNotifyServerFromSettings();
+            CaptureAosSavedCredentials();
+            _aosCredentialsDirty = false;
+            UpdateAosDirtyStatus();
             if (announce)
                 AppendLog(UiStrings.T("SettingsSaved"), true);
             RefreshPasswordHintBanners(false);
+            BroadcastServerSettings();
         }
 
         private void IntervalBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
@@ -5851,27 +7198,45 @@ namespace KaiAosRenew
             _settings.IntervalHours = hours;
             _settings.Save();
             ScheduleNextServiceCheck();
-            if (!_timerActive)
+            if (_timerActive)
             {
-                StartTimer(true);
-                return;
+                _retrySchedule = false;
+                ScheduleNext(true);
+                AppendLog(string.Format(UiStrings.T("LogIntervalUpdated"), hours), true);
+                UpdateNextLabel();
+                UpdateTrayTooltip();
             }
-            _retrySchedule = false;
-            ScheduleNext(true);
-            AppendLog(string.Format(UiStrings.T("LogIntervalUpdated"), hours), true);
-            UpdateNextLabel();
-            UpdateTrayTooltip();
+            else
+                EnsureAutoTimer(true);
+            BroadcastAosSync();
         }
 
-        private void StartTimer(bool announce, bool allowMinimize = true)
+        private void EnsureAutoTimer(bool announce)
         {
-            SaveFromUi(false);
+            if (_settings == null) return;
+            if (_settings.TimerUserStopped) return;
+            if (_settings.IntervalHours < 1) return;
+            if (_timerActive) return;
+            // Interval-only auto-start: do not SaveFromUi (would persist unsaved email/password).
+            StartTimer(announce, true, false);
+        }
+
+        private void StartTimer(bool announce, bool allowMinimize = true, bool pullUi = true)
+        {
+            if (pullUi)
+                SaveFromUi(false);
             if (!(_retrySchedule && _settings.ConsecutiveFailures > 0))
             {
                 _retrySchedule = false;
                 ScheduleNext(true);
             }
             _timerActive = true;
+            if (_settings != null && _settings.TimerUserStopped)
+            {
+                _settings.TimerUserStopped = false;
+                try { _settings.Save(); }
+                catch { }
+            }
             _nextHealthUtc = DateTime.UtcNow.AddHours(1);
             _timer.Start();
             RefreshStatusBadge();
@@ -5888,6 +7253,12 @@ namespace KaiAosRenew
             _retrySchedule = false;
             _nextDueUtc = DateTime.MaxValue;
             _nextHealthUtc = DateTime.MaxValue;
+            if (_settings != null)
+            {
+                _settings.TimerUserStopped = true;
+                try { _settings.Save(); }
+                catch { }
+            }
             // Keep _timer running for UI refresh + BMW service checks
             if (!_timer.IsEnabled)
                 _timer.Start();
@@ -6080,18 +7451,43 @@ namespace KaiAosRenew
         private void AosEmail_TextChanged(object sender, TextChangedEventArgs e)
         {
             ClearFieldInvalid(EmailBox);
+            RefreshAosCredentialsDirty();
         }
 
         private void AosPassword_Changed(object sender, RoutedEventArgs e)
         {
             ClearFieldInvalid(PasswordBox);
             ClearFieldInvalid(PasswordPlainBox);
+            RefreshAosCredentialsDirty();
         }
 
         private void AosPasswordPlain_TextChanged(object sender, TextChangedEventArgs e)
         {
             ClearFieldInvalid(PasswordBox);
             ClearFieldInvalid(PasswordPlainBox);
+            RefreshAosCredentialsDirty();
+        }
+
+        private void RefreshAosCredentialsDirty()
+        {
+            if (_loadingUi)
+                return;
+            _aosCredentialsDirty = CredentialsChangedInUi();
+            UpdateAosDirtyStatus();
+        }
+
+        private void UpdateAosDirtyStatus()
+        {
+            if (AosDirtyStatus != null)
+            {
+                AosDirtyStatus.Text = _aosCredentialsDirty ? UiStrings.T("AosSyncDirty") : "";
+                AosDirtyStatus.Foreground = _aosCredentialsDirty
+                    ? new SolidColorBrush(Color.FromRgb(0xB2, 0x6A, 0x00))
+                    : (TryFindResource("TextMutedBrush") as Brush
+                       ?? new SolidColorBrush(Color.FromRgb(0x8C, 0x8C, 0x8C)));
+            }
+            if (AosDirtyPendingMark != null)
+                AosDirtyPendingMark.Visibility = _aosCredentialsDirty ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void SetActionEnabled(Button btn, bool enabled, string disabledTipKey, string enabledTipKey = null)
@@ -6302,7 +7698,7 @@ namespace KaiAosRenew
             catch { }
             RefreshAuthCooldownBanner();
             var until = _settings.AuthCooldownUntilUtc.Value.ToLocalTime().ToString("g");
-            AppendLog(string.Format(UiStrings.T("AuthCooldownStarted"), until), LogLevel.Warning);
+            AppendLog(string.Format(UiStrings.T("AuthCooldownStarted"), until), LogLevel.Info);
             ShowBalloon(WinForms.ToolTipIcon.Warning,
                 TruncateBalloon(string.Format(UiStrings.T("AuthCooldownStarted"), until)));
         }
@@ -6315,6 +7711,24 @@ namespace KaiAosRenew
             try { _settings.Save(); }
             catch { }
             RefreshAuthCooldownBanner();
+            QueueFooterPublish();
+            BroadcastServerSettings();
+        }
+
+        private void ClearAuthCooldown_Click(object sender, RoutedEventArgs e)
+        {
+            if (!IsAuthCooldownActive()) return;
+            ClearAuthCooldown();
+            AppendLog(UiStrings.T("AuthCooldownCleared"), LogLevel.Info);
+        }
+
+        private void ClearAuthRegisterBlocked_Click(object sender, RoutedEventArgs e)
+        {
+            if (!IsAuthRegisterBlocked()) return;
+            SetAuthRegisterBlocked(false);
+            QueueFooterPublish();
+            BroadcastServerSettings();
+            AppendLog(UiStrings.T("AuthRegisterBlockedCleared"), LogLevel.Info);
         }
 
         private bool IsAuthRegisterBlocked()
@@ -6327,13 +7741,51 @@ namespace KaiAosRenew
             if (_settings == null) return;
             if (_settings.AuthRegisterBlocked == blocked)
             {
+                if (!blocked)
+                    ResetAuthRegisterStrikes();
                 RefreshAuthCooldownBanner();
                 return;
             }
             _settings.AuthRegisterBlocked = blocked;
+            if (!blocked)
+                _settings.AuthRegisterStrikeCount = 0;
             try { _settings.Save(); }
             catch { }
             RefreshAuthCooldownBanner();
+            UpdateAosLoginStatus();
+        }
+
+        private int GetAuthRegisterBlockAfter()
+        {
+            if (_settings == null) return 3;
+            var n = _settings.AuthRegisterBlockAfter;
+            if (n < 1) n = 1;
+            if (n > 10) n = 10;
+            return n;
+        }
+
+        private void ResetAuthRegisterStrikes()
+        {
+            if (_settings == null) return;
+            if (_settings.AuthRegisterStrikeCount == 0) return;
+            _settings.AuthRegisterStrikeCount = 0;
+            try { _settings.Save(); }
+            catch { }
+        }
+
+        /// <summary>Increment strike; returns true if Register blocked should activate (at/over limit).</summary>
+        private bool NoteAuthRegisterStrike(string reason)
+        {
+            if (_settings == null) return true;
+            var limit = GetAuthRegisterBlockAfter();
+            var next = _settings.AuthRegisterStrikeCount + 1;
+            if (next < 0) next = 1;
+            _settings.AuthRegisterStrikeCount = next;
+            try { _settings.Save(); }
+            catch { }
+            AppendLog(string.Format(UiStrings.T("RegisterStrike"), next, limit)
+                + (string.IsNullOrEmpty(reason) ? "" : " — " + reason), LogLevel.Info);
+            return next >= limit;
         }
 
         private void RefreshAuthCooldownBanner()
@@ -6369,6 +7821,17 @@ namespace KaiAosRenew
                     AuthRegisterBlockedStatusLine.Text = UiStrings.T("AuthRegisterBlockedStatusInactive");
                     AuthRegisterBlockedStatusLine.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
                 }
+            }
+
+            if (ClearAuthCooldownBtn != null)
+            {
+                ClearAuthCooldownBtn.Visibility = cooldown ? Visibility.Visible : Visibility.Collapsed;
+                ClearAuthCooldownBtn.IsEnabled = cooldown;
+            }
+            if (ClearAuthRegisterBlockedBtn != null)
+            {
+                ClearAuthRegisterBlockedBtn.Visibility = blocked ? Visibility.Visible : Visibility.Collapsed;
+                ClearAuthRegisterBlockedBtn.IsEnabled = blocked;
             }
 
             UpdateAuthGuardsFooter(cooldown, blocked, untilLocal);
@@ -6762,18 +8225,28 @@ namespace KaiAosRenew
             return LogLevel.Info;
         }
 
-        private static bool TryClassifyRegisterHistory(string text, out bool ok)
+        /// <summary>Classify register-related log. kind: 0=fail, 1=ok, 2=info.</summary>
+        private static bool TryClassifyRegisterHistory(string text, out int kind)
         {
-            ok = false;
+            kind = 0;
             if (string.IsNullOrEmpty(text)) return false;
             var t = text.Trim();
             if (t.StartsWith("OK:", StringComparison.OrdinalIgnoreCase))
                 t = t.Substring(3).TrimStart();
             else if (t.StartsWith("FAIL:", StringComparison.OrdinalIgnoreCase))
                 t = t.Substring(5).TrimStart();
-            if (t.IndexOf("Registration OK", StringComparison.OrdinalIgnoreCase) >= 0)
+
+            // Health noise — do not fill Register tab every hour.
+            if (t.IndexOf("Register not required", StringComparison.OrdinalIgnoreCase) >= 0
+                || t.IndexOf("Checking WebEAM token", StringComparison.OrdinalIgnoreCase) >= 0
+                || t.IndexOf("(no Register)", StringComparison.OrdinalIgnoreCase) >= 0
+                || t.IndexOf("no Register", StringComparison.OrdinalIgnoreCase) >= 0)
+                return false;
+
+            if (t.IndexOf("Registration OK", StringComparison.OrdinalIgnoreCase) >= 0
+                || t.IndexOf("Register OK", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                ok = true;
+                kind = 1;
                 return true;
             }
             if (t.IndexOf("Register failed", StringComparison.OrdinalIgnoreCase) >= 0
@@ -6782,10 +8255,24 @@ namespace KaiAosRenew
                 || t.IndexOf("KAI_Properties.cfg was not created", StringComparison.OrdinalIgnoreCase) >= 0
                 || t.IndexOf("KAI_Properties.cfg invalid", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                ok = false;
+                kind = 0;
                 return true;
             }
-            return false;
+
+            var hasRegister = t.IndexOf("Register", StringComparison.OrdinalIgnoreCase) >= 0
+                || t.IndexOf("Registration", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!hasRegister) return false;
+
+            // Info: BMW 403 Register path, Force/queued/blocked, credentials changed Register, strikes.
+            kind = 2;
+            return true;
+        }
+
+        private static string RegisterResultTextForKind(int kind)
+        {
+            if (kind == 1) return UiStrings.T("RegisterResultOk");
+            if (kind == 2) return UiStrings.T("RegisterResultInfo");
+            return UiStrings.T("RegisterResultFail");
         }
 
         private void LoadRegisterHistoryFromLog()
@@ -6806,17 +8293,18 @@ namespace KaiAosRenew
                             CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
                             continue;
                         var text = line.Substring(19).TrimStart();
-                        bool ok;
-                        if (!TryClassifyRegisterHistory(text, out ok)) continue;
-                        var key = local.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + (ok ? "1" : "0") + "\t" + text;
+                        int kind;
+                        if (!TryClassifyRegisterHistory(text, out kind)) continue;
+                        var key = local.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + kind + "\t" + text;
                         if (!seen.Add(key)) continue;
                         _registerHistory.Add(new RegisterHistoryRow
                         {
                             At = local,
-                            Ok = ok,
+                            Kind = kind,
+                            Ok = kind == 1,
                             Text = text,
                             AgeText = "",
-                            ResultText = ok ? UiStrings.T("RegisterResultOk") : UiStrings.T("RegisterResultFail")
+                            ResultText = RegisterResultTextForKind(kind)
                         });
                     }
                 }
@@ -6831,19 +8319,19 @@ namespace KaiAosRenew
 
         private void MaybeAppendRegisterHistory(string text, DateTime at)
         {
-            bool ok;
-            if (!TryClassifyRegisterHistory(text, out ok)) return;
+            int kind;
+            if (!TryClassifyRegisterHistory(text, out kind)) return;
             var clean = text ?? "";
             if (clean.StartsWith("OK:", StringComparison.OrdinalIgnoreCase))
                 clean = clean.Substring(3).TrimStart();
             else if (clean.StartsWith("FAIL:", StringComparison.OrdinalIgnoreCase))
                 clean = clean.Substring(5).TrimStart();
-            var key = at.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + (ok ? "1" : "0") + "\t" + clean;
+            var key = at.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + kind + "\t" + clean;
             for (var i = 0; i < _registerHistory.Count; i++)
             {
                 var r = _registerHistory[i];
                 if (r == null) continue;
-                var existing = r.At.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + (r.Ok ? "1" : "0") + "\t" + (r.Text ?? "");
+                var existing = r.At.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + r.Kind + "\t" + (r.Text ?? "");
                 if (string.Equals(existing, key, StringComparison.Ordinal)) return;
             }
             var span = DateTime.Now - at;
@@ -6851,10 +8339,11 @@ namespace KaiAosRenew
             _registerHistory.Add(new RegisterHistoryRow
             {
                 At = at,
-                Ok = ok,
+                Kind = kind,
+                Ok = kind == 1,
                 Text = clean,
                 AgeText = string.Format(UiStrings.T("TimeAgo"), FormatAge(span)),
-                ResultText = ok ? UiStrings.T("RegisterResultOk") : UiStrings.T("RegisterResultFail")
+                ResultText = RegisterResultTextForKind(kind)
             });
             while (_registerHistory.Count > RegisterHistoryMax)
                 _registerHistory.RemoveAt(0);
@@ -6870,7 +8359,7 @@ namespace KaiAosRenew
             {
                 var r = _registerHistory[i];
                 if (r == null) continue;
-                r.ResultText = r.Ok ? UiStrings.T("RegisterResultOk") : UiStrings.T("RegisterResultFail");
+                r.ResultText = RegisterResultTextForKind(r.Kind);
             }
         }
 
@@ -6898,7 +8387,7 @@ namespace KaiAosRenew
                 for (var i = 0; i < _registerHistory.Count; i++)
                 {
                     var r = _registerHistory[i];
-                    if (r != null && r.Ok) list.Add(r);
+                    if (r != null && r.Kind == 1) list.Add(r);
                 }
                 src = list;
             }
@@ -6908,12 +8397,16 @@ namespace KaiAosRenew
                 for (var i = 0; i < _registerHistory.Count; i++)
                 {
                     var r = _registerHistory[i];
-                    if (r != null && !r.Ok) list.Add(r);
+                    if (r != null && r.Kind == 0) list.Add(r);
                 }
                 src = list;
             }
             RegisterHistoryList.ItemsSource = null;
             RegisterHistoryList.ItemsSource = src;
+            var visible = 0;
+            foreach (var _ in src) visible++;
+            UpdateNoMatchesHint(RegisterNoMatchesHint, _registerHistory.Count > 0, visible);
+            UpdateClearButtonsEnabled();
         }
 
         private static bool IsRegistrationFilterMatch(string text)
@@ -7052,7 +8545,7 @@ namespace KaiAosRenew
             var cooldown = ignoreAuthGuards ? false : IsAuthCooldownActive();
             if (cooldown && forceRegister)
             {
-                AppendLog(UiStrings.T("AuthCooldownRegisterDeferred"), LogLevel.Warning);
+                AppendLog(UiStrings.T("AuthCooldownRegisterDeferred"), LogLevel.Info);
                 forceRegister = false;
             }
 
@@ -7078,7 +8571,7 @@ namespace KaiAosRenew
                     }
                     if (cooldown && !ignoreAuthGuards)
                     {
-                        AppendLog(UiStrings.T("AuthCooldownRegisterDeferred"), LogLevel.Warning);
+                        AppendLog(UiStrings.T("AuthCooldownRegisterDeferred"), LogLevel.Info);
                         return;
                     }
                     _pendingForcePassword = passwordOverride ?? (_settings != null ? _settings.GetPassword() : null);
@@ -7134,9 +8627,9 @@ namespace KaiAosRenew
             if (!allowRegister)
             {
                 if (cooldown)
-                    AppendLog(UiStrings.T("AuthCooldownHealthOnly"), LogLevel.Warning);
+                    AppendLog(UiStrings.T("AuthCooldownHealthOnly"), LogLevel.Info);
                 else
-                    AppendLog(UiStrings.T("AuthRegisterBlockedHealthOnly"), LogLevel.Warning);
+                    AppendLog(UiStrings.T("AuthRegisterBlockedHealthOnly"), LogLevel.Info);
                 RenewEngine.Log(cooldown
                     ? "Run start (auth cooldown — Health only)"
                     : "Run start (auth register blocked — Health only)");
@@ -7201,7 +8694,15 @@ namespace KaiAosRenew
                 _retrySchedule = false;
                 ScheduleNext(true);
                 UpdateTokenAgeText();
-                SetTokenFooter(true);
+                if (result.RegisterAuthRejected)
+                {
+                    SetTokenFooter(false);
+                }
+                else
+                {
+                    _aosBmw403Fail = false;
+                    SetTokenFooter(true);
+                }
                 if (startTimerOnSuccess && !_timerActive)
                     StartTimer(true, false);
             }
@@ -7220,28 +8721,33 @@ namespace KaiAosRenew
                     || msg.IndexOf("Register blocked", StringComparison.OrdinalIgnoreCase) >= 0
                     || msg.IndexOf("Health failed (no Register)", StringComparison.OrdinalIgnoreCase) >= 0
                     || msg.IndexOf("Register skipped", StringComparison.OrdinalIgnoreCase) >= 0;
-                // Any Register attempt that failed → block until password changes (closes unrecognized-auth gap).
+                // Failed Register → strike; block only at AuthRegisterBlockAfter threshold.
                 if (result.RegisterAttempted && !skipBlockMsg)
-                    SetAuthRegisterBlocked(true);
-                if (LooksLikeAuthFailure(msg) && !skipBlockMsg)
                 {
-                    SetAuthRegisterBlocked(true);
-                    BeginAuthCooldown();
+                    bool shouldBlock;
+                    if (_registerStrikeNotedThisRun)
+                        shouldBlock = _settings.AuthRegisterStrikeCount >= GetAuthRegisterBlockAfter();
+                    else
+                        shouldBlock = NoteAuthRegisterStrike("Register failed");
+                    _registerStrikeNotedThisRun = false;
+                    if (shouldBlock)
+                        SetAuthRegisterBlocked(true);
                 }
+                if (LooksLikeAuthFailure(msg) && !skipBlockMsg)
+                    BeginAuthCooldown();
                 // Retry schedule stays Health-only (timer never Registers).
                 ScheduleRetryInOneHour();
                 SetTokenFooter(false);
             }
             if (lockRegisterAfter)
-            {
                 SetAuthRegisterBlocked(true);
-                var retryVin = _pending403RetryVin;
-                var retryReader = _pending403RetryReaderId;
-                _pending403RetryVin = null;
-                _pending403RetryReaderId = null;
-                if (!string.IsNullOrEmpty(retryVin))
-                    Dispatcher.BeginInvoke(new Action(() => RetryBmwUploadAfter403(retryVin, retryReader)));
-            }
+            var retryVin = _pending403RetryVin;
+            var retryReader = _pending403RetryReaderId;
+            _pending403RetryVin = null;
+            _pending403RetryReaderId = null;
+            _registerStrikeNotedThisRun = false;
+            if (!string.IsNullOrEmpty(retryVin))
+                Dispatcher.BeginInvoke(new Action(() => RetryBmwUploadAfter403(retryVin, retryReader)));
             RefreshPasswordHintBanners(false);
             RefreshStatusBadge();
             SetBusy(false);
@@ -7265,7 +8771,7 @@ namespace KaiAosRenew
                 return;
             if (!ignoreGuards && IsAuthCooldownActive())
             {
-                AppendLog(UiStrings.T("AuthCooldownRegisterDeferred"), LogLevel.Warning);
+                AppendLog(UiStrings.T("AuthCooldownRegisterDeferred"), LogLevel.Info);
                 SetPasswordUi(pass);
                 if (_settings != null)
                 {
@@ -7327,7 +8833,7 @@ namespace KaiAosRenew
                         meta.BrowserName, FormatBrowserSavedWhen(meta.LastSavedLocal));
                 else
                     hint = string.Format(UiStrings.T("BrowserPassHintNoDate"), meta.BrowserName);
-                AppendLog(hint, LogLevel.Warning);
+                AppendLog(hint, LogLevel.Info);
                 ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(hint));
             }
             catch { }
@@ -7383,7 +8889,7 @@ namespace KaiAosRenew
 
             if (IsAuthRegisterBlocked())
             {
-                AppendLog(UiStrings.T("AuthRegisterBlockedHealthOnly"), LogLevel.Warning);
+                AppendLog(UiStrings.T("AuthRegisterBlockedHealthOnly"), LogLevel.Info);
                 RefreshStatusBadge();
                 SetBusy(false);
                 return;
@@ -7393,7 +8899,7 @@ namespace KaiAosRenew
                 && (DateTime.UtcNow - _settings.LastAutoRegisterUtc.Value).TotalHours < AutoRegisterMinHours)
             {
                 var next = _settings.LastAutoRegisterUtc.Value.AddHours(AutoRegisterMinHours).ToLocalTime().ToString("g");
-                AppendLog("Auto Register skipped (max 1 per 12h). Next allowed after " + next + ".", LogLevel.Warning);
+                AppendLog("Auto Register skipped (max 1 per 12h). Next allowed after " + next + ".", LogLevel.Info);
                 RefreshStatusBadge();
                 SetBusy(false);
                 return;
@@ -7402,7 +8908,7 @@ namespace KaiAosRenew
             _settings.LastAutoRegisterUtc = DateTime.UtcNow;
             try { _settings.Save(); }
             catch { }
-            AppendLog("Health failed — auto Register (max 1 per 12h)...", LogLevel.Warning);
+            AppendLog("Health failed — auto Register (max 1 per 12h)...", LogLevel.Info);
             RefreshStatusBadge();
             SetBusy(false);
             // forceRegister=false: engine Registers because Health already failed.
@@ -7589,6 +9095,8 @@ namespace KaiAosRenew
                 }
                 ApplyStartup(_settings.StartWithWindows);
                 AppendLog(string.Format(UiStrings.T("ImportOk"), dlg.FileName));
+                BroadcastServerSettings();
+                BroadcastAosSync();
             }
             catch (Exception ex)
             {
@@ -7634,12 +9142,38 @@ namespace KaiAosRenew
                 _logEntries.RemoveRange(0, _logEntries.Count - 2000);
             if (ShouldShowLogEntry(entry))
             {
-                WriteLogLine(entry);
-                if (LogBox != null && TabActivity != null && TabActivity.IsSelected)
-                    LogBox.ScrollToEnd();
+                _activityRows.Add(entry);
+                while (_activityRows.Count > MaxLogBlocks)
+                    _activityRows.RemoveAt(0);
+                if (TabActivity != null && TabActivity.IsSelected)
+                    ScrollActivityLogToEnd();
             }
+            if (resolved == LogLevel.Error)
+                MaybeRaiseActivityAlert();
             BroadcastActivityEntry(entry);
             MaybeAppendRegisterHistory(entry.Text, entry.Time);
+            UpdateClearButtonsEnabled();
+        }
+
+        private void MaybeRaiseActivityAlert()
+        {
+            if (TabActivity != null && TabActivity.IsSelected && !_aboutVisible)
+                return;
+            _activityAlert = true;
+            if (ActivityTabAlertDot != null)
+                ActivityTabAlertDot.Visibility = Visibility.Visible;
+            SyncAlertBlinkTimer();
+        }
+
+        private void ClearActivityAlert()
+        {
+            _activityAlert = false;
+            if (ActivityTabAlertDot != null)
+            {
+                ActivityTabAlertDot.Visibility = Visibility.Collapsed;
+                ActivityTabAlertDot.Opacity = 1.0;
+            }
+            SyncAlertBlinkTimer();
         }
 
         private static LogLevel InferLogLevel(string line, bool verboseOnly)
@@ -7662,7 +9196,7 @@ namespace KaiAosRenew
                 line.IndexOf("invalid", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 line.IndexOf("lipsește", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 line.IndexOf("nu există", StringComparison.OrdinalIgnoreCase) >= 0)
-                return LogLevel.Error;
+                return LogLevel.Warning;
             return LogLevel.Info;
         }
 
@@ -7687,23 +9221,20 @@ namespace KaiAosRenew
 
         private void RefreshLogView()
         {
-            if (LogBox == null) return;
             _uiOp = "RefreshLogView";
-            var doc = new FlowDocument
-            {
-                PagePadding = new Thickness(6),
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 11
-            };
-            LogBox.Document = doc;
+            _activityRows.Clear();
             var start = Math.Max(0, _logEntries.Count - MaxLogBlocks * 2);
             for (var i = start; i < _logEntries.Count; i++)
             {
                 if (ShouldShowLogEntry(_logEntries[i]))
-                    WriteLogLine(_logEntries[i]);
+                    _activityRows.Add(_logEntries[i]);
             }
-            if (LogBox != null && TabActivity != null && TabActivity.IsSelected)
-                LogBox.ScrollToEnd();
+            while (_activityRows.Count > MaxLogBlocks)
+                _activityRows.RemoveAt(0);
+            UpdateNoMatchesHint(ActivityNoMatchesHint, _logEntries.Count > 0, _activityRows.Count);
+            UpdateClearButtonsEnabled();
+            if (TabActivity != null && TabActivity.IsSelected)
+                ScrollActivityLogToEnd();
         }
 
         private const int MaxLogBlocks = 500;
@@ -7802,7 +9333,8 @@ namespace KaiAosRenew
                     list.Add(new RegisterWireRow
                     {
                         At = r.At,
-                        Ok = r.Ok,
+                        Kind = r.Kind,
+                        Ok = r.Kind == 1,
                         Text = r.Text ?? ""
                     });
                 }
@@ -7835,7 +9367,8 @@ namespace KaiAosRenew
                     list.Add(new RegisterWireRow
                     {
                         At = r.At,
-                        Ok = r.Ok,
+                        Kind = r.Kind,
+                        Ok = r.Kind == 1,
                         Text = r.Text ?? ""
                     });
                 }
@@ -7853,76 +9386,6 @@ namespace KaiAosRenew
                 try { RenewEngine.Log("Notify registerSync broadcast: " + ex.Message); }
                 catch { }
             }
-        }
-
-        private void WriteLogLine(LogEntry entry)
-        {
-            var para = new Paragraph
-            {
-                Margin = new Thickness(0),
-                Padding = new Thickness(0)
-            };
-            var run = new Run(entry.Time.ToString("HH:mm:ss") + "  " + entry.Text)
-            {
-                Foreground = BrushForLogLevel(entry.Level)
-            };
-            para.Inlines.Add(run);
-            var blocks = LogBox.Document.Blocks;
-            blocks.Add(para);
-            while (blocks.Count > MaxLogBlocks && blocks.FirstBlock != null)
-                blocks.Remove(blocks.FirstBlock);
-        }
-
-        private Brush BrushForLogLevel(LogLevel level)
-        {
-            string key;
-            switch (level)
-            {
-                case LogLevel.Success:
-                    key = "StatusOkBrush";
-                    break;
-                case LogLevel.Warning:
-                    key = "StatusWarnBrush";
-                    break;
-                case LogLevel.Error:
-                    key = "StatusErrorBrush";
-                    break;
-                case LogLevel.Verbose:
-                    key = "TextMutedBrush";
-                    break;
-                default:
-                    key = "TextPrimaryBrush";
-                    break;
-            }
-            try
-            {
-                var b = FindResource(key) as Brush;
-                if (b != null) return b;
-            }
-            catch { }
-            var night = ThemeManager.IsNight;
-            Color c;
-            switch (level)
-            {
-                case LogLevel.Success:
-                    c = night ? Color.FromRgb(0x6B, 0xCF, 0x7F) : Color.FromRgb(0x1B, 0x7A, 0x3D);
-                    break;
-                case LogLevel.Warning:
-                    c = night ? Color.FromRgb(0xE0, 0xB0, 0x40) : Color.FromRgb(0x9A, 0x6B, 0x00);
-                    break;
-                case LogLevel.Error:
-                    c = night ? Color.FromRgb(0xF0, 0x70, 0x68) : Color.FromRgb(0xC0, 0x28, 0x20);
-                    break;
-                case LogLevel.Verbose:
-                    c = night ? Color.FromRgb(0xA8, 0xA8, 0xA8) : Color.FromRgb(0x55, 0x55, 0x55);
-                    break;
-                default:
-                    c = night ? Color.FromRgb(0xE8, 0xE8, 0xE8) : Color.FromRgb(0x1A, 0x1A, 0x1A);
-                    break;
-            }
-            var brush = new SolidColorBrush(c);
-            brush.Freeze();
-            return brush;
         }
 
         private static void ApplyStartup(bool enable)

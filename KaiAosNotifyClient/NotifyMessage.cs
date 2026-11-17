@@ -72,29 +72,76 @@ namespace KaiAosNotifyClient
             return true;
         }
 
-        public static string EncodeAosSync(int intervalHours, string email, string password, bool? forceRegister = null)
+        public static string EncodeKvMap(IDictionary<string, string> map)
+        {
+            if (map == null || map.Count == 0) return "";
+            var sb = new StringBuilder();
+            foreach (var kv in map)
+            {
+                if (string.IsNullOrEmpty(kv.Key)) continue;
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append(EscPipe(kv.Key));
+                sb.Append('|').Append(EscPipe(kv.Value ?? ""));
+            }
+            return sb.ToString();
+        }
+
+        public static Dictionary<string, string> ParseKvMap(string text)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(text)) return map;
+            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var raw = lines[i];
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                var parts = SplitPipe(raw);
+                if (parts.Count < 2) continue;
+                var key = parts[0] ?? "";
+                if (key.Length == 0) continue;
+                map[key] = parts[1] ?? "";
+            }
+            return map;
+        }
+
+        public static string EncodeAosSync(int intervalHours, string email, string password, bool? forceRegister = null, int? registerBlockAfter = null)
         {
             var sb = new StringBuilder();
             sb.Append(intervalHours < 1 ? 1 : intervalHours);
             sb.Append('|').Append(EscPipe(email ?? ""));
             sb.Append('|').Append(EscPipe(password ?? ""));
-            if (forceRegister.HasValue)
-                sb.Append('|').Append(forceRegister.Value ? "1" : "0");
+            if (forceRegister.HasValue || registerBlockAfter.HasValue)
+                sb.Append('|').Append(forceRegister.HasValue ? (forceRegister.Value ? "1" : "0") : "");
+            if (registerBlockAfter.HasValue)
+            {
+                var n = registerBlockAfter.Value;
+                if (n < 1) n = 1;
+                if (n > 10) n = 10;
+                sb.Append('|').Append(n);
+            }
             return sb.ToString();
         }
 
         public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password)
         {
             bool? unused;
-            return TryParseAosSync(text, out intervalHours, out email, out password, out unused);
+            int? unusedBlock;
+            return TryParseAosSync(text, out intervalHours, out email, out password, out unused, out unusedBlock);
         }
 
         public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password, out bool? forceRegister)
+        {
+            int? unusedBlock;
+            return TryParseAosSync(text, out intervalHours, out email, out password, out forceRegister, out unusedBlock);
+        }
+
+        public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password, out bool? forceRegister, out int? registerBlockAfter)
         {
             intervalHours = 1;
             email = "";
             password = "";
             forceRegister = null;
+            registerBlockAfter = null;
             if (string.IsNullOrWhiteSpace(text)) return false;
             var parts = SplitPipe(text);
             if (parts.Count < 3) return false;
@@ -109,6 +156,15 @@ namespace KaiAosNotifyClient
                 var f = (parts[3] ?? "").Trim();
                 if (f == "1") forceRegister = true;
                 else if (f == "0") forceRegister = false;
+            }
+            if (parts.Count >= 5)
+            {
+                int n;
+                if (int.TryParse((parts[4] ?? "").Trim(), out n) && n >= 1)
+                {
+                    if (n > 10) n = 10;
+                    registerBlockAfter = n;
+                }
             }
             return true;
         }
@@ -242,10 +298,18 @@ namespace KaiAosNotifyClient
                 if (!DateTime.TryParse(parts[0], out at))
                     at = DateTime.Now;
                 var okFlag = (parts[1] ?? "").Trim();
+                int kind;
+                if (okFlag == "2" || string.Equals(okFlag, "info", StringComparison.OrdinalIgnoreCase))
+                    kind = 2;
+                else if (okFlag == "1" || string.Equals(okFlag, "ok", StringComparison.OrdinalIgnoreCase))
+                    kind = 1;
+                else
+                    kind = 0;
                 list.Add(new RegisterWireRow
                 {
                     At = DateTime.SpecifyKind(at, DateTimeKind.Local),
-                    Ok = okFlag == "1" || string.Equals(okFlag, "ok", StringComparison.OrdinalIgnoreCase),
+                    Kind = kind,
+                    Ok = kind == 1,
                     Text = parts[2] ?? ""
                 });
             }
@@ -449,6 +513,8 @@ namespace KaiAosNotifyClient
     internal sealed class RegisterWireRow
     {
         public DateTime At { get; set; }
+        /// <summary>0=fail, 1=ok, 2=info.</summary>
+        public int Kind { get; set; }
         public bool Ok { get; set; }
         public string Text { get; set; }
     }

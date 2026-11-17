@@ -108,6 +108,7 @@
     <Compile Include="KeyReaderLogTailer.cs" />
     <Compile Include="KeyReaderLogLocalize.cs" />
     <Compile Include="KeyUploadProbe.cs" />
+    <Compile Include="SaveLogDialog.cs" />
     <Compile Include="NotifyServer.cs" />
     <Compile Include="DesktopKeyReaderReg.cs" />
     <Compile Include="ServiceMonitor.cs" />

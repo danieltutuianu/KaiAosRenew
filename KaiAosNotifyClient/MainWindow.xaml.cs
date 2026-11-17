@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Reflection;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -85,16 +87,19 @@ namespace KaiAosNotifyClient
         private bool _loadingAosUi;
         private bool _aosDirty;
         private bool _aosAwaitingAck;
+        private bool _awaitingAosIntervalOnly;
         private bool _aosApplyInFlight;
         private DateTime _aosSaveClickUtc = DateTime.MinValue;
         private string _lastSyncedEmail = "";
         private string _lastSyncedPass = "";
+        private int _lastSyncedHours = 1;
         private bool _explicitAosSave;
         private readonly DispatcherTimer _aosAckTimer = new DispatcherTimer();
         private bool _activityAlert;
         private bool _authGuardsBlinkOn = true;
         private bool _authCooldownOn;
         private bool _authBlockedOn;
+        private string _authCooldownUntilLocal;
         private readonly DispatcherTimer _authGuardsBlinkTimer = new DispatcherTimer();
 
         private static bool IsTestVinPlaceholder(string vin)
@@ -114,6 +119,13 @@ namespace KaiAosNotifyClient
         private const string KeysCopyOkGlyph = "\uE73E";
         private bool _exitRequested;
         private bool _loadingUi;
+        private bool _loadingSrvSettings;
+        private bool _srvSettingsDirty;
+        private bool _srvSettingsConflict;
+        private bool _awaitingSettingsApply;
+        private bool _awaitingSettingsImport;
+        private Dictionary<string, string> _lastServerSettingsMap;
+        private Dictionary<string, string> _conflictServerSettingsMap;
         private bool _startedHiddenToTray;
         private bool _wantConnectUi;
         private bool _scanBusy;
@@ -122,6 +134,7 @@ namespace KaiAosNotifyClient
         private string _lastVin;
         private string _trayStatus = "Offline";
         private bool _hasServerFooter;
+        private string _lastTokenMode = "none";
         private string _serverVersionFromFooter = "";
         private string _latestServerReleaseVer = "";
         private string _feedServerVer = "";
@@ -226,7 +239,16 @@ namespace KaiAosNotifyClient
                 if (KeysEventsList != null)
                     KeysEventsList.ItemsSource = _keyRows;
                 if (ActivityList != null)
+                {
                     ActivityList.ItemsSource = _activityRows;
+                    ActivityList.SizeChanged += ActivityList_SizeChanged;
+                    ActivityList.Loaded += ActivityList_SizeChanged;
+                }
+                if (RegisterHistoryList != null)
+                {
+                    RegisterHistoryList.SizeChanged += RegisterHistoryList_SizeChanged;
+                    RegisterHistoryList.Loaded += RegisterHistoryList_SizeChanged;
+                }
                 _activityView = CollectionViewSource.GetDefaultView(_activityRows);
                 if (_activityView != null)
                     _activityView.Filter = ShouldShowActivityRow;
@@ -234,7 +256,12 @@ namespace KaiAosNotifyClient
                 InitRegisterFilterCombo();
                 UpdateKeysTodayBadge();
                 UpdateAosSyncStatus();
+                UpdateAosLoginStatus("none");
                 UpdateAosControlsEnabled();
+                UpdateServerSettingsEnabled();
+                UpdateConnectTargetEnabled();
+                UpdateConnectButtonLabel();
+                UpdateClearButtonsEnabled();
                 RefreshAuthGuardsPanel(false, "", false, "", "");
                 _debugMode = _settings != null && _settings.DebugMode;
                 ApplyDebugModeUi();
@@ -256,7 +283,7 @@ namespace KaiAosNotifyClient
             InitTray();
             RebuildTrayMenu();
             SourceInitialized += MainWindow_SourceInitialized;
-            _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _statusTimer.Tick += StatusTimer_Tick;
             _statusTimer.Start();
             RefreshTrayStatus();
@@ -274,8 +301,11 @@ namespace KaiAosNotifyClient
             if (IpLabel != null) IpLabel.Text = ClientUiStrings.T("Ip");
             if (PortLabel != null) PortLabel.Text = ClientUiStrings.T("Port");
             if (ScanLanBtn != null) ScanLanBtn.Content = ClientUiStrings.T("ScanLan");
-            if (ConnectBtn != null) ConnectBtn.Content = ClientUiStrings.T("Connect");
+            UpdateConnectButtonLabel();
             if (DisconnectBtn != null) DisconnectBtn.Content = ClientUiStrings.T("Disconnect");
+            if (KeysNoMatchesHint != null) KeysNoMatchesHint.Text = ClientUiStrings.T("NoMatchesHint");
+            if (ActivityNoMatchesHint != null) ActivityNoMatchesHint.Text = ClientUiStrings.T("NoMatchesHint");
+            if (RegisterNoMatchesHint != null) RegisterNoMatchesHint.Text = ClientUiStrings.T("NoMatchesHint");
             if (AutoConnectCheck != null) AutoConnectCheck.Content = ClientUiStrings.T("AutoConnect");
             if (TabKeysHeaderText != null) TabKeysHeaderText.Text = ClientUiStrings.T("TabKeys");
             if (TabAosHeaderText != null) TabAosHeaderText.Text = ClientUiStrings.T("TabAos");
@@ -299,37 +329,77 @@ namespace KaiAosNotifyClient
             RefreshLogFilterComboItems();
             if (TabSettings != null) TabSettings.Header = ClientUiStrings.T("TabSettings");
             if (ActivitySection != null) ActivitySection.Text = ClientUiStrings.T("ActivitySection");
+            if (ActivityFilterLabel != null) ActivityFilterLabel.Text = ClientUiStrings.T("RegisterFilter");
             if (ActivityClearBtn != null) ActivityClearBtn.Content = ClientUiStrings.T("ClearLog");
+            if (SaveActivityLogBtn != null) SaveActivityLogBtn.Content = ClientUiStrings.T("SaveLog");
+            if (SaveRegisterLogBtn != null) SaveRegisterLogBtn.Content = ClientUiStrings.T("SaveLog");
+            if (ClearRegisterLogBtn != null) ClearRegisterLogBtn.Content = ClientUiStrings.T("ClearLog");
+            if (TabServerSettingsHeaderText != null)
+                TabServerSettingsHeaderText.Text = ClientUiStrings.T("TabServerSettings");
+            ApplyServerSettingsTabStrings();
+            InitSrvLanguageCombo();
+            InitSrvThemeCombo();
+            InitSrvKrLogLevelCombo();
             if (ActivityColTime != null) ActivityColTime.Header = ClientUiStrings.T("KeysColTime");
             if (ActivityColLevel != null) ActivityColLevel.Header = ClientUiStrings.T("ActivityColLevel");
             if (ActivityColText != null) ActivityColText.Header = ClientUiStrings.T("ActivityColText");
-            if (AosSectionSchedule != null) AosSectionSchedule.Text = ClientUiStrings.T("SectionSchedule");
-            if (AosIntervalLabel != null) AosIntervalLabel.Text = ClientUiStrings.T("IntervalHours");
-            if (AosSectionData != null) AosSectionData.Text = ClientUiStrings.T("SectionAos");
+            UpdateAosLoginStatus(_lastTokenMode);
+            if (AosIntervalLabel != null) AosIntervalLabel.Text = ClientUiStrings.T("CheckHealthInterval");
             if (AosUserLabel != null) AosUserLabel.Text = ClientUiStrings.T("AosUsername");
             if (AosPassLabel != null) AosPassLabel.Text = ClientUiStrings.T("AosPassword");
             if (AosShowPasswordCheck != null) AosShowPasswordCheck.Content = ClientUiStrings.T("ShowPassword");
-            if (AosSaveBtn != null) AosSaveBtn.Content = ClientUiStrings.T("Save");
-            if (AosCheckBrowserPassBtn != null) AosCheckBrowserPassBtn.Content = ClientUiStrings.T("CheckBrowserPass");
-            if (AosOpenBmwBtn != null) AosOpenBmwBtn.Content = ClientUiStrings.T("OpenBmwSso");
+            if (AosSaveBtnText != null) AosSaveBtnText.Text = ClientUiStrings.T("Save");
+            if (AosCheckBrowserPassBtnText != null) AosCheckBrowserPassBtnText.Text = ClientUiStrings.T("CheckBrowserPass");
+            if (AosOpenBmwBtnText != null) AosOpenBmwBtnText.Text = ClientUiStrings.T("OpenBmwSso");
             if (AosCheckTokenBtn != null) AosCheckTokenBtn.Content = ClientUiStrings.T("CheckToken");
             if (AosStartTimerBtn != null) AosStartTimerBtn.Content = ClientUiStrings.T("StartTimer");
             if (AosStopTimerBtn != null) AosStopTimerBtn.Content = ClientUiStrings.T("StopTimer");
-            if (AuthGroup != null) AuthGroup.Header = ClientUiStrings.T("SettingsAuth");
             if (ForceRegisterBtn != null)
             {
                 ForceRegisterBtn.Content = ClientUiStrings.T("ForceRegister");
                 ForceRegisterBtn.ToolTip = ClientUiStrings.T("TipForceRegister");
             }
-            if (ForceRegisterHintText != null)
-                ForceRegisterHintText.Text = ClientUiStrings.T("ForceRegisterHint");
             if (AuthGuardsStatusTitle != null)
                 AuthGuardsStatusTitle.Text = ClientUiStrings.T("AuthGuardsStatusTitle");
             if (AuthCooldownExplainText != null)
                 AuthCooldownExplainText.Text = ClientUiStrings.T("AuthCooldownExplain");
             if (AuthRegisterBlockedExplainText != null)
                 AuthRegisterBlockedExplainText.Text = ClientUiStrings.T("AuthRegisterBlockedExplain");
-            RefreshAuthGuardsPanel(_authCooldownOn, null, _authBlockedOn, null, null);
+            if (ClearAuthCooldownBtn != null)
+            {
+                ClearAuthCooldownBtn.Content = ClientUiStrings.T("AuthGuardClear");
+                ClearAuthCooldownBtn.ToolTip = ClientUiStrings.T("TipAuthGuardClearCooldown");
+            }
+            if (ClearAuthRegisterBlockedBtn != null)
+            {
+                ClearAuthRegisterBlockedBtn.Content = ClientUiStrings.T("AuthGuardClear");
+                ClearAuthRegisterBlockedBtn.ToolTip = ClientUiStrings.T("TipAuthGuardClearBlocked");
+            }
+            string authCdPanel = null;
+            if (_authCooldownOn)
+            {
+                authCdPanel = !string.IsNullOrEmpty(_authCooldownUntilLocal)
+                    ? string.Format(ClientUiStrings.T("AuthCooldownStatusActive"), _authCooldownUntilLocal)
+                    : ClientUiStrings.T("AuthCooldownStatusActiveShort");
+            }
+            RefreshAuthGuardsPanel(_authCooldownOn, authCdPanel, _authBlockedOn, null, null);
+            if (AuthGuardsFooterText != null && (_authCooldownOn || _authBlockedOn || AuthGuardsFooterText.Inlines.Count > 0))
+            {
+                AuthGuardsFooterText.Inlines.Clear();
+                var cdBrush = _authCooldownOn ? CreateBrush(0xB2, 0x6A, 0x00) : _footerOk;
+                var blBrush = _authBlockedOn ? _footerError : _footerOk;
+                var cdFooter = _authCooldownOn
+                    ? (!string.IsNullOrEmpty(_authCooldownUntilLocal)
+                        ? string.Format(ClientUiStrings.T("FooterCooldownOnUntil"), _authCooldownUntilLocal)
+                        : ClientUiStrings.T("FooterCooldownOn"))
+                    : ClientUiStrings.T("FooterCooldownOff");
+                var blFooter = _authBlockedOn
+                    ? ClientUiStrings.T("FooterBlockedOn")
+                    : ClientUiStrings.T("FooterBlockedOff");
+                AuthGuardsFooterText.Inlines.Add(new Run(cdFooter) { Foreground = cdBrush });
+                AuthGuardsFooterText.Inlines.Add(new Run("  ·  ") { Foreground = _footerMuted });
+                AuthGuardsFooterText.Inlines.Add(new Run(blFooter) { Foreground = blBrush });
+            }
             UpdateAosSyncStatus();
             UpdateAosButtonsVisibility();
             if (KeysEventsSection != null) KeysEventsSection.Text = ClientUiStrings.T("KeysRecent");
@@ -348,18 +418,23 @@ namespace KaiAosNotifyClient
             if (GeneralGroup != null) GeneralGroup.Header = ClientUiStrings.T("SettingsGeneral");
             if (LanguageLabel != null) LanguageLabel.Text = ClientUiStrings.T("Language");
             if (ThemeLabel != null) ThemeLabel.Text = ClientUiStrings.T("Theme");
+            if (OpenSettingsFolderBtn != null) OpenSettingsFolderBtn.Content = ClientUiStrings.T("AboutOpenSettings");
+            if (OpenLogsFolderBtn != null) OpenLogsFolderBtn.Content = ClientUiStrings.T("AboutOpenLogs");
+            if (ExportClientSettingsBtn != null) ExportClientSettingsBtn.Content = ClientUiStrings.T("ExportSettings");
+            if (ImportClientSettingsBtn != null) ImportClientSettingsBtn.Content = ClientUiStrings.T("ImportSettings");
+            if (AuthGroup != null) AuthGroup.Header = ClientUiStrings.T("SettingsAuth");
+            if (BrowserPassHintCheck != null) BrowserPassHintCheck.Content = ClientUiStrings.T("BrowserPassHintOption");
             RefreshThemeComboItems();
             if (StartupGroup != null) StartupGroup.Header = ClientUiStrings.T("Startup");
-            if (StartWithWindowsLabel != null) StartWithWindowsLabel.Text = ClientUiStrings.T("StartWithWindows");
-            if (StartWithWindowsCheck != null) StartWithWindowsCheck.Content = ClientUiStrings.T("Yes");
-            if (MinimizeToTrayLabel != null) MinimizeToTrayLabel.Text = ClientUiStrings.T("MinimizeToTray");
-            if (MinimizeToTrayCheck != null) MinimizeToTrayCheck.Content = ClientUiStrings.T("Yes");
-            if (MinimizeOnCloseLabel != null) MinimizeOnCloseLabel.Text = ClientUiStrings.T("MinimizeOnClose");
-            if (MinimizeOnCloseCheck != null) MinimizeOnCloseCheck.Content = ClientUiStrings.T("MinimizeOnCloseYes");
-            if (AutoUpdateLabel != null) AutoUpdateLabel.Text = ClientUiStrings.T("AutoUpdate");
+            if (StartWithWindowsCheck != null)
+                StartWithWindowsCheck.Content = ClientUiStrings.T("StartWithWindowsYes");
+            if (MinimizeToTrayCheck != null)
+                MinimizeToTrayCheck.Content = ClientUiStrings.T("MinimizeToTrayYes");
+            if (MinimizeOnCloseCheck != null)
+                MinimizeOnCloseCheck.Content = CheckboxLabel(ClientUiStrings.T("MinimizeOnClose"));
             if (AutoUpdateCheck != null)
             {
-                AutoUpdateCheck.Content = ClientUiStrings.T("Yes");
+                AutoUpdateCheck.Content = CheckboxLabel(ClientUiStrings.T("AutoUpdate"));
                 AutoUpdateCheck.ToolTip = ClientUiStrings.T("TipAutoUpdate");
             }
             if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.Content = ClientUiStrings.T("CheckForUpdates");
@@ -528,21 +603,69 @@ namespace KaiAosNotifyClient
             {
                 _clientUpdateBusy = true;
                 UpdateAosControlsEnabled();
+                if (FooterUpdateBtn != null) FooterUpdateBtn.IsEnabled = false;
+                var ver = UpdateService.FormatUpdateVersion(peeked);
                 try
                 {
-                    SendClientUpdating(UpdateService.FormatUpdateVersion(peeked));
-                    await UpdateService.ApplyUpdateAsync(this, peeked, ClientUiStrings.T, false);
+                    SendClientUpdating(ver);
+                    await UpdateService.ApplyUpdateAsync(this, peeked, ClientUiStrings.T, false,
+                        (stage, pct) => ShowSelfUpdateProgress(stage, ver, pct));
                 }
                 catch
                 {
                     SendClientUpdateDone();
+                    HideUpdateProgressBar();
+                    ShowPendingUpdate(_pendingUpdate ?? peeked);
                 }
                 finally
                 {
                     _clientUpdateBusy = false;
                     UpdateAosControlsEnabled();
+                    if (FooterUpdateBtn != null && (_pendingUpdate != null || _debugMode))
+                        FooterUpdateBtn.IsEnabled = true;
                 }
             }
+        }
+
+        private void ShowSelfUpdateProgress(string stage, string version, int percent)
+        {
+            if (UpdateAvailableText == null) return;
+            var ver = version ?? "?";
+            if (string.Equals(stage, "downloading", StringComparison.OrdinalIgnoreCase))
+            {
+                var pct = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+                UpdateAvailableText.Text = string.Format(ClientUiStrings.T("UpdateDownloadingPct"), ver, pct);
+                if (UpdateProgressBar != null)
+                {
+                    UpdateProgressBar.IsIndeterminate = false;
+                    UpdateProgressBar.Value = pct;
+                    UpdateProgressBar.Visibility = Visibility.Visible;
+                }
+            }
+            else if (string.Equals(stage, "installing", StringComparison.OrdinalIgnoreCase))
+            {
+                UpdateAvailableText.Text = string.Format(ClientUiStrings.T("UpdateInstalling"), ver);
+                if (UpdateProgressBar != null)
+                {
+                    UpdateProgressBar.IsIndeterminate = false;
+                    UpdateProgressBar.Value = 100;
+                    UpdateProgressBar.Visibility = Visibility.Visible;
+                }
+            }
+            else
+            {
+                UpdateAvailableText.Text = string.Format(ClientUiStrings.T("UpdateRestarting"), ver);
+                HideUpdateProgressBar();
+            }
+            UpdateAvailableText.Visibility = Visibility.Visible;
+        }
+
+        private void HideUpdateProgressBar()
+        {
+            if (UpdateProgressBar == null) return;
+            UpdateProgressBar.Visibility = Visibility.Collapsed;
+            UpdateProgressBar.Value = 0;
+            UpdateProgressBar.IsIndeterminate = false;
         }
 
         private void ShowPendingUpdate(UpdateInfo update)
@@ -683,11 +806,14 @@ namespace KaiAosNotifyClient
             try
             {
                 SendClientUpdating(ver);
-                await UpdateService.ApplyUpdateAsync(this, update, ClientUiStrings.T, false);
+                await UpdateService.ApplyUpdateAsync(this, update, ClientUiStrings.T, false,
+                    (stage, pct) => ShowSelfUpdateProgress(stage, ver, pct));
             }
             catch (Exception ex)
             {
                 SendClientUpdateDone();
+                HideUpdateProgressBar();
+                ShowPendingUpdate(_pendingUpdate ?? update);
                 MessageBox.Show(this, string.Format(ClientUiStrings.T("UpdateFailed"), ex.Message),
                     ClientUiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
@@ -804,6 +930,40 @@ namespace KaiAosNotifyClient
                 _client.Send(new NotifyMessage
                 {
                     Kind = "aosSyncReq",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = ""
+                });
+            }
+            catch { }
+            RequestServerSettingsSync();
+            RequestNotifyClients();
+        }
+
+        private void RequestServerSettingsSync()
+        {
+            if (_client == null || !_client.IsConnected) return;
+            try
+            {
+                _client.Send(new NotifyMessage
+                {
+                    Kind = "settingsSyncReq",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = ""
+                });
+            }
+            catch { }
+        }
+
+        private void RequestNotifyClients()
+        {
+            if (_client == null || !_client.IsConnected) return;
+            try
+            {
+                _client.Send(new NotifyMessage
+                {
+                    Kind = "notifyClientsReq",
                     Level = "info",
                     Title = "KAI - AOS Renew - Client",
                     Text = ""
@@ -1331,7 +1491,7 @@ namespace KaiAosNotifyClient
             {
                 var path = FindChangelogPath();
                 if (path != null && File.Exists(path))
-                    AboutChangelogBox.Text = File.ReadAllText(path);
+                    AboutChangelogBox.Text = FormatChangelogForAbout(File.ReadAllText(path));
                 else
                     AboutChangelogBox.Text = ClientUiStrings.T("AboutChangelogMissing");
             }
@@ -1339,6 +1499,29 @@ namespace KaiAosNotifyClient
             {
                 AboutChangelogBox.Text = ex.Message;
             }
+        }
+
+        private static string FormatChangelogForAbout(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return raw ?? "";
+            var lines = raw.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            var outLines = new List<string>();
+            var skippingPreamble = true;
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                var trim = (line ?? "").Trim();
+                if (skippingPreamble)
+                {
+                    if (trim.Length == 0) continue;
+                    if (trim.StartsWith("Format:", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (trim.StartsWith("# Changelog", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (string.Equals(trim, "## [Unreleased]", StringComparison.OrdinalIgnoreCase)) continue;
+                    skippingPreamble = false;
+                }
+                outLines.Add(line);
+            }
+            return string.Join(Environment.NewLine, outLines.ToArray()).TrimStart();
         }
 
         private static string FindChangelogPath()
@@ -1382,6 +1565,8 @@ namespace KaiAosNotifyClient
                 AutoCopyVinCheck.IsChecked = _settings.AutoCopyVin;
             if (ShowAlertTipsCheck != null)
                 ShowAlertTipsCheck.IsChecked = _settings.ShowAlertTips;
+            if (BrowserPassHintCheck != null)
+                BrowserPassHintCheck.IsChecked = _settings.BrowserPasswordHintOnAuthFail;
             if (OfflineMinutesBox != null)
                 OfflineMinutesBox.Text = _settings.OfflineMinutes.ToString();
             if (LanguageCombo != null)
@@ -1470,9 +1655,11 @@ namespace KaiAosNotifyClient
                 _settings.AutoCopyVin = AutoCopyVinCheck.IsChecked == true;
             if (ShowAlertTipsCheck != null)
                 _settings.ShowAlertTips = ShowAlertTipsCheck.IsChecked == true;
-            int sec = 8;
+            if (BrowserPassHintCheck != null)
+                _settings.BrowserPasswordHintOnAuthFail = BrowserPassHintCheck.IsChecked == true;
+            int sec = 10;
             if (VinTipSecondsBox == null || !int.TryParse((VinTipSecondsBox.Text ?? "").Trim(), out sec))
-                sec = 8;
+                sec = 10;
             _settings.VinTipSeconds = sec;
             int off = 2;
             if (OfflineMinutesBox == null || !int.TryParse((OfflineMinutesBox.Text ?? "").Trim(), out off))
@@ -1533,6 +1720,100 @@ namespace KaiAosNotifyClient
         private void SettingsField_Changed(object sender, RoutedEventArgs e)
         {
             PersistSettingsFromUi();
+        }
+
+        private void OpenSettingsFolder_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(ClientSettings.StoreDir);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(ClientUiStrings.T("CannotOpenLog"), ex.Message),
+                    ClientUiStrings.T("AppTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void OpenLogsFolder_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(ClientSettings.LogDir);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(ClientUiStrings.T("CannotOpenLog"), ex.Message),
+                    ClientUiStrings.T("AppTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void ExportClientSettings_Click(object sender, RoutedEventArgs e)
+        {
+            if (_settings == null) return;
+            try
+            {
+                CaptureSettingsFromUi();
+                var dlg = new SaveFileDialog
+                {
+                    Filter = "XML (*.xml)|*.xml|All files (*.*)|*.*",
+                    FileName = "KaiAosNotifyClient-settings.xml",
+                    Title = ClientUiStrings.T("ClientExportTitle")
+                };
+                if (dlg.ShowDialog(this) != true) return;
+                _settings.ExportPortable(dlg.FileName);
+                AppendActivityRow(null, "success", string.Format(ClientUiStrings.T("ClientExportOk"), dlg.FileName));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(ClientUiStrings.T("ExportFail"), ex.Message),
+                    ClientUiStrings.T("AppTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void ImportClientSettings_Click(object sender, RoutedEventArgs e)
+        {
+            if (_settings == null) return;
+            try
+            {
+                var dlg = new OpenFileDialog
+                {
+                    Filter = "XML (*.xml)|*.xml|All files (*.*)|*.*",
+                    Title = ClientUiStrings.T("ClientImportTitle")
+                };
+                if (dlg.ShowDialog(this) != true) return;
+                var xml = File.ReadAllText(dlg.FileName);
+                if (string.IsNullOrWhiteSpace(xml))
+                {
+                    MessageBox.Show(this, string.Format(ClientUiStrings.T("ImportFail"), "empty"),
+                        ClientUiStrings.T("AppTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                _settings.ImportPortableFromString(xml);
+                _settings.Save();
+                _loadingUi = true;
+                try
+                {
+                    LoadSettingsToUi();
+                    ApplyConnectionUi();
+                }
+                finally
+                {
+                    _loadingUi = false;
+                }
+                ApplyStartup(_settings.StartWithWindows);
+                ClientUiStrings.SetLanguage(_settings.Language);
+                ApplyLanguageToUi();
+                RebuildTrayMenu();
+                ClientThemeManager.Apply(_settings.Theme);
+                ApplyFooterChrome(ClientThemeManager.IsNight);
+                AppendActivityRow(null, "success", string.Format(ClientUiStrings.T("ClientImportOk"), dlg.FileName));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(ClientUiStrings.T("ImportFail"), ex.Message),
+                    ClientUiStrings.T("AppTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
 
         private void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1608,6 +1889,11 @@ namespace KaiAosNotifyClient
 
         private void KeysClear_Click(object sender, RoutedEventArgs e)
         {
+            if (_keyAllRows == null || _keyAllRows.Count == 0)
+            {
+                UpdateClearButtonsEnabled();
+                return;
+            }
             var confirm = MessageBox.Show(
                 this,
                 ClientUiStrings.T("ClearKeysConfirm"),
@@ -1628,6 +1914,7 @@ namespace KaiAosNotifyClient
             UpdateKeysRetryButton();
             RefreshTrayStatus();
             AppendActivityRow(null, "info", ClientUiStrings.T("ClearKeysDone"));
+            UpdateClearButtonsEnabled();
         }
 
         private void KeysRetryBmw_Click(object sender, RoutedEventArgs e)
@@ -1704,6 +1991,26 @@ namespace KaiAosNotifyClient
             UpdateKeysTodayBadge();
             UpdateKeysRetryButton();
             ReapplyKeysRowHighlightIfNeeded();
+            UpdateNoMatchesHint(KeysNoMatchesHint, _keyAllRows.Count > 0, _keyRows.Count);
+            UpdateClearButtonsEnabled();
+        }
+
+        private void UpdateClearButtonsEnabled()
+        {
+            if (KeysClearBtn != null)
+                KeysClearBtn.IsEnabled = _keyAllRows != null && _keyAllRows.Count > 0;
+            if (ActivityClearBtn != null)
+                ActivityClearBtn.IsEnabled = _activityRows != null && _activityRows.Count > 0;
+            if (ClearRegisterLogBtn != null)
+                ClearRegisterLogBtn.IsEnabled = _registerHistory != null && _registerHistory.Count > 0;
+        }
+
+        private static void UpdateNoMatchesHint(TextBlock hint, bool hasSourceItems, int visibleCount)
+        {
+            if (hint == null) return;
+            hint.Visibility = (hasSourceItems && visibleCount == 0)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
         private static IEnumerable<ClientKeyRow> FilterByStatus(IEnumerable<ClientKeyRow> src, string status)
@@ -1727,6 +2034,22 @@ namespace KaiAosNotifyClient
         {
             if (!ReferenceEquals(e.OriginalSource, MainTabs)) return;
             if (_suppressTabChange) return;
+
+            var leftServerSettings = false;
+            if (e.RemovedItems != null)
+            {
+                for (var i = 0; i < e.RemovedItems.Count; i++)
+                {
+                    if (ReferenceEquals(e.RemovedItems[i], TabServerSettings))
+                    {
+                        leftServerSettings = true;
+                        break;
+                    }
+                }
+            }
+            if (leftServerSettings && _srvSettingsDirty)
+                DiscardUnsavedServerSettings();
+
             if (_aboutVisible && TabDummy != null && !TabDummy.IsSelected)
             {
                 _aboutVisible = false;
@@ -1743,14 +2066,30 @@ namespace KaiAosNotifyClient
                 RefreshRegisterAges();
                 ScrollRegisterHistoryToEnd();
             }
+            if (!_aboutVisible && TabServerSettings != null && TabServerSettings.IsSelected)
+            {
+                if (_client != null && _client.IsConnected)
+                    RequestServerSettingsSync();
+                else if (_lastServerSettingsMap != null && _lastServerSettingsMap.Count > 0)
+                    DiscardUnsavedServerSettings();
+            }
             UpdateAosButtonsVisibility();
+        }
+
+        private void DiscardUnsavedServerSettings()
+        {
+            if (_lastServerSettingsMap == null || _lastServerSettingsMap.Count == 0)
+            {
+                MarkSrvSettingsDirty(false);
+                return;
+            }
+            ApplyServerSettingsSync(NotifyMessage.EncodeKvMap(_lastServerSettingsMap));
         }
 
         private void UpdateAosButtonsVisibility()
         {
-            if (ButtonsBorder == null) return;
-            var show = !_aboutVisible && TabAos != null && TabAos.IsSelected;
-            ButtonsBorder.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            if (ButtonsBorder != null)
+                ButtonsBorder.Visibility = Visibility.Collapsed;
         }
 
         private void UpdateAosControlsEnabled()
@@ -1814,23 +2153,64 @@ namespace KaiAosNotifyClient
             UpdateKeysRetryButton();
         }
 
+        private void UpdateAosLoginStatus(string tokenMode)
+        {
+            _lastTokenMode = string.IsNullOrEmpty(tokenMode) ? "none" : tokenMode;
+            if (AosLoginStatusText == null && AosLoginStatusIcon == null) return;
+            var connected = string.Equals(_lastTokenMode, "ok", StringComparison.OrdinalIgnoreCase)
+                && !_authBlockedOn;
+            var fail = _authBlockedOn
+                || string.Equals(_lastTokenMode, "fail", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(_lastTokenMode, "error", StringComparison.OrdinalIgnoreCase);
+            Brush brush;
+            string glyph;
+            string text;
+            if (connected)
+            {
+                text = ClientUiStrings.T("AosLoginConnected");
+                brush = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+                glyph = "\uE73E";
+            }
+            else
+            {
+                text = ClientUiStrings.T("AosLoginNotConnected");
+                if (fail)
+                {
+                    brush = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                    glyph = "\uE711";
+                }
+                else
+                {
+                    brush = new SolidColorBrush(Color.FromRgb(0x8C, 0x8C, 0x8C));
+                    glyph = "\uE711";
+                }
+            }
+            if (AosLoginStatusText != null)
+            {
+                AosLoginStatusText.Text = text;
+                AosLoginStatusText.Foreground = brush;
+            }
+            if (AosLoginStatusIcon != null)
+            {
+                AosLoginStatusIcon.Text = glyph;
+                AosLoginStatusIcon.Foreground = brush;
+            }
+        }
+
         private void UpdateAosSyncStatus()
         {
-            if (AosSyncStatusText == null) return;
-            if (_client == null || !_client.IsConnected)
+            if (AosDirtyStatus != null)
             {
-                AosSyncStatusText.Text = ClientUiStrings.T("AosSyncOffline");
-                AosSyncStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x8C, 0x8C, 0x8C));
-                return;
+                AosDirtyStatus.Text = _aosDirty ? ClientUiStrings.T("AosSyncDirty") : "";
+                if (_aosDirty)
+                    AosDirtyStatus.Foreground = CreateBrush(0xB2, 0x6A, 0x00);
+                else
+                    AosDirtyStatus.Foreground = _footerMuted
+                        ?? (TryFindResource("TextMutedBrush") as Brush)
+                        ?? CreateBrush(0x8C, 0x8C, 0x8C);
             }
-            if (_aosAwaitingAck || _aosDirty)
-            {
-                AosSyncStatusText.Text = ClientUiStrings.T("AosSyncPending");
-                AosSyncStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xB2, 0x6A, 0x00));
-                return;
-            }
-            AosSyncStatusText.Text = ClientUiStrings.T("AosSyncSynced");
-            AosSyncStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+            if (AosDirtyPendingMark != null)
+                AosDirtyPendingMark.Visibility = _aosDirty ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void ApplyAosSync(string payload)
@@ -1838,19 +2218,38 @@ namespace KaiAosNotifyClient
             int hours;
             string email;
             string password;
-            if (!NotifyMessage.TryParseAosSync(payload, out hours, out email, out password))
+            bool? forceUnused;
+            int? blockAfter;
+            if (!NotifyMessage.TryParseAosSync(payload, out hours, out email, out password, out forceUnused, out blockAfter))
                 return;
             _loadingAosUi = true;
             try
             {
                 if (AosIntervalBox != null) AosIntervalBox.Text = hours.ToString();
-                if (AosEmailBox != null) AosEmailBox.Text = email ?? "";
-                SetAosPasswordUi(password ?? "");
+                _lastSyncedHours = hours;
                 _lastSyncedEmail = (email ?? "").Trim();
                 _lastSyncedPass = (password ?? "").Trim();
-                _aosDirty = false;
+                if (!_aosDirty)
+                {
+                    if (AosEmailBox != null) AosEmailBox.Text = email ?? "";
+                    SetAosPasswordUi(password ?? "");
+                }
+                if (blockAfter.HasValue && _settings != null)
+                {
+                    var n = blockAfter.Value;
+                    if (n < 1) n = 1;
+                    if (n > 10) n = 10;
+                    _settings.AuthRegisterBlockAfter = n;
+                    if (!_loadingSrvSettings && SrvAuthBlockAfterBox != null)
+                        SrvAuthBlockAfterBox.Text = n.ToString();
+                    try { _settings.Save(); }
+                    catch { }
+                }
+                if (!_aosDirty)
+                    _aosDirty = false;
                 CancelAosAckWait();
                 UpdateAosSyncStatus();
+                UpdateAosControlsEnabled();
             }
             finally
             {
@@ -1860,11 +2259,42 @@ namespace KaiAosNotifyClient
 
         private void HandleAosAck(NotifyMessage msg)
         {
+            var wasSettingsApply = _awaitingSettingsApply;
+            var wasSettingsImport = _awaitingSettingsImport;
+            var intervalOnlyAck = _awaitingAosIntervalOnly;
             CancelAosAckWait();
+            _awaitingAosIntervalOnly = false;
             SetKaiBusy(false);
             if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = true;
             var level = (msg.Level ?? "").Trim().ToLowerInvariant();
             var text = msg.Text ?? "";
+            if (wasSettingsApply || wasSettingsImport
+                || string.Equals(text, "settingsApply", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(text, "settingsImport", StringComparison.OrdinalIgnoreCase))
+            {
+                if (level == "error")
+                {
+                    if (wasSettingsApply) MarkSrvSettingsDirty(true);
+                    SetSrvSettingsStatus(
+                        string.IsNullOrEmpty(text) ? ClientUiStrings.T("AosSyncSendFail") : text, false);
+                    AppendActivityRow(null, "error", "Server Settings: " + (string.IsNullOrEmpty(text) ? "failed" : text));
+                    return;
+                }
+                if (wasSettingsApply)
+                {
+                    ClearSrvSettingsConflict();
+                    MarkSrvSettingsDirty(false);
+                }
+                if (wasSettingsImport)
+                {
+                    ClearSrvSettingsConflict();
+                    SetSrvSettingsStatus(string.Format(ClientUiStrings.T("ImportOk"), "server"), false);
+                    AppendActivityRow(null, "success", string.Format(ClientUiStrings.T("ImportOk"), "server"));
+                }
+                else
+                    SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsSynced"), true);
+                return;
+            }
             if (level == "error")
             {
                 if (!string.IsNullOrEmpty(_pendingServerUpdateVer) || _awaitingServerUpdateReconnect)
@@ -1873,16 +2303,27 @@ namespace KaiAosNotifyClient
                     _awaitingServerUpdateReconnect = false;
                     RefreshServerUpdateFromFeed();
                 }
-                _aosDirty = true;
+                if (!intervalOnlyAck)
+                    _aosDirty = true;
                 UpdateAosSyncStatus();
+                UpdateAosControlsEnabled();
                 AppendActivityRow(null, "error", "AOS: " + (string.IsNullOrEmpty(text) ? "failed" : text));
                 JumpToActivityWithAlert();
                 return;
             }
-            _aosDirty = false;
-            _lastSyncedEmail = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
-            _lastSyncedPass = (GetAosPasswordUi() ?? "").Trim();
+            if (!intervalOnlyAck)
+            {
+                _aosDirty = false;
+                _lastSyncedEmail = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
+                _lastSyncedPass = (GetAosPasswordUi() ?? "").Trim();
+            }
+            int ackHours;
+            if (AosIntervalBox != null
+                && int.TryParse((AosIntervalBox.Text ?? "").Trim(), out ackHours)
+                && ackHours >= 1 && ackHours <= 168)
+                _lastSyncedHours = ackHours;
             UpdateAosSyncStatus();
+            UpdateAosControlsEnabled();
             if (!string.IsNullOrEmpty(text) && !string.Equals(text, "OK", StringComparison.OrdinalIgnoreCase)
                 && text.IndexOf("serverUpdate", StringComparison.OrdinalIgnoreCase) < 0)
                 AppendActivityRow(null, "success", "AOS: " + text);
@@ -1899,10 +2340,23 @@ namespace KaiAosNotifyClient
 
         private void AosAckTimer_Tick(object sender, EventArgs e)
         {
+            var wasSettingsApply = _awaitingSettingsApply;
+            var wasSettingsImport = _awaitingSettingsImport;
+            var intervalOnlyAck = _awaitingAosIntervalOnly;
             CancelAosAckWait();
-            _aosDirty = true;
+            _awaitingAosIntervalOnly = false;
+            if (wasSettingsApply || wasSettingsImport)
+            {
+                if (wasSettingsApply) MarkSrvSettingsDirty(true);
+                SetSrvSettingsStatus(ClientUiStrings.T("AosSyncTimeout"), false);
+                AppendActivityRow(null, "error", "Server Settings: " + ClientUiStrings.T("AosSyncTimeout"));
+                return;
+            }
+            if (!intervalOnlyAck)
+                _aosDirty = true;
             if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = true;
             UpdateAosSyncStatus();
+            UpdateAosControlsEnabled();
             AppendActivityRow(null, "error", ClientUiStrings.T("AosSyncTimeout"));
             JumpToActivityWithAlert();
         }
@@ -1910,6 +2364,8 @@ namespace KaiAosNotifyClient
         private void CancelAosAckWait()
         {
             _aosAwaitingAck = false;
+            _awaitingSettingsApply = false;
+            _awaitingSettingsImport = false;
             try { _aosAckTimer.Stop(); }
             catch { }
             UpdateAosControlsEnabled();
@@ -2149,7 +2605,14 @@ namespace KaiAosNotifyClient
             _aosApplyInFlight = true;
             try
             {
-                var payload = NotifyMessage.EncodeAosSync(hours, email, pass, forceRegister);
+                var blockAfter = _settings != null ? _settings.AuthRegisterBlockAfter : 3;
+                if (SrvAuthBlockAfterBox != null)
+                {
+                    int parsed;
+                    if (int.TryParse((SrvAuthBlockAfterBox.Text ?? "").Trim(), out parsed) && parsed >= 1)
+                        blockAfter = parsed > 10 ? 10 : parsed;
+                }
+                var payload = NotifyMessage.EncodeAosSync(hours, email, pass, forceRegister, blockAfter);
                 var ok = _client.Send(new NotifyMessage
                 {
                     Kind = "aosApply",
@@ -2164,6 +2627,7 @@ namespace KaiAosNotifyClient
                     return;
                 }
                 ClearAosFieldInvalidHighlights();
+                _awaitingAosIntervalOnly = false;
                 BeginAosAckWait();
             }
             finally
@@ -2188,7 +2652,16 @@ namespace KaiAosNotifyClient
                 JumpToActivityWithAlert();
                 return;
             }
+            _awaitingAosIntervalOnly = false;
             BeginAosAckWait();
+        }
+
+        private void RecomputeAosDirtyFromUi()
+        {
+            var email = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
+            var pass = (GetAosPasswordUi() ?? "").Trim();
+            _aosDirty = !string.Equals(email, _lastSyncedEmail ?? "", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(pass, _lastSyncedPass ?? "", StringComparison.Ordinal);
         }
 
         private void AosField_TextChanged(object sender, TextChangedEventArgs e)
@@ -2198,8 +2671,11 @@ namespace KaiAosNotifyClient
             ClearFieldInvalid(AosIntervalBox);
             ClearFieldInvalid(AosPasswordPlainBox);
             if (_loadingAosUi || _loadingUi) return;
-            _aosDirty = true;
+            // Interval changes sync alone on LostFocus; only email/password mark dirty.
+            if (ReferenceEquals(sender, AosIntervalBox)) return;
+            RecomputeAosDirtyFromUi();
             UpdateAosSyncStatus();
+            UpdateAosControlsEnabled();
         }
 
         private void AosPassword_Changed(object sender, RoutedEventArgs e)
@@ -2207,22 +2683,58 @@ namespace KaiAosNotifyClient
             ClearFieldInvalid(AosPasswordBox);
             ClearFieldInvalid(AosPasswordPlainBox);
             if (_loadingAosUi || _loadingUi) return;
-            _aosDirty = true;
+            RecomputeAosDirtyFromUi();
             UpdateAosSyncStatus();
+            UpdateAosControlsEnabled();
         }
 
         private void AosField_LostFocus(object sender, RoutedEventArgs e)
         {
-            if (_loadingAosUi || _loadingUi || !_aosDirty) return;
+            // Interval auto-applies hours only; email/password sync only via Save.
+            if (!ReferenceEquals(sender, AosIntervalBox)) return;
+            if (_loadingAosUi || _loadingUi) return;
             if (_client == null || !_client.IsConnected) return;
-            _explicitAosSave = false;
-            SendAosApply();
+            SendAosIntervalApply();
         }
 
         private void AosSave_Click(object sender, RoutedEventArgs e)
         {
             _explicitAosSave = true;
             SendAosApply();
+        }
+
+        private void SendAosIntervalApply()
+        {
+            if (_loadingAosUi || _loadingUi) return;
+            if (_awaitingServerUpdateReconnect || _clientUpdateBusy) return;
+            if (_client == null || !_client.IsConnected) return;
+            if (_aosApplyInFlight || _aosAwaitingAck) return;
+            int hours;
+            if (!ValidateInterval(out hours, false)) return;
+            if (hours == _lastSyncedHours) return;
+            _aosApplyInFlight = true;
+            try
+            {
+                var ok = _client.Send(new NotifyMessage
+                {
+                    Kind = "aosInterval",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = hours.ToString()
+                });
+                if (!ok)
+                {
+                    AppendActivityRow(null, "error", ClientUiStrings.T("AosSyncSendFail"));
+                    JumpToActivityWithAlert();
+                    return;
+                }
+                _awaitingAosIntervalOnly = true;
+                BeginAosAckWait();
+            }
+            finally
+            {
+                _aosApplyInFlight = false;
+            }
         }
 
         private void AosShowPassword_Changed(object sender, RoutedEventArgs e)
@@ -2276,7 +2788,9 @@ namespace KaiAosNotifyClient
 
             var when = FormatBrowserSavedWhen(found.LastSavedLocal);
             var msg = string.Format(ClientUiStrings.T("BrowserPassCheckOk"), found.BrowserName, when);
-            var hint = string.Format(ClientUiStrings.T("BrowserPassHintNoDate"), found.BrowserName);
+            var hint = (_settings == null || _settings.BrowserPasswordHintOnAuthFail)
+                ? string.Format(ClientUiStrings.T("BrowserPassHintNoDate"), found.BrowserName)
+                : "";
             var site = SiteForClipboard(found.SourceUrl);
             var copiedHint = "";
             if (!string.IsNullOrEmpty(site))
@@ -2321,8 +2835,9 @@ namespace KaiAosNotifyClient
                     SendAosApply();
                 else
                 {
-                    _aosDirty = true;
+                    RecomputeAosDirtyFromUi();
                     UpdateAosSyncStatus();
+                    UpdateAosControlsEnabled();
                 }
             }
         }
@@ -2474,8 +2989,12 @@ namespace KaiAosNotifyClient
             _wantConnectUi = true;
             _offlineAlertShown = false;
             _client.Connect(_settings.Host, port);
-            ConnectBtn.IsEnabled = false;
+            // Keep Connect enabled while reconnecting so it acts as Retry now.
+            ConnectBtn.IsEnabled = true;
             DisconnectBtn.IsEnabled = true;
+            UpdateConnectTargetEnabled();
+            UpdateConnectButtonLabel();
+            RefreshReconnectStatusUi();
             RefreshTrayStatus();
         }
 
@@ -2485,24 +3004,46 @@ namespace KaiAosNotifyClient
             _client.Disconnect();
             ConnectBtn.IsEnabled = true;
             DisconnectBtn.IsEnabled = false;
+            UpdateConnectTargetEnabled();
+            UpdateConnectButtonLabel();
             RefreshTrayStatus();
+        }
+
+        private void UpdateConnectTargetEnabled()
+        {
+            var locked = _wantConnectUi
+                || (_client != null && (_client.IsConnected || _client.WantConnect));
+            if (HostCombo != null) HostCombo.IsEnabled = !locked;
+            if (PortBox != null) PortBox.IsEnabled = !locked;
+            if (ScanLanBtn != null) ScanLanBtn.IsEnabled = !locked;
+        }
+
+        private void UpdateConnectButtonLabel()
+        {
+            if (ConnectBtn == null) return;
+            var connecting = _wantConnectUi && (_client == null || !_client.IsConnected);
+            ConnectBtn.Content = ClientUiStrings.T(connecting ? "Connecting" : "Connect");
         }
 
         private void OnClientStatus(string status)
         {
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (!string.IsNullOrEmpty(status))
-                {
-                    var steady = status.StartsWith("Connected", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(status, "Disconnected", StringComparison.OrdinalIgnoreCase);
-                    SetConnStatus(steady ? "" : status);
-                }
                 if (!_client.IsConnected)
                 {
                     ShowDisconnectedFooter();
                     if (_awaitingServerUpdateReconnect)
                         SetConnStatus(ClientUiStrings.T("UpdateServerWaiting"));
+                    else if (_wantConnectUi || _client.WantConnect)
+                        RefreshReconnectStatusUi();
+                    else if (!string.IsNullOrEmpty(status)
+                        && string.Equals(status, "Disconnected", StringComparison.OrdinalIgnoreCase))
+                        SetConnStatus("");
+                }
+                else if (!string.IsNullOrEmpty(status)
+                    && status.StartsWith("Connected", StringComparison.OrdinalIgnoreCase))
+                {
+                    SetConnStatus("");
                 }
                 RefreshTrayStatus();
             }));
@@ -2514,6 +3055,8 @@ namespace KaiAosNotifyClient
             {
                 ConnectBtn.IsEnabled = false;
                 DisconnectBtn.IsEnabled = true;
+                UpdateConnectTargetEnabled();
+                UpdateConnectButtonLabel();
                 _lastHeardUtc = DateTime.UtcNow;
                 _offlineAlertShown = false;
                 if (_awaitingServerUpdateReconnect)
@@ -2531,11 +3074,107 @@ namespace KaiAosNotifyClient
                     _settings.Save();
                 }
                 UpdateAosControlsEnabled();
+                UpdateServerSettingsEnabled();
                 RefreshTrayStatus();
+                SendClientHello();
                 RequestAosSync();
                 RequestUpdateFeed();
                 SendUpdateFeed();
             }));
+        }
+
+        private void SendClientHello()
+        {
+            if (_client == null || !_client.IsConnected) return;
+            try
+            {
+                _client.Send(new NotifyMessage
+                {
+                    Kind = "clientHello",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = VersionDisplay ?? ""
+                });
+            }
+            catch { }
+        }
+
+        private static void SizeTextBoxToContent(TextBox box)
+        {
+            if (box == null) return;
+            var text = box.Text ?? "";
+            if (text.Length == 0)
+            {
+                box.Width = 80;
+                return;
+            }
+            try
+            {
+                var typeface = new Typeface(box.FontFamily, box.FontStyle, box.FontWeight, box.FontStretch);
+                double pixelsPerDip = 1.0;
+                try { pixelsPerDip = VisualTreeHelper.GetDpi(box).PixelsPerDip; }
+                catch { }
+                var ft = new FormattedText(
+                    text,
+                    CultureInfo.CurrentUICulture,
+                    FlowDirection.LeftToRight,
+                    typeface,
+                    box.FontSize > 0 ? box.FontSize : 12,
+                    Brushes.Black,
+                    pixelsPerDip);
+                var w = Math.Ceiling(ft.WidthIncludingTrailingWhitespace) + 24;
+                if (w < 80) w = 80;
+                box.Width = w;
+            }
+            catch
+            {
+                box.Width = Math.Max(80, text.Length * 8 + 24);
+            }
+        }
+
+        private static void SizeComboToLongestLabel(ComboBox combo, IEnumerable<string> labels)
+        {
+            if (combo == null) return;
+            const double minW = 160;
+            const double chrome = 36;
+            double max = 0;
+            try
+            {
+                var typeface = new Typeface(combo.FontFamily, combo.FontStyle, combo.FontWeight, combo.FontStretch);
+                double pixelsPerDip = 1.0;
+                try { pixelsPerDip = VisualTreeHelper.GetDpi(combo).PixelsPerDip; }
+                catch { }
+                var fontSize = combo.FontSize > 0 ? combo.FontSize : 12;
+                if (labels != null)
+                {
+                    foreach (var label in labels)
+                    {
+                        var text = label ?? "";
+                        if (text.Length == 0) continue;
+                        var ft = new FormattedText(
+                            text,
+                            CultureInfo.CurrentUICulture,
+                            FlowDirection.LeftToRight,
+                            typeface,
+                            fontSize,
+                            Brushes.Black,
+                            pixelsPerDip);
+                        var w = ft.WidthIncludingTrailingWhitespace;
+                        if (w > max) max = w;
+                    }
+                }
+            }
+            catch { }
+            var width = Math.Ceiling(max) + chrome;
+            if (width < minW) width = minW;
+            combo.MinWidth = minW;
+            combo.Width = width;
+        }
+
+        private static string CheckboxLabel(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text ?? "";
+            return text.TrimEnd(' ', ':');
         }
 
         private void OnClientDisconnected()
@@ -2544,7 +3183,7 @@ namespace KaiAosNotifyClient
             {
                 if (_wantConnectUi || _client.WantConnect)
                 {
-                    ConnectBtn.IsEnabled = false;
+                    ConnectBtn.IsEnabled = true; // Retry now
                     DisconnectBtn.IsEnabled = true;
                 }
                 else
@@ -2552,14 +3191,38 @@ namespace KaiAosNotifyClient
                     ConnectBtn.IsEnabled = true;
                     DisconnectBtn.IsEnabled = false;
                 }
+                UpdateConnectTargetEnabled();
+                UpdateConnectButtonLabel();
                 CancelAosAckWait();
                 SetKaiBusy(false);
                 if (_awaitingServerUpdateReconnect)
                     SetConnStatus(ClientUiStrings.T("UpdateServerWaiting"));
+                else
+                    RefreshReconnectStatusUi();
                 UpdateAosControlsEnabled();
                 UpdateAosSyncStatus();
                 RefreshTrayStatus();
+                ClearNotifyClientsCombo();
+                SetSrvSettingsStatus("", false);
+                MarkSrvSettingsDirty(false);
+                UpdateServerSettingsEnabled();
             }));
+        }
+
+        private void ClearNotifyClientsCombo()
+        {
+            if (SrvNotifySendToCombo == null) return;
+            var items = new List<SrvNotifySendTarget>
+            {
+                new SrvNotifySendTarget
+                {
+                    ClientId = 0,
+                    Label = ClientUiStrings.T("NotifyAllClients") + " (0)"
+                }
+            };
+            SrvNotifySendToCombo.ItemsSource = items;
+            SrvNotifySendToCombo.SelectedItem = items[0];
+            SizeComboToLongestLabel(SrvNotifySendToCombo, items.ConvertAll(it => it.Label));
         }
 
         private void OnMessageReceived(NotifyMessage msg)
@@ -2642,6 +3305,31 @@ namespace KaiAosNotifyClient
             if (kind == "aossync")
             {
                 ApplyAosSync(msg.Text);
+                RefreshTrayStatus();
+                return;
+            }
+            if (kind == "settingssync")
+            {
+                ApplyServerSettingsSync(msg.Text);
+                RequestNotifyClients();
+                RefreshTrayStatus();
+                return;
+            }
+            if (kind == "notifyclients")
+            {
+                ApplyNotifyClientsList(msg.Text);
+                RefreshTrayStatus();
+                return;
+            }
+            if (kind == "notifytestack")
+            {
+                HandleNotifyTestAck(msg);
+                RefreshTrayStatus();
+                return;
+            }
+            if (kind == "settingsexport")
+            {
+                HandleSettingsExportPayload(msg.Text);
                 RefreshTrayStatus();
                 return;
             }
@@ -2813,9 +3501,7 @@ namespace KaiAosNotifyClient
                 if (row == null) continue;
                 var local = RegisterHistoryRow.FromWire(row);
                 if (local == null) continue;
-                local.ResultText = local.Ok
-                    ? ClientUiStrings.T("RegisterResultOk")
-                    : ClientUiStrings.T("RegisterResultFail");
+                local.ResultText = RegisterResultTextForKind(local.Kind);
                 _registerHistory.Add(local);
             }
             while (_registerHistory.Count > RegisterHistoryMax)
@@ -2826,10 +3512,19 @@ namespace KaiAosNotifyClient
                 ScrollRegisterHistoryToEnd();
         }
 
+        private static string RegisterResultTextForKind(int kind)
+        {
+            if (kind == 1) return ClientUiStrings.T("RegisterResultOk");
+            if (kind == 2) return ClientUiStrings.T("RegisterResultInfo");
+            return ClientUiStrings.T("RegisterResultFail");
+        }
+
         private void ApplyRegisterTabStrings()
         {
             if (RegisterHistoryLabel != null) RegisterHistoryLabel.Text = ClientUiStrings.T("RegisterHistory");
             if (RegisterFilterLabel != null) RegisterFilterLabel.Text = ClientUiStrings.T("RegisterFilter");
+            if (ClearRegisterLogBtn != null) ClearRegisterLogBtn.Content = ClientUiStrings.T("ClearLog");
+            if (SaveRegisterLogBtn != null) SaveRegisterLogBtn.Content = ClientUiStrings.T("SaveLog");
             if (RegisterColTime != null) RegisterColTime.Header = ClientUiStrings.T("RegisterColTime");
             if (RegisterColResult != null) RegisterColResult.Header = ClientUiStrings.T("RegisterColResult");
             if (RegisterColAge != null) RegisterColAge.Header = ClientUiStrings.T("RegisterColAge");
@@ -2839,9 +3534,7 @@ namespace KaiAosNotifyClient
             {
                 var r = _registerHistory[i];
                 if (r == null) continue;
-                r.ResultText = r.Ok
-                    ? ClientUiStrings.T("RegisterResultOk")
-                    : ClientUiStrings.T("RegisterResultFail");
+                r.ResultText = RegisterResultTextForKind(r.Kind);
             }
             ApplyRegisterFilter();
         }
@@ -2899,7 +3592,7 @@ namespace KaiAosNotifyClient
                 for (var i = 0; i < _registerHistory.Count; i++)
                 {
                     var r = _registerHistory[i];
-                    if (r != null && r.Ok) list.Add(r);
+                    if (r != null && r.Kind == 1) list.Add(r);
                 }
                 src = list;
             }
@@ -2909,12 +3602,16 @@ namespace KaiAosNotifyClient
                 for (var i = 0; i < _registerHistory.Count; i++)
                 {
                     var r = _registerHistory[i];
-                    if (r != null && !r.Ok) list.Add(r);
+                    if (r != null && r.Kind == 0) list.Add(r);
                 }
                 src = list;
             }
             RegisterHistoryList.ItemsSource = null;
             RegisterHistoryList.ItemsSource = src;
+            var visible = 0;
+            foreach (var _ in src) visible++;
+            UpdateNoMatchesHint(RegisterNoMatchesHint, _registerHistory.Count > 0, visible);
+            UpdateClearButtonsEnabled();
         }
 
         private void ScrollRegisterHistoryToEnd()
@@ -2951,6 +3648,7 @@ namespace KaiAosNotifyClient
                 _activityRows.RemoveAt(0);
             ScrollActivityToEnd();
             MaybeRaiseActivityAlert(lvl);
+            UpdateClearButtonsEnabled();
         }
 
         private void ScrollActivityToEnd()
@@ -2974,6 +3672,170 @@ namespace KaiAosNotifyClient
         {
             _activityRows.Clear();
             RefreshActivityView();
+            UpdateClearButtonsEnabled();
+        }
+
+        private void ActivityList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (IsGridViewHeaderClick(e.OriginalSource as DependencyObject)) return;
+            CopySelectedActivityText();
+        }
+
+        private void ActivityList_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.C || (Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
+                return;
+            if (IsGridViewHeaderClick(e.OriginalSource as DependencyObject)) return;
+            if (CopySelectedActivityText())
+                e.Handled = true;
+        }
+
+        private bool CopySelectedActivityText()
+        {
+            var entry = ActivityList != null ? ActivityList.SelectedItem as ActivityRow : null;
+            if (entry == null || string.IsNullOrEmpty(entry.Text)) return false;
+            TryCopyTextToClipboard(entry.Text, "Copied to clipboard.");
+            return true;
+        }
+
+        private void RegisterHistoryList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (IsGridViewHeaderClick(e.OriginalSource as DependencyObject)) return;
+            CopySelectedRegisterText();
+        }
+
+        private void RegisterHistoryList_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.C || (Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
+                return;
+            if (IsGridViewHeaderClick(e.OriginalSource as DependencyObject)) return;
+            if (CopySelectedRegisterText())
+                e.Handled = true;
+        }
+
+        private bool CopySelectedRegisterText()
+        {
+            var entry = RegisterHistoryList != null ? RegisterHistoryList.SelectedItem as RegisterHistoryRow : null;
+            if (entry == null || string.IsNullOrEmpty(entry.Text)) return false;
+            TryCopyTextToClipboard(entry.Text, "Copied to clipboard.");
+            return true;
+        }
+
+        private static bool IsGridViewHeaderClick(DependencyObject source)
+        {
+            var d = source;
+            while (d != null)
+            {
+                if (d is GridViewColumnHeader) return true;
+                d = VisualTreeHelper.GetParent(d);
+            }
+            return false;
+        }
+
+        private void TryCopyTextToClipboard(string text, string feedback)
+        {
+            try
+            {
+                Clipboard.SetText(text ?? "");
+                if (!string.IsNullOrEmpty(feedback))
+                    AppendActivityRow(null, "info", feedback);
+            }
+            catch { }
+        }
+
+        private void SaveActivityLog_Click(object sender, RoutedEventArgs e)
+        {
+            ExportLogForDay("activity", ClientUiStrings.T("SaveLogTitleActivity"), CollectActivityLogForDay);
+        }
+
+        private void SaveRegisterLog_Click(object sender, RoutedEventArgs e)
+        {
+            ExportLogForDay("register", ClientUiStrings.T("SaveLogTitleRegister"), CollectRegisterLogForDay);
+        }
+
+        private void ClearRegisterLog_Click(object sender, RoutedEventArgs e)
+        {
+            _registerHistory.Clear();
+            ApplyRegisterFilter();
+            UpdateClearButtonsEnabled();
+        }
+
+        private void ExportLogForDay(string filePrefix, string title, Func<DateTime, string> collector)
+        {
+            var dlg = new SaveLogDialog(title, DateTime.Today) { Owner = this };
+            if (dlg.ShowDialog() != true || !dlg.Confirmed) return;
+            var day = dlg.SelectedDay.Date;
+            string text;
+            try { text = collector(day) ?? ""; }
+            catch (Exception ex)
+            {
+                AppendActivityRow(null, "error", ex.Message);
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                AppendActivityRow(null, "warning", ClientUiStrings.T("SaveLogEmpty"));
+                return;
+            }
+            if (dlg.ToClipboard)
+            {
+                try
+                {
+                    Clipboard.SetText(text);
+                    AppendActivityRow(null, "success", string.Format(ClientUiStrings.T("SaveLogCopied"),
+                        SaveLogDialog.FormatDayFileName(filePrefix, day)));
+                }
+                catch (Exception ex)
+                {
+                    AppendActivityRow(null, "error", ex.Message);
+                }
+                return;
+            }
+            var path = SaveLogDialog.PromptSavePath(this, SaveLogDialog.FormatDayFileName(filePrefix, day));
+            if (string.IsNullOrEmpty(path)) return;
+            try
+            {
+                File.WriteAllText(path, text, Encoding.UTF8);
+                AppendActivityRow(null, "success", string.Format(ClientUiStrings.T("SaveLogSaved"), path));
+            }
+            catch (Exception ex)
+            {
+                AppendActivityRow(null, "error", ex.Message);
+            }
+        }
+
+        private string CollectActivityLogForDay(DateTime day)
+        {
+            var sb = new StringBuilder();
+            var dayStart = day.Date;
+            var dayEnd = dayStart.AddDays(1);
+            for (var i = 0; i < _activityRows.Count; i++)
+            {
+                var r = _activityRows[i];
+                if (r == null) continue;
+                if (r.At < dayStart || r.At >= dayEnd) continue;
+                sb.Append(r.At.ToString("yyyy-MM-dd HH:mm:ss"));
+                sb.Append('\t').Append(r.LevelText ?? r.Level ?? "");
+                sb.Append('\t').AppendLine(r.Text ?? "");
+            }
+            return sb.ToString();
+        }
+
+        private string CollectRegisterLogForDay(DateTime day)
+        {
+            var sb = new StringBuilder();
+            var dayStart = day.Date;
+            var dayEnd = dayStart.AddDays(1);
+            for (var i = 0; i < _registerHistory.Count; i++)
+            {
+                var r = _registerHistory[i];
+                if (r == null) continue;
+                if (r.At < dayStart || r.At >= dayEnd) continue;
+                sb.Append(r.At.ToString("yyyy-MM-dd HH:mm:ss"));
+                sb.Append('\t').Append(RegisterResultTextForKind(r.Kind));
+                sb.Append('\t').AppendLine(r.Text ?? "");
+            }
+            return sb.ToString();
         }
 
         // ---------- Activity filter ----------
@@ -3058,6 +3920,14 @@ namespace KaiAosNotifyClient
                 if (_activityView != null) _activityView.Refresh();
             }
             catch { }
+            var visible = 0;
+            if (_activityView != null)
+            {
+                foreach (var _ in _activityView)
+                    visible++;
+            }
+            UpdateNoMatchesHint(ActivityNoMatchesHint, _activityRows.Count > 0, visible);
+            UpdateClearButtonsEnabled();
         }
 
         // ---------- Alert dots + blink ----------
@@ -3425,6 +4295,16 @@ namespace KaiAosNotifyClient
             _keyAllRows.Insert(0, row);
         }
 
+        private void KeysEventsList_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.C || (Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
+                return;
+            var row = KeysEventsList != null ? KeysEventsList.SelectedItem as ClientKeyRow : null;
+            if (row == null || string.IsNullOrEmpty(row.Vin)) return;
+            CopyVin(row.Vin);
+            e.Handled = true;
+        }
+
         private void KeysVinCopyIcon_Loaded(object sender, RoutedEventArgs e)
         {
             UpdateVinCopyIconVisibility(sender as Button);
@@ -3540,10 +4420,50 @@ namespace KaiAosNotifyClient
         private void StatusTimer_Tick(object sender, EventArgs e)
         {
             RefreshTrayStatus();
+            RefreshReconnectStatusUi();
             MaybeAlertOffline();
             UpdateKeysAlert(); // time-based stall detection
             if (TabRegister != null && TabRegister.IsSelected)
                 RefreshRegisterAges();
+        }
+
+        private string BuildReconnectDetailText()
+        {
+            if (_client == null) return ClientUiStrings.T("Reconnecting");
+
+            var secs = 0;
+            var next = _client.NextRetryUtc;
+            if (next != DateTime.MinValue && next > DateTime.UtcNow)
+                secs = (int)Math.Ceiling((next - DateTime.UtcNow).TotalSeconds);
+            if (secs < 0) secs = 0;
+
+            var reason = _client.LastDisconnectReason;
+            if (string.IsNullOrWhiteSpace(reason))
+                reason = ClientUiStrings.T("ReconnectWaiting");
+
+            var attempt = _client.ReconnectAttempt;
+            if (attempt < 1) attempt = 1;
+
+            return string.Format(
+                ClientUiStrings.T("ReconnectDetail"),
+                _client.Host,
+                _client.Port,
+                attempt,
+                secs,
+                reason);
+        }
+
+        private void RefreshReconnectStatusUi()
+        {
+            if (_client == null || _client.IsConnected) return;
+            if (!_wantConnectUi && !_client.WantConnect) return;
+            if (_awaitingServerUpdateReconnect) return;
+
+            var detail = BuildReconnectDetailText();
+            ApplyStatusMode("error", detail);
+            if (StatusText != null)
+                StatusText.ToolTip = detail;
+            SetConnStatus("");
         }
 
         private void MaybeAlertOffline()
@@ -3633,6 +4553,8 @@ namespace KaiAosNotifyClient
             {
                 StatusText.Text = text ?? "";
                 StatusText.Foreground = brush;
+                if (mode != "error" && mode != "fail")
+                    StatusText.ToolTip = null;
             }
         }
 
@@ -3650,12 +4572,25 @@ namespace KaiAosNotifyClient
             _hasServerFooter = false;
             ApplyFooterChrome(false);
             var reconnecting = _client != null && (_client.WantConnect || _wantConnectUi);
-            ApplyStatusMode(reconnecting ? "error" : "stopped",
-                ClientUiStrings.T(reconnecting ? "Reconnecting" : "Offline"));
+            if (reconnecting)
+            {
+                var detail = BuildReconnectDetailText();
+                ApplyStatusMode("error", detail);
+                if (StatusText != null)
+                    StatusText.ToolTip = detail;
+                SetConnStatus("");
+            }
+            else
+            {
+                ApplyStatusMode("stopped", ClientUiStrings.T("Offline"));
+                if (StatusText != null)
+                    StatusText.ToolTip = null;
+            }
             if (NextRunText != null) NextRunText.Text = "";
             if (TokenAgeText != null) TokenAgeText.Text = "";
             ApplyTaggedText(TokenFooterText, "none", "");
             ApplyTaggedText(ServicesFooterText, "none", "");
+            UpdateAosLoginStatus("none");
             _servicesFail = false;
             SyncServicesBlinkTimer();
             SetRenewAlert(false);
@@ -3693,6 +4628,7 @@ namespace KaiAosNotifyClient
             var tokenMode = FooterPart(parts, 4);
             ApplyTaggedText(TokenFooterText, tokenMode, FooterPart(parts, 5));
             SetRenewAlert(tokenMode == "fail" || tokenMode == "error");
+            UpdateAosLoginStatus(tokenMode);
             MaybeDebugTokenSticky(tokenMode, FooterPart(parts, 5));
             var svcMode = FooterPart(parts, 6);
             ApplyTaggedText(ServicesFooterText, svcMode, FooterPart(parts, 7));
@@ -3744,6 +4680,34 @@ namespace KaiAosNotifyClient
             var blMode = FooterPart(parts, 15);
             var blText = FooterPart(parts, 16);
             var authTip = FooterPart(parts, 17);
+            var untilUtcRaw = FooterPart(parts, 18);
+            string untilLocal = null;
+            DateTime untilUtc;
+            if (!string.IsNullOrEmpty(untilUtcRaw) && DateTime.TryParse(untilUtcRaw, null,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out untilUtc))
+                untilLocal = untilUtc.ToLocalTime().ToString("g");
+            _authCooldownUntilLocal = cdMode == "on" ? untilLocal : null;
+
+            if (cdMode == "on")
+            {
+                cdText = untilLocal != null
+                    ? string.Format(ClientUiStrings.T("FooterCooldownOnUntil"), untilLocal)
+                    : ClientUiStrings.T("FooterCooldownOn");
+            }
+            else if (cdMode == "off" || cdText.Length > 0)
+                cdText = ClientUiStrings.T("FooterCooldownOff");
+
+            if (blMode == "on")
+                blText = ClientUiStrings.T("FooterBlockedOn");
+            else if (blMode == "off" || blText.Length > 0)
+                blText = ClientUiStrings.T("FooterBlockedOff");
+
+            var authPanelCd = cdMode == "on"
+                ? (untilLocal != null
+                    ? string.Format(ClientUiStrings.T("AuthCooldownStatusActive"), untilLocal)
+                    : ClientUiStrings.T("AuthCooldownStatusActiveShort"))
+                : null;
+
             if (AuthGuardsFooterText != null)
             {
                 AuthGuardsFooterText.Inlines.Clear();
@@ -3760,13 +4724,14 @@ namespace KaiAosNotifyClient
                     AuthGuardsFooterText.ToolTip = authTip.Length == 0 ? null : authTip;
                 }
             }
-            RefreshAuthGuardsPanel(cdMode == "on", cdText, blMode == "on", blText, authTip);
+            RefreshAuthGuardsPanel(cdMode == "on", authPanelCd, blMode == "on", null, authTip);
             _hasServerFooter = true;
             SetConnStatus("");
         }
 
         private void RefreshAuthGuardsPanel(bool cooldownOn, string cooldownFooterText, bool blockedOn, string blockedFooterText, string tip)
         {
+            var blockedChanged = _authBlockedOn != blockedOn;
             _authCooldownOn = cooldownOn;
             _authBlockedOn = blockedOn;
 
@@ -3806,7 +4771,43 @@ namespace KaiAosNotifyClient
                     ? (ClientUiStrings.T("AuthCooldownExplain") + "\n\n" + ClientUiStrings.T("AuthRegisterBlockedExplain"))
                     : tip;
             }
+            if (ClearAuthCooldownBtn != null)
+            {
+                ClearAuthCooldownBtn.Visibility = cooldownOn ? Visibility.Visible : Visibility.Collapsed;
+                ClearAuthCooldownBtn.IsEnabled = cooldownOn && _client != null && _client.IsConnected
+                    && !_aosAwaitingAck && !_clientUpdateBusy;
+            }
+            if (ClearAuthRegisterBlockedBtn != null)
+            {
+                ClearAuthRegisterBlockedBtn.Visibility = blockedOn ? Visibility.Visible : Visibility.Collapsed;
+                ClearAuthRegisterBlockedBtn.IsEnabled = blockedOn && _client != null && _client.IsConnected
+                    && !_aosAwaitingAck && !_clientUpdateBusy;
+            }
             SyncAuthGuardsBlinkTimer();
+            if (blockedChanged)
+                UpdateAosLoginStatus(_lastTokenMode);
+        }
+
+        private void ClearAuthCooldown_Click(object sender, RoutedEventArgs e)
+        {
+            if (_client == null || !_client.IsConnected)
+            {
+                MessageBox.Show(this, ClientUiStrings.T("AuthGuardClearOffline"),
+                    ClientUiStrings.T("AppTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            SendAosCmd("authClearCooldown");
+        }
+
+        private void ClearAuthRegisterBlocked_Click(object sender, RoutedEventArgs e)
+        {
+            if (_client == null || !_client.IsConnected)
+            {
+                MessageBox.Show(this, ClientUiStrings.T("AuthGuardClearOffline"),
+                    ClientUiStrings.T("AppTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            SendAosCmd("authClearBlocked");
         }
 
         private void SyncAuthGuardsBlinkTimer()
@@ -4059,5 +5060,687 @@ namespace KaiAosNotifyClient
             }
             Application.Current.Shutdown();
         }
+
+        // ---------- Server Settings tab ----------
+
+        private void ApplyServerSettingsTabStrings()
+        {
+            if (SrvGeneralGroup != null) SrvGeneralGroup.Header = ClientUiStrings.T("SettingsGeneral");
+            if (SrvStartupGroup != null) SrvStartupGroup.Header = ClientUiStrings.T("SettingsStartup");
+            if (SrvKeysGroup != null) SrvKeysGroup.Header = ClientUiStrings.T("SettingsKeys");
+            if (SrvAuthGroup != null) SrvAuthGroup.Header = ClientUiStrings.T("SettingsAuth");
+            if (SrvNotifyGroup != null) SrvNotifyGroup.Header = ClientUiStrings.T("SettingsNotifyGroup");
+            if (SrvPathsGroup != null) SrvPathsGroup.Header = ClientUiStrings.T("SettingsPaths");
+            if (SrvLanguageLabel != null) SrvLanguageLabel.Text = ClientUiStrings.T("Language");
+            if (SrvThemeLabel != null) SrvThemeLabel.Text = ClientUiStrings.T("Theme");
+            if (SrvStartWithWindowsCheck != null)
+                SrvStartWithWindowsCheck.Content = ClientUiStrings.T("StartWithWindowsYes");
+            if (SrvMinimizeToTrayCheck != null)
+                SrvMinimizeToTrayCheck.Content = ClientUiStrings.T("MinimizeToTrayYes");
+            if (SrvMinimizeOnCloseCheck != null)
+                SrvMinimizeOnCloseCheck.Content = CheckboxLabel(ClientUiStrings.T("MinimizeOnClose"));
+            if (SrvAutoUpdateCheck != null)
+                SrvAutoUpdateCheck.Content = CheckboxLabel(ClientUiStrings.T("AutoUpdate"));
+            if (SrvKeysRefreshLabel != null) SrvKeysRefreshLabel.Text = ClientUiStrings.T("KeysRefreshSeconds");
+            if (SrvKeysVinTipLabel != null) SrvKeysVinTipLabel.Text = ClientUiStrings.T("KeysVinTipSeconds");
+            if (SrvKeysStallLabel != null) SrvKeysStallLabel.Text = ClientUiStrings.T("KeysStallMinutes");
+            if (SrvKeysBalloonCheck != null) SrvKeysBalloonCheck.Content = ClientUiStrings.T("KeysBalloonOption");
+            if (SrvKeysVinBmwFailOnlyCheck != null) SrvKeysVinBmwFailOnlyCheck.Content = ClientUiStrings.T("KeysVinBmwFailOnly");
+            if (SrvKeysAutoCopyCheck != null) SrvKeysAutoCopyCheck.Content = ClientUiStrings.T("KeysAutoCopyVin");
+            if (SrvKeysStallAlertCheck != null) SrvKeysStallAlertCheck.Content = ClientUiStrings.T("KeysStallAlert");
+            if (SrvBrowserPassHintCheck != null) SrvBrowserPassHintCheck.Content = ClientUiStrings.T("BrowserPassHintOption");
+            if (SrvUseSystemProxyCheck != null) SrvUseSystemProxyCheck.Content = ClientUiStrings.T("UseSystemProxy");
+            if (SrvAuthCooldownLabel != null) SrvAuthCooldownLabel.Text = ClientUiStrings.T("AuthCooldownMinutes");
+            if (SrvAuthBlockAfterLabel != null) SrvAuthBlockAfterLabel.Text = ClientUiStrings.T("AuthRegisterBlockAfter");
+            if (SrvNotifyEnabledCheck != null) SrvNotifyEnabledCheck.Content = ClientUiStrings.T("NotifyServerEnable");
+            if (SrvNotifyPortLabel != null) SrvNotifyPortLabel.Text = ClientUiStrings.T("NotifyServerPort");
+            if (SrvNotifyIpLabel != null) SrvNotifyIpLabel.Text = ClientUiStrings.T("NotifyServerIpLabel");
+            if (SrvPathsKaiConfig != null) SrvPathsKaiConfig.Text = ClientUiStrings.T("SectionConfig");
+            if (SrvConfigPathLabel != null) SrvConfigPathLabel.Text = ClientUiStrings.T("ConfigPath");
+            if (SrvPathsKeyReader != null) SrvPathsKeyReader.Text = ClientUiStrings.T("SettingsKeyReader");
+            if (SrvDataBinLabel != null) SrvDataBinLabel.Text = ClientUiStrings.T("KeyReaderDataBin");
+            if (SrvKrLogPathLabel != null) SrvKrLogPathLabel.Text = ClientUiStrings.T("KeyReaderLogPath");
+            if (SrvEncPathLabel != null) SrvEncPathLabel.Text = ClientUiStrings.T("KeyReaderEncPath");
+            if (SrvKrLogLevelLabel != null) SrvKrLogLevelLabel.Text = ClientUiStrings.T("KeyReaderLogLevel");
+            if (SrvPathsKaiData != null) SrvPathsKaiData.Text = ClientUiStrings.T("SettingsKaiData");
+            if (SrvUploaderLogLabel != null) SrvUploaderLogLabel.Text = ClientUiStrings.T("KeysUploaderLogDir");
+            if (SrvKaiLogLabel != null) SrvKaiLogLabel.Text = ClientUiStrings.T("KeysKaiLogDir");
+            if (SrvSqliteLabel != null) SrvSqliteLabel.Text = ClientUiStrings.T("KeysSqlitePath");
+            if (SrvExportBtn != null) SrvExportBtn.Content = ClientUiStrings.T("ExportSettings");
+            if (SrvImportBtn != null) SrvImportBtn.Content = ClientUiStrings.T("ImportSettings");
+            if (SrvSettingsSaveBtn != null) SrvSettingsSaveBtn.Content = ClientUiStrings.T("ServerSettingsSave");
+            if (SrvSettingsResetBtn != null) SrvSettingsResetBtn.Content = ClientUiStrings.T("ServerSettingsReset");
+            if (SrvNotifySendToLabel != null) SrvNotifySendToLabel.Text = ClientUiStrings.T("NotifySendTo");
+            if (SrvNotifyRefreshBtn != null) SrvNotifyRefreshBtn.Content = ClientUiStrings.T("NotifyRefreshClients");
+            if (SrvNotifyTestVinBtn != null) SrvNotifyTestVinBtn.Content = ClientUiStrings.T("NotifyTestVin");
+            if (SrvNotifyTestInfoBtn != null) SrvNotifyTestInfoBtn.Content = ClientUiStrings.T("NotifyTestInfo");
+            if (SrvNotifyTestWarningBtn != null) SrvNotifyTestWarningBtn.Content = ClientUiStrings.T("NotifyTestWarning");
+            if (SrvNotifyTestErrorBtn != null) SrvNotifyTestErrorBtn.Content = ClientUiStrings.T("NotifyTestError");
+            InitSrvKrLogLevelCombo();
+            InitSrvThemeCombo();
+        }
+
+        private void InitSrvLanguageCombo()
+        {
+            if (SrvLanguageCombo == null) return;
+            SrvLanguageCombo.ItemsSource = LanguageCombo != null ? LanguageCombo.ItemsSource : null;
+        }
+
+        private void InitSrvThemeCombo()
+        {
+            if (SrvThemeCombo == null) return;
+            var selected = SrvThemeCombo.SelectedValue as string;
+            SrvThemeCombo.ItemsSource = new List<LangItem>
+            {
+                new LangItem { Name = ClientUiStrings.T("ThemeSystem"), Code = "system" },
+                new LangItem { Name = ClientUiStrings.T("ThemeDay"), Code = "day" },
+                new LangItem { Name = ClientUiStrings.T("ThemeNight"), Code = "night" }
+            };
+            if (!string.IsNullOrEmpty(selected))
+                SrvThemeCombo.SelectedValue = selected;
+        }
+
+        private void InitSrvKrLogLevelCombo()
+        {
+            if (SrvKrLogLevelCombo == null) return;
+            var selected = SrvKrLogLevelCombo.SelectedValue as string;
+            SrvKrLogLevelCombo.ItemsSource = new List<LangItem>
+            {
+                new LangItem { Name = ClientUiStrings.T("KeyReaderLog0"), Code = "0" },
+                new LangItem { Name = ClientUiStrings.T("KeyReaderLog1"), Code = "1" },
+                new LangItem { Name = ClientUiStrings.T("KeyReaderLog2"), Code = "2" },
+                new LangItem { Name = ClientUiStrings.T("KeyReaderLog3"), Code = "3" },
+                new LangItem { Name = ClientUiStrings.T("KeyReaderLog4"), Code = "4" }
+            };
+            if (!string.IsNullOrEmpty(selected))
+                SrvKrLogLevelCombo.SelectedValue = selected;
+        }
+
+        private static bool KvFlag(Dictionary<string, string> map, string key, bool fallback)
+        {
+            string v;
+            if (map == null || !map.TryGetValue(key, out v) || string.IsNullOrEmpty(v)) return fallback;
+            return v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string KvStr(Dictionary<string, string> map, string key, string fallback)
+        {
+            string v;
+            if (map == null || !map.TryGetValue(key, out v) || v == null) return fallback;
+            return v;
+        }
+
+        private void ApplyServerSettingsSync(string payload)
+        {
+            var map = NotifyMessage.ParseKvMap(payload);
+            if (map.Count == 0) return;
+
+            if (_srvSettingsDirty
+                && _lastServerSettingsMap != null
+                && _lastServerSettingsMap.Count > 0
+                && !ServerSettingsMapsEqual(_lastServerSettingsMap, map))
+            {
+                _conflictServerSettingsMap = new Dictionary<string, string>(map, StringComparer.OrdinalIgnoreCase);
+                _srvSettingsConflict = true;
+                SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsConflict"), false);
+                UpdateSrvSettingsResetEnabled();
+                return;
+            }
+
+            ApplyServerSettingsMapToUi(map, true);
+        }
+
+        private void ApplyServerSettingsMapToUi(Dictionary<string, string> map, bool markSynced)
+        {
+            if (map == null || map.Count == 0) return;
+            _loadingSrvSettings = true;
+            try
+            {
+                if (SrvLanguageCombo != null) SrvLanguageCombo.SelectedValue = KvStr(map, "language", "en");
+                if (SrvThemeCombo != null) SrvThemeCombo.SelectedValue = KvStr(map, "themeMode", "system");
+                if (SrvStartWithWindowsCheck != null) SrvStartWithWindowsCheck.IsChecked = KvFlag(map, "startWithWindows", false);
+                if (SrvMinimizeToTrayCheck != null) SrvMinimizeToTrayCheck.IsChecked = KvFlag(map, "minimizeToTray", false);
+                if (SrvMinimizeOnCloseCheck != null) SrvMinimizeOnCloseCheck.IsChecked = KvFlag(map, "minimizeOnClose", true);
+                if (SrvAutoUpdateCheck != null) SrvAutoUpdateCheck.IsChecked = KvFlag(map, "autoUpdate", true);
+                if (SrvKeysRefreshBox != null) SrvKeysRefreshBox.Text = KvStr(map, "keysRefreshSeconds", "3");
+                if (SrvKeysVinTipBox != null) SrvKeysVinTipBox.Text = KvStr(map, "keysVinTipSeconds", "10");
+                if (SrvKeysStallBox != null) SrvKeysStallBox.Text = KvStr(map, "keysStallMinutes", "2");
+                if (SrvKeysBalloonCheck != null) SrvKeysBalloonCheck.IsChecked = KvFlag(map, "keysBalloon", true);
+                if (SrvKeysVinBmwFailOnlyCheck != null) SrvKeysVinBmwFailOnlyCheck.IsChecked = KvFlag(map, "keysVinBmwFailOnly", false);
+                if (SrvKeysAutoCopyCheck != null) SrvKeysAutoCopyCheck.IsChecked = KvFlag(map, "keysAutoCopyVin", false);
+                if (SrvKeysStallAlertCheck != null) SrvKeysStallAlertCheck.IsChecked = KvFlag(map, "keysStallAlert", true);
+                if (SrvBrowserPassHintCheck != null) SrvBrowserPassHintCheck.IsChecked = KvFlag(map, "browserPassHint", true);
+                if (SrvUseSystemProxyCheck != null) SrvUseSystemProxyCheck.IsChecked = KvFlag(map, "useSystemProxy", false);
+                if (SrvAuthCooldownBox != null) SrvAuthCooldownBox.Text = KvStr(map, "authCooldownMinutes", "60");
+                if (SrvAuthBlockAfterBox != null) SrvAuthBlockAfterBox.Text = KvStr(map, "authRegisterBlockAfter", "3");
+                if (SrvNotifyEnabledCheck != null) SrvNotifyEnabledCheck.IsChecked = KvFlag(map, "notifyEnabled", false);
+                if (SrvNotifyPortBox != null) SrvNotifyPortBox.Text = KvStr(map, "notifyPort", "17890");
+                if (SrvNotifyIpBox != null)
+                {
+                    SrvNotifyIpBox.Text = KvStr(map, "notifyIps", "");
+                    SizeTextBoxToContent(SrvNotifyIpBox);
+                }
+                if (SrvConfigPathBox != null) SrvConfigPathBox.Text = KvStr(map, "configPath", "");
+                if (SrvDataBinBox != null) SrvDataBinBox.Text = KvStr(map, "keyReaderDataBin", "");
+                if (SrvKrLogPathBox != null) SrvKrLogPathBox.Text = KvStr(map, "keyReaderLogPath", "");
+                if (SrvEncPathBox != null) SrvEncPathBox.Text = KvStr(map, "keyReaderEncPath", "");
+                if (SrvKrLogLevelCombo != null) SrvKrLogLevelCombo.SelectedValue = KvStr(map, "keyReaderLogLevel", "4");
+                if (SrvUploaderLogBox != null) SrvUploaderLogBox.Text = KvStr(map, "keysUploaderLogDir", "");
+                if (SrvKaiLogBox != null) SrvKaiLogBox.Text = KvStr(map, "keysKaiLogDir", "");
+                if (SrvSqliteBox != null) SrvSqliteBox.Text = KvStr(map, "keysSqlitePath", "");
+
+                if (_settings != null)
+                {
+                    int n;
+                    if (int.TryParse(KvStr(map, "authRegisterBlockAfter", "3"), out n) && n >= 1)
+                    {
+                        _settings.AuthRegisterBlockAfter = n > 10 ? 10 : n;
+                        try { _settings.Save(); } catch { }
+                    }
+                }
+                _lastServerSettingsMap = new Dictionary<string, string>(map, StringComparer.OrdinalIgnoreCase);
+                _conflictServerSettingsMap = null;
+                _srvSettingsConflict = false;
+                MarkSrvSettingsDirty(false);
+                if (markSynced)
+                    SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsSynced"), true);
+                UpdateSrvSettingsResetEnabled();
+            }
+            finally
+            {
+                _loadingSrvSettings = false;
+            }
+        }
+
+        private static bool ServerSettingsMapsEqual(Dictionary<string, string> a, Dictionary<string, string> b)
+        {
+            if (a == null && b == null) return true;
+            if (a == null || b == null) return false;
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var k in a.Keys) keys.Add(k);
+            foreach (var k in b.Keys) keys.Add(k);
+            foreach (var key in keys)
+            {
+                if (string.Equals(key, "notifyIps", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                string va;
+                string vb;
+                a.TryGetValue(key, out va);
+                b.TryGetValue(key, out vb);
+                if (!string.Equals(va ?? "", vb ?? "", StringComparison.Ordinal))
+                    return false;
+            }
+            return true;
+        }
+
+        private void ClearSrvSettingsConflict()
+        {
+            _srvSettingsConflict = false;
+            _conflictServerSettingsMap = null;
+        }
+
+        private void SrvSettingsReset_Click(object sender, RoutedEventArgs e)
+        {
+            // Prefer reloading the newer conflict snapshot when present.
+            var map = _srvSettingsConflict && _conflictServerSettingsMap != null && _conflictServerSettingsMap.Count > 0
+                ? _conflictServerSettingsMap
+                : _lastServerSettingsMap;
+            if (map == null || map.Count == 0)
+            {
+                UpdateSrvSettingsResetEnabled();
+                SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsResetNone"), false);
+                return;
+            }
+            ClearSrvSettingsConflict();
+            ApplyServerSettingsMapToUi(map, true);
+        }
+
+        private sealed class SrvNotifySendTarget
+        {
+            public int ClientId;
+            public string Label { get; set; }
+        }
+
+        private void ApplyNotifyClientsList(string payload)
+        {
+            if (SrvNotifySendToCombo == null) return;
+            var prevId = -1;
+            var prev = SrvNotifySendToCombo.SelectedItem as SrvNotifySendTarget;
+            if (prev != null) prevId = prev.ClientId;
+
+            var map = NotifyMessage.ParseKvMap(payload);
+            var items = new List<SrvNotifySendTarget>();
+            string allLabel;
+            if (!map.TryGetValue("0", out allLabel) || string.IsNullOrEmpty(allLabel))
+                allLabel = ClientUiStrings.T("NotifyAllClients");
+            items.Add(new SrvNotifySendTarget { ClientId = 0, Label = allLabel });
+            foreach (var kv in map)
+            {
+                int id;
+                if (!int.TryParse(kv.Key, out id) || id <= 0) continue;
+                items.Add(new SrvNotifySendTarget { ClientId = id, Label = kv.Value ?? ("#" + id) });
+            }
+            items.Sort((a, b) =>
+            {
+                if (a.ClientId == 0) return -1;
+                if (b.ClientId == 0) return 1;
+                return a.ClientId.CompareTo(b.ClientId);
+            });
+
+            SrvNotifySendToCombo.ItemsSource = items;
+            SrvNotifySendTarget select = items[0];
+            if (prevId > 0)
+            {
+                for (var i = 0; i < items.Count; i++)
+                {
+                    if (items[i].ClientId == prevId)
+                    {
+                        select = items[i];
+                        break;
+                    }
+                }
+            }
+            SrvNotifySendToCombo.SelectedItem = select;
+            SizeComboToLongestLabel(SrvNotifySendToCombo, items.ConvertAll(it => it.Label));
+        }
+
+        private void SrvNotifyRefresh_Click(object sender, RoutedEventArgs e)
+        {
+            RequestNotifyClients();
+        }
+
+        private void SrvNotifyTestVin_Click(object sender, RoutedEventArgs e)
+        {
+            SendSrvNotifyTest("vin");
+        }
+
+        private void SrvNotifyTestInfo_Click(object sender, RoutedEventArgs e)
+        {
+            SendSrvNotifyTest("info");
+        }
+
+        private void SrvNotifyTestWarning_Click(object sender, RoutedEventArgs e)
+        {
+            SendSrvNotifyTest("warning");
+        }
+
+        private void SrvNotifyTestError_Click(object sender, RoutedEventArgs e)
+        {
+            SendSrvNotifyTest("error");
+        }
+
+        private void SendSrvNotifyTest(string kind)
+        {
+            if (_client == null || !_client.IsConnected)
+            {
+                var offline = ClientUiStrings.T("TipAosOffline");
+                SetNotifyTestResult(offline, true);
+                AppendActivityRow(null, "warning", offline);
+                return;
+            }
+            SetNotifyTestResult(ClientUiStrings.T("NotifyTestSending"), false);
+            var target = SrvNotifySendToCombo != null
+                ? SrvNotifySendToCombo.SelectedItem as SrvNotifySendTarget
+                : null;
+            var targetId = target != null ? target.ClientId : 0;
+            try
+            {
+                var ok = _client.Send(new NotifyMessage
+                {
+                    Kind = "notifyTest",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = (kind ?? "info") + "|" + targetId
+                });
+                if (!ok)
+                {
+                    var fail = ClientUiStrings.T("AosSyncSendFail");
+                    SetNotifyTestResult(fail, true);
+                    AppendActivityRow(null, "error", fail);
+                }
+            }
+            catch (Exception ex)
+            {
+                var fail = ex.Message ?? "notifyTest";
+                SetNotifyTestResult(fail, true);
+                AppendActivityRow(null, "error", fail);
+            }
+        }
+
+        private void HandleNotifyTestAck(NotifyMessage msg)
+        {
+            var level = (msg.Level ?? "").Trim().ToLowerInvariant();
+            var text = msg.Text ?? "";
+            if (level == "error")
+            {
+                var err = string.IsNullOrEmpty(text)
+                    ? ClientUiStrings.T("NotifyTestNoClients")
+                    : text;
+                SetNotifyTestResult(err, true);
+                AppendActivityRow(null, "warning", err);
+                return;
+            }
+            if (!string.IsNullOrEmpty(text))
+                SetNotifyTestResult(text, false);
+        }
+
+        private void SetNotifyTestResult(string text, bool error)
+        {
+            if (NotifyTestResultText == null) return;
+            NotifyTestResultText.Text = text ?? "";
+            NotifyTestResultText.Visibility = string.IsNullOrEmpty(NotifyTestResultText.Text)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            NotifyTestResultText.Foreground = error ? _footerError : _footerMuted;
+        }
+
+        private Dictionary<string, string> CaptureServerSettingsMap()
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            map["language"] = (SrvLanguageCombo != null ? SrvLanguageCombo.SelectedValue as string : null) ?? "en";
+            map["themeMode"] = (SrvThemeCombo != null ? SrvThemeCombo.SelectedValue as string : null) ?? "system";
+            map["logVerbose"] = "1";
+            map["startWithWindows"] = SrvStartWithWindowsCheck != null && SrvStartWithWindowsCheck.IsChecked == true ? "1" : "0";
+            map["minimizeToTray"] = SrvMinimizeToTrayCheck != null && SrvMinimizeToTrayCheck.IsChecked == true ? "1" : "0";
+            map["minimizeOnClose"] = SrvMinimizeOnCloseCheck != null && SrvMinimizeOnCloseCheck.IsChecked == true ? "1" : "0";
+            map["autoUpdate"] = SrvAutoUpdateCheck != null && SrvAutoUpdateCheck.IsChecked == true ? "1" : "0";
+            map["keysRefreshSeconds"] = SrvKeysRefreshBox != null ? (SrvKeysRefreshBox.Text ?? "3").Trim() : "3";
+            map["keysVinTipSeconds"] = SrvKeysVinTipBox != null ? (SrvKeysVinTipBox.Text ?? "10").Trim() : "10";
+            map["keysStallMinutes"] = SrvKeysStallBox != null ? (SrvKeysStallBox.Text ?? "2").Trim() : "2";
+            map["keysBalloon"] = SrvKeysBalloonCheck != null && SrvKeysBalloonCheck.IsChecked == true ? "1" : "0";
+            map["keysVinBmwFailOnly"] = SrvKeysVinBmwFailOnlyCheck != null && SrvKeysVinBmwFailOnlyCheck.IsChecked == true ? "1" : "0";
+            map["keysAutoCopyVin"] = SrvKeysAutoCopyCheck != null && SrvKeysAutoCopyCheck.IsChecked == true ? "1" : "0";
+            map["keysStallAlert"] = SrvKeysStallAlertCheck != null && SrvKeysStallAlertCheck.IsChecked == true ? "1" : "0";
+            map["browserPassHint"] = SrvBrowserPassHintCheck != null && SrvBrowserPassHintCheck.IsChecked == true ? "1" : "0";
+            map["useSystemProxy"] = SrvUseSystemProxyCheck != null && SrvUseSystemProxyCheck.IsChecked == true ? "1" : "0";
+            map["authCooldownMinutes"] = SrvAuthCooldownBox != null ? (SrvAuthCooldownBox.Text ?? "60").Trim() : "60";
+            map["authRegisterBlockAfter"] = SrvAuthBlockAfterBox != null ? (SrvAuthBlockAfterBox.Text ?? "3").Trim() : "3";
+            map["keyReaderLogLevel"] = (SrvKrLogLevelCombo != null ? SrvKrLogLevelCombo.SelectedValue as string : null) ?? "4";
+            return map;
+        }
+
+        private void MarkSrvSettingsDirty(bool dirty)
+        {
+            _srvSettingsDirty = dirty;
+            UpdateSrvSettingsActionButtons();
+        }
+
+        private void UpdateSrvSettingsResetEnabled()
+        {
+            UpdateSrvSettingsActionButtons();
+        }
+
+        private void UpdateSrvSettingsActionButtons()
+        {
+            var online = _client != null && _client.IsConnected;
+            var hasMap = _lastServerSettingsMap != null && _lastServerSettingsMap.Count > 0;
+            if (SrvSettingsSaveBtn != null)
+            {
+                SrvSettingsSaveBtn.IsEnabled = online && _srvSettingsDirty;
+                SrvSettingsSaveBtn.FontWeight = _srvSettingsDirty ? FontWeights.SemiBold : FontWeights.Normal;
+            }
+            if (SrvSettingsResetBtn != null)
+                SrvSettingsResetBtn.IsEnabled = online && _srvSettingsDirty && hasMap;
+        }
+
+        private void UpdateServerSettingsEnabled()
+        {
+            var online = _client != null && _client.IsConnected;
+            var editable = new UIElement[]
+            {
+                SrvLanguageCombo, SrvThemeCombo, SrvExportBtn, SrvImportBtn,
+                SrvStartWithWindowsCheck, SrvMinimizeToTrayCheck, SrvMinimizeOnCloseCheck, SrvAutoUpdateCheck,
+                SrvKeysRefreshBox, SrvKeysVinTipBox, SrvKeysStallBox,
+                SrvKeysBalloonCheck, SrvKeysVinBmwFailOnlyCheck, SrvKeysAutoCopyCheck, SrvKeysStallAlertCheck,
+                SrvBrowserPassHintCheck, SrvUseSystemProxyCheck, SrvAuthCooldownBox, SrvAuthBlockAfterBox,
+                SrvKrLogLevelCombo,
+                SrvNotifySendToCombo, SrvNotifyRefreshBtn,
+                SrvNotifyTestVinBtn, SrvNotifyTestInfoBtn, SrvNotifyTestWarningBtn, SrvNotifyTestErrorBtn
+            };
+            for (var i = 0; i < editable.Length; i++)
+            {
+                if (editable[i] != null)
+                    editable[i].IsEnabled = online;
+            }
+            UpdateSrvSettingsActionButtons();
+        }
+
+        private void SetSrvSettingsStatus(string text, bool syncedOk)
+        {
+            var hasText = !string.IsNullOrEmpty(text);
+            if (SrvSettingsStatus != null)
+            {
+                SrvSettingsStatus.Text = text ?? "";
+                SrvSettingsStatus.Foreground = syncedOk
+                    ? new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32))
+                    : (TryFindResource("TextMutedBrush") as Brush
+                       ?? new SolidColorBrush(Color.FromRgb(0x8C, 0x8C, 0x8C)));
+            }
+            if (SrvSettingsOkMark != null)
+                SrvSettingsOkMark.Visibility = syncedOk ? Visibility.Visible : Visibility.Collapsed;
+            if (SrvSettingsPendingMark != null)
+                SrvSettingsPendingMark.Visibility = (!syncedOk && hasText) ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void SrvSettings_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_loadingSrvSettings) return;
+            MarkSrvSettingsDirty(true);
+            SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
+        }
+
+        private void SrvSettingsField_LostFocus(object sender, RoutedEventArgs e)
+        {
+            SrvSettings_Changed(sender, e);
+        }
+
+        private void SrvSettingsSave_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_srvSettingsDirty) return;
+            if (_client == null || !_client.IsConnected)
+            {
+                SetSrvSettingsStatus(ClientUiStrings.T("AosSaveOffline"), false);
+                return;
+            }
+
+            if (_srvSettingsConflict)
+            {
+                var conflictChoice = SettingsConflictDialog.Show(this);
+                if (conflictChoice == SettingsConflictChoice.Cancel)
+                    return;
+                if (conflictChoice == SettingsConflictChoice.Reload)
+                {
+                    // Reload server snapshot; discard local draft.
+                    var reload = _conflictServerSettingsMap;
+                    ClearSrvSettingsConflict();
+                    if (reload != null && reload.Count > 0)
+                        ApplyServerSettingsMapToUi(reload, true);
+                    else
+                    {
+                        MarkSrvSettingsDirty(false);
+                        SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsSynced"), true);
+                        UpdateSrvSettingsResetEnabled();
+                    }
+                    return;
+                }
+                // Overwrite — fall through and send local UI.
+            }
+            else
+            {
+                var confirm = MessageBox.Show(this, ClientUiStrings.T("ServerSettingsSaveConfirm"),
+                    ClientUiStrings.T("AppTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (confirm != MessageBoxResult.Yes)
+                    return;
+            }
+
+            try
+            {
+                var payload = NotifyMessage.EncodeKvMap(CaptureServerSettingsMap());
+                var ok = _client.Send(new NotifyMessage
+                {
+                    Kind = "settingsApply",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = payload
+                });
+                if (!ok)
+                {
+                    MarkSrvSettingsDirty(true);
+                    SetSrvSettingsStatus(ClientUiStrings.T("AosSyncSendFail"), false);
+                    return;
+                }
+                ClearSrvSettingsConflict();
+                MarkSrvSettingsDirty(false);
+                SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsSaving"), false);
+                _awaitingSettingsApply = true;
+                BeginAosAckWait();
+            }
+            catch (Exception ex)
+            {
+                _awaitingSettingsApply = false;
+                MarkSrvSettingsDirty(true);
+                SetSrvSettingsStatus(ex.Message, false);
+            }
+        }
+
+        private void SrvExport_Click(object sender, RoutedEventArgs e)
+        {
+            if (_client == null || !_client.IsConnected)
+            {
+                MessageBox.Show(this, ClientUiStrings.T("ExportOffline"), "KAI - AOS Renew - Client",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            try
+            {
+                var ok = _client.Send(new NotifyMessage
+                {
+                    Kind = "settingsExportReq",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = ""
+                });
+                if (!ok)
+                {
+                    MessageBox.Show(this, ClientUiStrings.T("AosSyncSendFail"), "KAI - AOS Renew - Client",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(ClientUiStrings.T("ExportFail"), ex.Message),
+                    "KAI - AOS Renew - Client", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void HandleSettingsExportPayload(string xml)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(xml))
+                {
+                    MessageBox.Show(this, string.Format(ClientUiStrings.T("ExportFail"), "empty"),
+                        "KAI - AOS Renew - Client", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                var dlg = new SaveFileDialog();
+                dlg.Filter = "XML settings|*.xml|All|*.*";
+                dlg.FileName = "KaiAosRenew-settings.xml";
+                dlg.Title = ClientUiStrings.T("ExportTitle");
+                if (dlg.ShowDialog(this) != true) return;
+                File.WriteAllText(dlg.FileName, xml, Encoding.UTF8);
+                AppendActivityRow(null, "success", string.Format(ClientUiStrings.T("ExportOk"), dlg.FileName));
+                SetSrvSettingsStatus(string.Format(ClientUiStrings.T("ExportOk"), dlg.FileName), false);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(ClientUiStrings.T("ExportFail"), ex.Message),
+                    "KAI - AOS Renew - Client", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void SrvImport_Click(object sender, RoutedEventArgs e)
+        {
+            if (_client == null || !_client.IsConnected)
+            {
+                MessageBox.Show(this, ClientUiStrings.T("ImportOffline"), "KAI - AOS Renew - Client",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            try
+            {
+                var dlg = new OpenFileDialog();
+                dlg.Filter = "XML settings|*.xml|All|*.*";
+                dlg.Title = ClientUiStrings.T("ImportTitle");
+                if (dlg.ShowDialog(this) != true) return;
+                var xml = File.ReadAllText(dlg.FileName);
+                if (string.IsNullOrWhiteSpace(xml))
+                {
+                    MessageBox.Show(this, string.Format(ClientUiStrings.T("ImportFail"), "empty"),
+                        "KAI - AOS Renew - Client", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                var ok = _client.Send(new NotifyMessage
+                {
+                    Kind = "settingsImport",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = xml
+                });
+                if (!ok)
+                {
+                    MessageBox.Show(this, ClientUiStrings.T("AosSyncSendFail"), "KAI - AOS Renew - Client",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                _awaitingSettingsImport = true;
+                SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsSaving"), false);
+                BeginAosAckWait();
+            }
+            catch (Exception ex)
+            {
+                _awaitingSettingsImport = false;
+                MessageBox.Show(this, string.Format(ClientUiStrings.T("ImportFail"), ex.Message),
+                    "KAI - AOS Renew - Client", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void ActivityList_SizeChanged(object sender, EventArgs e)
+        {
+            ResizeActivityMessageColumn();
+        }
+
+        private void ResizeActivityMessageColumn()
+        {
+            if (ActivityList == null || ActivityColText == null) return;
+            var width = ActivityList.ActualWidth;
+            if (width <= 0) return;
+            const double timeW = 120;
+            const double levelW = 70;
+            const double pad = 36;
+            var msgW = width - timeW - levelW - pad;
+            if (msgW < 120) msgW = 120;
+            ActivityColText.Width = msgW;
+        }
+
+        private void RegisterHistoryList_SizeChanged(object sender, EventArgs e)
+        {
+            ResizeRegisterDetailColumn();
+        }
+
+        private void ResizeRegisterDetailColumn()
+        {
+            if (RegisterHistoryList == null || RegisterColDetail == null) return;
+            var width = RegisterHistoryList.ActualWidth;
+            if (width <= 0) return;
+            const double timeW = 140;
+            const double resultW = 70;
+            const double ageW = 110;
+            const double pad = 36;
+            var detailW = width - timeW - resultW - ageW - pad;
+            if (detailW < 120) detailW = 120;
+            RegisterColDetail.Width = detailW;
+        }
+
     }
 }

@@ -4,6 +4,13 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.16] - 2026-11-18
+
+- Keys: I-level parse for all series families (`[A-Z][0-9A-F]{3}`), ASCII fallback; paint/upholstery prefer match near VIN
+- AOS: “Changed — click Save.” clears when email/password are reverted (server + client)
+- Settings: Notify This PC IP looks disabled; Open for ENC / KeyUploader / KAI logs; Paths Browse then Open on server
+- UX: Settings conflict Reload/Overwrite/Cancel; Connect/Disconnect plug icons; AOS dirty under Save; cooldown until in footer; RO strings polish
+
 ## [1.2.15] - 2026-11-16
 
 - Setup.exe (server + client): pack with app.ico so installers show the KAI icon in Explorer

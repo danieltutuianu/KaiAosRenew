@@ -133,12 +133,15 @@ namespace KaiAosRenew
 
         /// <summary>
         /// Download and apply a previously peeked update (footer Update button).
+        /// <paramref name="progress"/> receives stage (downloading/installing/restarting) and percent 0–100
+        /// (-1 when percent is not applicable).
         /// </summary>
         public static async Task ApplyUpdateAsync(
             Window owner,
             UpdateInfo update,
             Func<string, string> t,
-            bool prompt)
+            bool prompt,
+            Action<string, int> progress = null)
         {
             if (t == null) t = key => key;
             if (update == null) return;
@@ -155,7 +158,20 @@ namespace KaiAosRenew
             }
 
             var mgr = CreateManager();
-            await mgr.DownloadUpdatesAsync(update).ConfigureAwait(true);
+            Action<string, int> report = (stage, pct) =>
+            {
+                if (progress == null) return;
+                if (owner != null && !owner.Dispatcher.CheckAccess())
+                {
+                    owner.Dispatcher.BeginInvoke(new Action(() => progress(stage, pct)));
+                    return;
+                }
+                progress(stage, pct);
+            };
+            report("downloading", 0);
+            await mgr.DownloadUpdatesAsync(update, percent => report("downloading", percent)).ConfigureAwait(true);
+            report("installing", 100);
+            report("restarting", -1);
             mgr.ApplyUpdatesAndRestart(update);
         }
 

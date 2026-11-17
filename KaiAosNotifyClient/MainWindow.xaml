@@ -61,13 +61,13 @@
             </Grid.RowDefinitions>
             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
               <Button x:Name="KeysRefreshBtn" Content="Refresh" Style="{DynamicResource BeigeButton}"
-                      Click="KeysRefresh_Click" MinWidth="90" Margin="0,0,8,0" />
+                      Click="KeysRefresh_Click" MinWidth="90" Margin="0,0,8,0"  Tag="{DynamicResource IconRefresh}" />
               <Button x:Name="KeysClearBtn" Content="Clear" Style="{DynamicResource BeigeButton}"
-                      Click="KeysClear_Click" MinWidth="80" Margin="0,0,8,0" />
+                      Click="KeysClear_Click" MinWidth="80" Margin="0,0,8,0"  Tag="{DynamicResource IconClear}" />
               <Button x:Name="KeysRetryBmwBtn" Content="Retry BMW" Style="{DynamicResource BeigeButton}"
                       Click="KeysRetryBmw_Click" MinWidth="100" Margin="0,0,8,0"
                       IsEnabled="False"
-                      ToolTip="Ask the server to re-send the last key file to BMW Server" />
+                      ToolTip="Ask the server to re-send the last key file to BMW Server"  Tag="{DynamicResource IconRetry}" />
               <TextBlock x:Name="KeysFilterLabel" Text="Filter:" VerticalAlignment="Center" Margin="8,0,6,0"
                          Style="{DynamicResource FieldLabel}" />
               <ComboBox x:Name="KeysFilterCombo" Width="120" VerticalAlignment="Center"
@@ -80,13 +80,19 @@
                        ToolTip="VIN / paint / I-level"
                        TextChanged="KeysSearchBox_TextChanged" />
             </StackPanel>
-            <TextBlock x:Name="KeysEventsSection" Grid.Row="1" Text="Recent key activity:" Margin="0,0,0,4"
-                       Style="{DynamicResource SectionText}" />
+            <StackPanel Grid.Row="1">
+              <TextBlock x:Name="KeysEventsSection" Text="Recent key activity:" Margin="0,0,0,4"
+                         Style="{DynamicResource SectionText}" />
+              <TextBlock x:Name="KeysNoMatchesHint" Text="No matches — clear filter"
+                         Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                         Margin="0,0,0,4" Visibility="Collapsed" />
+            </StackPanel>
             <ListView x:Name="KeysEventsList" Grid.Row="2"
                       BorderBrush="{DynamicResource FieldBorderBrush}" BorderThickness="1"
                       Background="{DynamicResource FieldBgBrush}" FontSize="12"
                       ScrollViewer.VerticalScrollBarVisibility="Auto"
-                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                      PreviewKeyDown="KeysEventsList_PreviewKeyDown">
               <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem" BasedOn="{StaticResource KaiListViewItem}">
                   <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -117,7 +123,7 @@
                       <DataTemplate>
                         <StackPanel Orientation="Horizontal">
                           <Button Padding="0" Margin="0,0,4,0" Width="18" Height="18"
-                                  FontFamily="Segoe MDL2 Assets" FontSize="11" Content="&#xE8C8;"
+                                  FontSize="11" Content="" Tag="{DynamicResource IconCopy}"
                                   Cursor="Hand" Focusable="False"
                                   Background="Transparent" BorderThickness="0"
                                   Loaded="KeysVinCopyIcon_Loaded"
@@ -177,74 +183,105 @@
                        Cursor="Hand" MouseLeftButtonDown="RenewTabAlertDot_Click" />
             </StackPanel>
           </TabItem.Header>
-          <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="4"
-                        Background="{DynamicResource WindowBgBrush}">
-            <Grid Background="{DynamicResource WindowBgBrush}">
+          <Grid Margin="4" Background="{DynamicResource WindowBgBrush}">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*" MinHeight="48" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" MinHeight="24" />
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" HorizontalAlignment="Center" Width="480" MaxWidth="520" VerticalAlignment="Center">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.15*" MinWidth="360" />
-                <ColumnDefinition Width="36" />
+                <ColumnDefinition Width="130" />
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
-              <StackPanel Grid.Column="0">
-                <TextBlock x:Name="AosSectionSchedule" Text="Renew schedule:" Style="{DynamicResource SectionText}"
-                           Margin="0,0,0,10" />
-                <Grid Margin="0,0,0,8">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="150" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock x:Name="AosIntervalLabel" Style="{DynamicResource FieldLabel}" Text="Interval (hours):" VerticalAlignment="Center" />
-                  <TextBox x:Name="AosIntervalBox" Grid.Column="1" Width="80" HorizontalAlignment="Left"
-                           Style="{DynamicResource KaiTextBox}" Text="1"
-                           TextChanged="AosField_TextChanged" LostFocus="AosField_LostFocus" />
-                </Grid>
-                <TextBlock x:Name="AosSyncStatusText" Text="" Margin="0,8,0,0" FontSize="12"
-                           Foreground="{DynamicResource TextMutedBrush}" />
-              </StackPanel>
-              <StackPanel Grid.Column="2">
-                <TextBlock x:Name="AosSectionData" Text="AOS access data:" Style="{DynamicResource SectionText}"
-                           Margin="0,0,0,10" />
-                <Grid Margin="0,0,0,8">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="130" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock x:Name="AosUserLabel" Style="{DynamicResource FieldLabel}" Text="AOS username:" VerticalAlignment="Center" />
-                  <TextBox x:Name="AosEmailBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
-                           TextChanged="AosField_TextChanged" LostFocus="AosField_LostFocus" />
-                </Grid>
-                <Grid Margin="0,0,0,8">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="130" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock x:Name="AosPassLabel" Style="{DynamicResource FieldLabel}" Text="AOS password:" VerticalAlignment="Center" />
-                  <Grid Grid.Column="1">
-                    <PasswordBox x:Name="AosPasswordBox" Style="{DynamicResource KaiPasswordBox}"
-                                 PasswordChanged="AosPassword_Changed"
-                                 LostFocus="AosField_LostFocus" />
-                    <TextBox x:Name="AosPasswordPlainBox" Style="{DynamicResource KaiTextBox}"
-                             Visibility="Collapsed" TextChanged="AosField_TextChanged" LostFocus="AosField_LostFocus" />
-                  </Grid>
-                </Grid>
-                <CheckBox x:Name="AosShowPasswordCheck" Content="Show password" Margin="130,0,0,8"
-                          Style="{DynamicResource KaiCheckBox}"
-                          Checked="AosShowPassword_Changed" Unchecked="AosShowPassword_Changed" />
-                <StackPanel Margin="130,4,0,8">
-                  <Button x:Name="AosSaveBtn" Content="Save" Style="{DynamicResource BeigeButton}"
-                          MinWidth="90" HorizontalAlignment="Left" Click="AosSave_Click" />
-                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <Button x:Name="AosCheckBrowserPassBtn" Content="Check browser password"
-                            Style="{DynamicResource BeigeButton}" MinWidth="160"
-                            Click="AosCheckBrowserPass_Click" />
-                    <Button x:Name="AosOpenBmwBtn" Content="Open BMW AOS"
-                            Style="{DynamicResource BeigeButton}" MinWidth="120"
-                            Click="AosOpenBmw_Click" />
-                  </StackPanel>
-                </StackPanel>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock x:Name="AosLoginStatusIcon" FontFamily="Segoe MDL2 Assets" FontSize="22"
+                           VerticalAlignment="Center" Margin="0,0,10,0" Text="" />
+                <TextBlock x:Name="AosLoginStatusText" Text="" FontSize="22" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
               </StackPanel>
             </Grid>
-          </ScrollViewer>
+            <StackPanel Grid.Row="1" HorizontalAlignment="Center" Width="480" MaxWidth="520">
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="130" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="AosUserLabel" Style="{DynamicResource FieldLabel}" Text="AOS username:" VerticalAlignment="Center" />
+                <TextBox x:Name="AosEmailBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
+                         TextChanged="AosField_TextChanged" />
+              </Grid>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="130" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="AosPassLabel" Style="{DynamicResource FieldLabel}" Text="AOS password:" VerticalAlignment="Center" />
+                <Grid Grid.Column="1">
+                  <PasswordBox x:Name="AosPasswordBox" Style="{DynamicResource KaiPasswordBox}"
+                               PasswordChanged="AosPassword_Changed" />
+                  <TextBox x:Name="AosPasswordPlainBox" Style="{DynamicResource KaiTextBox}"
+                           Visibility="Collapsed" TextChanged="AosField_TextChanged" />
+                </Grid>
+              </Grid>
+              <CheckBox x:Name="AosShowPasswordCheck" Content="Show password" Margin="130,0,0,8"
+                        Style="{DynamicResource KaiCheckBox}"
+                        Checked="AosShowPassword_Changed" Unchecked="AosShowPassword_Changed" />
+              <Grid Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="130" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                  <Button x:Name="AosSaveBtn" Style="{DynamicResource BeigeButton}"
+                          MinWidth="90" HorizontalAlignment="Center" Click="AosSave_Click" Padding="12,4">
+                    <StackPanel Orientation="Horizontal">
+                      <Viewbox Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <Path Fill="{DynamicResource TextPrimaryBrush}"
+                              Data="{DynamicResource AosIconSaveGeometry}" />
+                      </Viewbox>
+                      <TextBlock x:Name="AosSaveBtnText" Text="Save" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
+                    <Ellipse x:Name="AosDirtyPendingMark" Width="10" Height="10" Margin="0,0,6,0"
+                             Fill="#B26A00" VerticalAlignment="Center" Visibility="Collapsed" />
+                    <TextBlock x:Name="AosDirtyStatus" Text="" FontSize="11" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextMutedBrush}" />
+                  </StackPanel>
+                </StackPanel>
+              </Grid>
+              <Grid Margin="0,36,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="130" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                  <Button x:Name="AosCheckBrowserPassBtn" Style="{DynamicResource BeigeButton}"
+                          MinWidth="160" Margin="0,0,8,0" Padding="12,4"
+                          Click="AosCheckBrowserPass_Click">
+                    <StackPanel Orientation="Horizontal">
+                      <Viewbox Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <Path Fill="{DynamicResource TextPrimaryBrush}"
+                              Data="{DynamicResource AosIconSearchGeometry}" />
+                      </Viewbox>
+                      <TextBlock x:Name="AosCheckBrowserPassBtnText" Text="Check browser password" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                  <Button x:Name="AosOpenBmwBtn" Style="{DynamicResource BeigeButton}"
+                          MinWidth="120" Padding="12,4" Click="AosOpenBmw_Click">
+                    <StackPanel Orientation="Horizontal">
+                      <Viewbox Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <Path Fill="{DynamicResource TextPrimaryBrush}"
+                              Data="{DynamicResource AosIconOpenGeometry}" />
+                      </Viewbox>
+                      <TextBlock x:Name="AosOpenBmwBtnText" Text="Open BMW AOS" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </Grid>
         </TabItem>
 
         <TabItem x:Name="TabActivity">
@@ -258,25 +295,41 @@
           <Grid Margin="4" Background="{DynamicResource WindowBgBrush}">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <DockPanel Margin="0,0,0,4" LastChildFill="False">
-              <TextBlock x:Name="ActivitySection" Style="{DynamicResource SectionText}" Text="Server activity log:" VerticalAlignment="Center" />
+              <TextBlock x:Name="ActivitySection" Text="Server activity log:"
+                         FontSize="12" FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
               <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                <ComboBox x:Name="LogFilterCombo" Width="130" Margin="0,0,10,0" VerticalAlignment="Center"
+                <TextBlock x:Name="ActivityFilterLabel" Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
+                <ComboBox x:Name="LogFilterCombo" Width="120" Margin="0,0,10,0" VerticalAlignment="Center"
                           Style="{DynamicResource KaiComboBox}"
                           DisplayMemberPath="Name" SelectedValuePath="Code"
                           SelectionChanged="LogFilter_SelectionChanged" />
+                <Button x:Name="AosCheckTokenBtn" Content="Check token" Style="{DynamicResource BeigeButton}"
+                        MinWidth="110" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        Click="AosCheckToken_Click"  Tag="{DynamicResource IconCheck}" />
+                <Button x:Name="SaveActivityLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
+                        MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        Click="SaveActivityLog_Click"  Tag="{DynamicResource IconSave}" />
                 <Button x:Name="ActivityClearBtn" Content="Clear" Style="{DynamicResource BeigeButton}"
-                        MinWidth="72" Margin="0" Padding="10,2,12,2"
-                        Click="ActivityClear_Click" />
+                        MinWidth="72" Margin="0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        Click="ActivityClear_Click"  Tag="{DynamicResource IconClear}" />
               </StackPanel>
             </DockPanel>
-            <ListView x:Name="ActivityList" Grid.Row="1"
+            <TextBlock x:Name="ActivityNoMatchesHint" Grid.Row="1" Text="No matches — clear filter"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                       Margin="0,0,0,4" Visibility="Collapsed" />
+            <ListView x:Name="ActivityList" Grid.Row="2"
                       BorderBrush="{DynamicResource FieldBorderBrush}" BorderThickness="1"
                       Background="{DynamicResource FieldBgBrush}" FontFamily="Consolas" FontSize="11"
                       ScrollViewer.VerticalScrollBarVisibility="Auto"
-                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                      MouseDoubleClick="ActivityList_MouseDoubleClick"
+                      PreviewKeyDown="ActivityList_PreviewKeyDown">
               <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem" BasedOn="{StaticResource KaiListViewItem}">
                   <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -315,34 +368,47 @@
           <Grid Margin="4" Background="{DynamicResource WindowBgBrush}">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <DockPanel Margin="0,0,0,4" LastChildFill="False">
-              <TextBlock x:Name="RegisterHistoryLabel" Style="{DynamicResource SectionText}"
-                         Text="Register history:" VerticalAlignment="Center" />
+              <TextBlock x:Name="RegisterHistoryLabel" Text="Register history:"
+                         FontSize="12" FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
               <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
                 <TextBlock x:Name="RegisterFilterLabel" Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,0"
                            Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
-                <ComboBox x:Name="RegisterFilterCombo" Width="120" VerticalAlignment="Center"
+                <ComboBox x:Name="RegisterFilterCombo" Width="120" Margin="0,0,10,0" VerticalAlignment="Center"
                           Style="{DynamicResource KaiComboBox}"
                           DisplayMemberPath="Name" SelectedValuePath="Code"
                           SelectionChanged="RegisterFilter_SelectionChanged" />
+                <Button x:Name="SaveRegisterLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
+                        MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        Click="SaveRegisterLog_Click"  Tag="{DynamicResource IconSave}" />
+                <Button x:Name="ClearRegisterLogBtn" Content="Clear" Style="{DynamicResource BeigeButton}"
+                        MinWidth="72" Margin="0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        Click="ClearRegisterLog_Click"  Tag="{DynamicResource IconClear}" />
               </StackPanel>
             </DockPanel>
-            <ListView x:Name="RegisterHistoryList" Grid.Row="1"
+            <TextBlock x:Name="RegisterNoMatchesHint" Grid.Row="1" Text="No matches — clear filter"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                       Margin="0,0,0,4" Visibility="Collapsed" />
+            <ListView x:Name="RegisterHistoryList" Grid.Row="2"
                       BorderBrush="{DynamicResource FieldBorderBrush}" BorderThickness="1"
                       Background="{DynamicResource FieldBgBrush}" FontFamily="Consolas" FontSize="11"
                       ScrollViewer.VerticalScrollBarVisibility="Auto"
-                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                      MouseDoubleClick="RegisterHistoryList_MouseDoubleClick"
+                      PreviewKeyDown="RegisterHistoryList_PreviewKeyDown">
               <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem" BasedOn="{StaticResource KaiListViewItem}">
                   <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                   <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                   <Style.Triggers>
-                    <DataTrigger Binding="{Binding Ok}" Value="True">
+                    <DataTrigger Binding="{Binding Kind}" Value="1">
                       <Setter Property="Foreground" Value="{DynamicResource StatusOkBrush}" />
                     </DataTrigger>
-                    <DataTrigger Binding="{Binding Ok}" Value="False">
+                    <DataTrigger Binding="{Binding Kind}" Value="0">
                       <Setter Property="Foreground" Value="{DynamicResource StatusErrorBrush}" />
                     </DataTrigger>
                   </Style.Triggers>
@@ -378,7 +444,7 @@
             <StackPanel Background="{DynamicResource WindowBgBrush}">
               <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                 <Button x:Name="KaiRefreshBtn" Content="Refresh" Style="{DynamicResource BeigeButton}"
-                        Click="KaiRefresh_Click" MinWidth="90" />
+                        Click="KaiRefresh_Click" MinWidth="90"  Tag="{DynamicResource IconRefresh}" />
               </StackPanel>
               <TextBlock x:Name="KaiInstallSection" Text="Installation:" Style="{DynamicResource SectionText}" Margin="0,0,0,6" />
               <TextBlock x:Name="KaiInstallText" Text="—" TextWrapping="Wrap" Margin="0,0,0,12"
@@ -397,10 +463,10 @@
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                   <Button x:Name="KaiFixServicesBtn" Content="Fix now" Style="{DynamicResource BeigeButton}"
                           Click="KaiFixServices_Click" MinWidth="90" Margin="0,0,8,0"
-                          Visibility="Collapsed" />
+                          Visibility="Collapsed"  Tag="{DynamicResource IconFix}" />
                   <Button x:Name="KaiStopServicesBtn" Content="Restart" Style="{DynamicResource BeigeButton}"
                           Click="KaiStopServices_Click" MinWidth="90"
-                          Visibility="Collapsed" />
+                          Visibility="Collapsed"  Tag="{DynamicResource IconRestart}" />
                 </StackPanel>
                 <TextBlock x:Name="KaiServicesSection" Text="Services:" Style="{DynamicResource SectionText}"
                            Margin="0" VerticalAlignment="Center" />
@@ -439,81 +505,455 @@
           </ScrollViewer>
         </TabItem>
 
-        <TabItem x:Name="TabSettings" Header="Settings">
+        <TabItem x:Name="TabServerSettings">
+          <TabItem.Header>
+            <TextBlock x:Name="TabServerSettingsHeaderText" Text="Server Settings" VerticalAlignment="Center" />
+          </TabItem.Header>
+          <ScrollViewer x:Name="ServerSettingsScroll" VerticalScrollBarVisibility="Auto" Margin="4"
+                        Background="{DynamicResource WindowBgBrush}">
+            <StackPanel Background="{DynamicResource WindowBgBrush}">
+              <GroupBox x:Name="SrvGeneralGroup" Header="General" Style="{DynamicResource KaiGroupBox}">
+                <StackPanel>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvLanguageLabel" Text="Language:" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <ComboBox x:Name="SrvLanguageCombo" Grid.Column="1" Width="180" HorizontalAlignment="Left"
+                              Style="{DynamicResource KaiComboBox}" DisplayMemberPath="Name" SelectedValuePath="Code"
+                              SelectionChanged="SrvSettings_Changed" />
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvThemeLabel" Text="Theme:" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <ComboBox x:Name="SrvThemeCombo" Grid.Column="1" Width="180" HorizontalAlignment="Left"
+                              Style="{DynamicResource KaiComboBox}" DisplayMemberPath="Name" SelectedValuePath="Code"
+                              SelectionChanged="SrvSettings_Changed" />
+                  </Grid>
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="SrvExportBtn" Content="Export settings" Style="{DynamicResource BeigeButton}"
+                            Click="SrvExport_Click" Margin="0,0,8,0" MinWidth="120"  Tag="{DynamicResource IconExport}" />
+                    <Button x:Name="SrvImportBtn" Content="Import settings" Style="{DynamicResource BeigeButton}"
+                            Click="SrvImport_Click" MinWidth="120"  Tag="{DynamicResource IconImport}" />
+                  </StackPanel>
+                </StackPanel>
+              </GroupBox>
+              <GroupBox x:Name="SrvStartupGroup" Header="Startup" Style="{DynamicResource KaiGroupBox}">
+                <StackPanel>
+                  <CheckBox x:Name="SrvStartWithWindowsCheck" Content="Start with Windows"
+                            Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
+                            Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <CheckBox x:Name="SrvMinimizeToTrayCheck" Content="Minimize to tray on Windows start"
+                            Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
+                            Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <CheckBox x:Name="SrvMinimizeOnCloseCheck" Content="Yes (X hides to tray)"
+                            Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
+                            Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <CheckBox x:Name="SrvAutoUpdateCheck" Content="Auto update"
+                            Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
+                            Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                </StackPanel>
+              </GroupBox>
+              <GroupBox x:Name="SrvKeysGroup" Header="Keys" Style="{DynamicResource KaiGroupBox}">
+                <StackPanel>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvKeysRefreshLabel" Text="Refresh interval (sec):" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <TextBox x:Name="SrvKeysRefreshBox" Grid.Column="1" Width="60" HorizontalAlignment="Left"
+                             Style="{DynamicResource KaiTextBox}" LostFocus="SrvSettingsField_LostFocus" />
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvKeysVinTipLabel" Text="VIN tip duration (sec):" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <TextBox x:Name="SrvKeysVinTipBox" Grid.Column="1" Width="60" HorizontalAlignment="Left"
+                             Style="{DynamicResource KaiTextBox}" LostFocus="SrvSettingsField_LostFocus" />
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvKeysStallLabel" Text="Stall alert after (minutes):" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <TextBox x:Name="SrvKeysStallBox" Grid.Column="1" Width="60" HorizontalAlignment="Left"
+                             Style="{DynamicResource KaiTextBox}" LostFocus="SrvSettingsField_LostFocus" />
+                  </Grid>
+                  <CheckBox x:Name="SrvKeysBalloonCheck" Content="Info tip when VIN is read" Style="{DynamicResource KaiCheckBox}"
+                            Margin="0,4,0,6" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <CheckBox x:Name="SrvKeysVinBmwFailOnlyCheck" Content="Info tip only when BMW upload fails" Style="{DynamicResource KaiCheckBox}"
+                            Margin="18,0,0,6" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <CheckBox x:Name="SrvKeysAutoCopyCheck" Content="Auto-copy VIN when read" Style="{DynamicResource KaiCheckBox}"
+                            Margin="0,0,0,6" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <CheckBox x:Name="SrvKeysStallAlertCheck" Content="Alert if Local OK but BMW Server not uploaded" Style="{DynamicResource KaiCheckBox}"
+                            Margin="0,0,0,8" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                </StackPanel>
+              </GroupBox>
+              <GroupBox x:Name="SrvAuthGroup" Header="Auth" Style="{DynamicResource KaiGroupBox}">
+                <StackPanel>
+                  <CheckBox x:Name="SrvBrowserPassHintCheck" Content="On auth failure, remind to match browser password"
+                            Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
+                            Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <CheckBox x:Name="SrvUseSystemProxyCheck" Content="Use system proxy" Style="{DynamicResource KaiCheckBox}"
+                            Margin="0,0,0,8" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <StackPanel Grid.IsSharedSizeScope="True">
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="AuthLabel" Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock x:Name="AosIntervalLabel" Style="{DynamicResource FieldLabel}" Text="Check health interval:"
+                                 Width="Auto" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,12,0" />
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBox x:Name="AosIntervalBox" Width="80" HorizontalAlignment="Left"
+                                 Style="{DynamicResource KaiTextBox}" Text="1"
+                                 TextChanged="AosField_TextChanged" LostFocus="AosField_LostFocus" />
+                        <Button x:Name="AosStartTimerBtn" Content="Start timer" Style="{DynamicResource BeigeButton}"
+                                MinWidth="110" Margin="12,0,8,0" Click="AosStartTimer_Click"  Tag="{DynamicResource IconPlay}" />
+                        <Button x:Name="AosStopTimerBtn" Content="Stop timer" Style="{DynamicResource BeigeButton}"
+                                MinWidth="110" Click="AosStopTimer_Click"  Tag="{DynamicResource IconStop}" />
+                      </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="AuthLabel" Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock x:Name="SrvAuthCooldownLabel" Text="Auth cooldown (minutes):" Style="{DynamicResource FieldLabel}"
+                                 Width="Auto" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,12,0" />
+                      <TextBox x:Name="SrvAuthCooldownBox" Grid.Column="1" Width="80" HorizontalAlignment="Left"
+                               Style="{DynamicResource KaiTextBox}" LostFocus="SrvSettingsField_LostFocus" />
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="AuthLabel" Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock x:Name="SrvAuthBlockAfterLabel" Text="Register blocked after (attempts):" Style="{DynamicResource FieldLabel}"
+                                 Width="Auto" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,12,0" />
+                      <TextBox x:Name="SrvAuthBlockAfterBox" Grid.Column="1" Width="80" HorizontalAlignment="Left"
+                               Style="{DynamicResource KaiTextBox}" LostFocus="SrvSettingsField_LostFocus" />
+                    </Grid>
+                  </StackPanel>
+                  <Button x:Name="ForceRegisterBtn" Content="Force Register" Style="{DynamicResource BeigeButton}"
+                          HorizontalAlignment="Left" MinWidth="140" Margin="0,0,0,10"
+                          Click="ForceRegister_Click"
+                          ToolTip="Always Register at Kai Zentral — ignores Health OK, auth cooldown, and Register-blocked"  Tag="{DynamicResource IconForce}" />
+                  <Border x:Name="AuthGuardsStatusPanel" Background="{DynamicResource PanelMutedBgBrush}"
+                          BorderBrush="{DynamicResource FieldBorderBrush}"
+                          BorderThickness="1" CornerRadius="3" Padding="10,8">
+                    <StackPanel>
+                      <TextBlock x:Name="AuthGuardsStatusTitle" Text="Auth guards" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,6" />
+                      <DockPanel Margin="0,0,0,2" LastChildFill="True">
+                        <Button x:Name="ClearAuthCooldownBtn" DockPanel.Dock="Right" Content="Clear"
+                                Style="{DynamicResource BeigeButton}" MinWidth="64" Margin="8,0,0,0"
+                                Padding="8,2" VerticalAlignment="Center" Visibility="Collapsed"
+                                Click="ClearAuthCooldown_Click"
+                                ToolTip="Clear auth cooldown (set inactive)"  Tag="{DynamicResource IconClear}" />
+                        <TextBlock x:Name="AuthCooldownStatusLine" TextWrapping="Wrap" FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                      </DockPanel>
+                      <TextBlock x:Name="AuthCooldownExplainText" TextWrapping="Wrap" FontSize="11"
+                                 Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,0,8" />
+                      <DockPanel Margin="0,0,0,2" LastChildFill="True">
+                        <Button x:Name="ClearAuthRegisterBlockedBtn" DockPanel.Dock="Right" Content="Clear"
+                                Style="{DynamicResource BeigeButton}" MinWidth="64" Margin="8,0,0,0"
+                                Padding="8,2" VerticalAlignment="Center" Visibility="Collapsed"
+                                Click="ClearAuthRegisterBlocked_Click"
+                                ToolTip="Clear Register blocked (set inactive)"  Tag="{DynamicResource IconClear}" />
+                        <TextBlock x:Name="AuthRegisterBlockedStatusLine" TextWrapping="Wrap" FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                      </DockPanel>
+                      <TextBlock x:Name="AuthRegisterBlockedExplainText" TextWrapping="Wrap" FontSize="11"
+                                 Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,0,0" />
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </GroupBox>
+              <GroupBox x:Name="SrvNotifyGroup" Header="Notify server" Style="{DynamicResource KaiGroupBox}">
+                <StackPanel>
+                  <CheckBox x:Name="SrvNotifyEnabledCheck" Content="Enable notify server (remote clients)"
+                            Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8" IsEnabled="False" />
+                  <StackPanel Grid.IsSharedSizeScope="True">
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="NotifyLabel" Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock x:Name="SrvNotifyIpLabel" Text="This PC IP (enter in client):"
+                                 Style="{DynamicResource FieldLabel}" Width="Auto" VerticalAlignment="Center"
+                                 Margin="0,0,12,0" />
+                      <TextBox x:Name="SrvNotifyIpBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
+                               IsReadOnly="True" IsEnabled="False" TextWrapping="NoWrap" MinHeight="28"
+                               HorizontalAlignment="Left" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="NotifyLabel" Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock x:Name="SrvNotifyPortLabel" Text="Port:" Style="{DynamicResource FieldLabel}"
+                                 Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
+                      <TextBox x:Name="SrvNotifyPortBox" Grid.Column="1" Width="80" HorizontalAlignment="Left"
+                               Style="{DynamicResource KaiTextBox}" IsReadOnly="True" IsEnabled="False" />
+                    </Grid>
+                  </StackPanel>
+                  <Grid Margin="0,10,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvNotifySendToLabel" Text="Send test to:" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <ComboBox x:Name="SrvNotifySendToCombo" Grid.Column="1" Margin="0,0,8,0"
+                              MinWidth="160" HorizontalAlignment="Left"
+                              MinHeight="28" DisplayMemberPath="Label"
+                              Style="{DynamicResource KaiComboBox}" />
+                    <Button x:Name="SrvNotifyRefreshBtn" Grid.Column="2" Content="Refresh"
+                            Style="{DynamicResource BeigeButton}" Padding="10,4" MinHeight="28"
+                            Click="SrvNotifyRefresh_Click"  Tag="{DynamicResource IconRefresh}" />
+                  </Grid>
+                  <WrapPanel Margin="0,0,0,4">
+                    <Button x:Name="SrvNotifyTestVinBtn" Content="Test VIN" Style="{DynamicResource BeigeButton}"
+                            Margin="0,0,8,6" Padding="10,4" Click="SrvNotifyTestVin_Click"  Tag="{DynamicResource IconVin}" />
+                    <Button x:Name="SrvNotifyTestInfoBtn" Content="Test Info" Style="{DynamicResource BeigeButton}"
+                            Margin="0,0,8,6" Padding="10,4" Click="SrvNotifyTestInfo_Click"  Tag="{DynamicResource IconInfo}" />
+                    <Button x:Name="SrvNotifyTestWarningBtn" Content="Test Warning" Style="{DynamicResource BeigeButton}"
+                            Margin="0,0,8,6" Padding="10,4" Click="SrvNotifyTestWarning_Click"  Tag="{DynamicResource IconWarning}" />
+                    <Button x:Name="SrvNotifyTestErrorBtn" Content="Test Error" Style="{DynamicResource BeigeButton}"
+                            Margin="0,0,8,6" Padding="10,4" Click="SrvNotifyTestError_Click"  Tag="{DynamicResource IconError}" />
+                  </WrapPanel>
+                  <TextBlock x:Name="NotifyTestResultText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
+                             Foreground="{DynamicResource TextMutedBrush}" Visibility="Collapsed" />
+                </StackPanel>
+              </GroupBox>
+              <GroupBox x:Name="SrvPathsGroup" Header="Paths" Style="{DynamicResource KaiGroupBox}">
+                <StackPanel>
+                  <TextBlock x:Name="SrvPathsKaiConfig" Text="KAI configuration:" Style="{DynamicResource SectionText}" Margin="0,0,0,8" />
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvConfigPathLabel" Text="Config path:" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <TextBox x:Name="SrvConfigPathBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
+                             IsReadOnly="True" IsEnabled="False" />
+                  </Grid>
+                  <TextBlock x:Name="SrvPathsKeyReader" Text="Desktop KeyReader Plus:" Style="{DynamicResource SectionText}" Margin="0,12,0,8" />
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvDataBinLabel" Text="DataBin:" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <TextBox x:Name="SrvDataBinBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
+                             IsReadOnly="True" IsEnabled="False" />
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvKrLogPathLabel" Text="Log files location:" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <TextBox x:Name="SrvKrLogPathBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
+                             IsReadOnly="True" IsEnabled="False" />
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvEncPathLabel" Text="ENC file location:" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <TextBox x:Name="SrvEncPathBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}" IsReadOnly="True" IsEnabled="False" />
+                  </Grid>
+                  <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="180" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvKrLogLevelLabel" Text="Logging:" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <ComboBox x:Name="SrvKrLogLevelCombo" Grid.Column="1" HorizontalAlignment="Left" Width="180"
+                              Style="{DynamicResource KaiComboBox}"
+                              DisplayMemberPath="Name" SelectedValuePath="Code"
+                              SelectionChanged="SrvSettings_Changed" />
+                  </Grid>
+                  <TextBlock x:Name="SrvPathsKaiData" Text="KAI data paths:" Style="{DynamicResource SectionText}" Margin="0,0,0,8" />
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvUploaderLogLabel" Text="KeyUploader logs:" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <TextBox x:Name="SrvUploaderLogBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}" IsReadOnly="True" IsEnabled="False" />
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvKaiLogLabel" Text="KAI logs:" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <TextBox x:Name="SrvKaiLogBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}" IsReadOnly="True" IsEnabled="False" />
+                  </Grid>
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="180" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvSqliteLabel" Text="SqliteKaiDb:" Style="{DynamicResource FieldLabel}" Width="Auto" />
+                    <TextBox x:Name="SrvSqliteBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
+                             IsReadOnly="True" IsEnabled="False" />
+                  </Grid>
+                </StackPanel>
+              </GroupBox>
+              <StackPanel Margin="0,8,0,0" HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4" HorizontalAlignment="Left">
+                  <Button x:Name="SrvSettingsSaveBtn" Content="Save to server" Style="{DynamicResource BeigeButton}"
+                          MinWidth="140" Margin="0,0,8,0" IsEnabled="False" Click="SrvSettingsSave_Click"  Tag="{DynamicResource IconSave}" />
+                  <Button x:Name="SrvSettingsResetBtn" Content="Reset" Style="{DynamicResource BeigeButton}"
+                          MinWidth="100" IsEnabled="False" Click="SrvSettingsReset_Click"  Tag="{DynamicResource IconRestart}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                  <Ellipse x:Name="SrvSettingsPendingMark" Width="10" Height="10" Margin="0,0,6,0"
+                           Fill="#B26A00" VerticalAlignment="Center" Visibility="Collapsed" />
+                  <TextBlock x:Name="SrvSettingsOkMark" Text="&#xE73E;" FontFamily="Segoe MDL2 Assets"
+                             FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"
+                             Foreground="#2E7D32" Visibility="Collapsed" />
+                  <TextBlock x:Name="SrvSettingsStatus" Text="" FontSize="11" VerticalAlignment="Center"
+                             Foreground="{DynamicResource TextMutedBrush}" />
+                </StackPanel>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <TabItem x:Name="TabSettings" Header="Client Settings">
           <ScrollViewer x:Name="SettingsScroll" VerticalScrollBarVisibility="Auto" Margin="4"
                         Background="{DynamicResource WindowBgBrush}">
             <StackPanel Background="{DynamicResource WindowBgBrush}">
+              <GroupBox x:Name="ConnectionGroup" Header="Connection" Style="{DynamicResource KaiGroupBox}">
+                <StackPanel>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" MinWidth="36" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="IpLabel" Text="IP:" VerticalAlignment="Center" Margin="0,0,8,0"
+                               Style="{DynamicResource FieldLabel}"
+                               Width="Auto" HorizontalAlignment="Left" />
+                    <ComboBox x:Name="HostCombo" Grid.Column="1" Height="28" Width="220" Margin="0,0,8,0"
+                              HorizontalAlignment="Left"
+                              IsEditable="True" VerticalContentAlignment="Center"
+                              Style="{DynamicResource KaiComboBox}"
+                              LostFocus="HostPort_LostFocus"
+                              ToolTip="Notify server IP — use Scan LAN or pick a recent host" />
+                    <TextBlock x:Name="PortLabel" Grid.Column="2" Text="Port:" VerticalAlignment="Center"
+                               Margin="0,0,8,0" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" HorizontalAlignment="Left" />
+                    <TextBox x:Name="PortBox" Grid.Column="3" Width="72" Margin="0,0,8,0"
+                             Style="{DynamicResource KaiTextBox}" Text="17890" LostFocus="HostPort_LostFocus" />
+                    <Button x:Name="ScanLanBtn" Grid.Column="4" Content="Scan LAN"
+                            Style="{DynamicResource BeigeButton}" Click="ScanLan_Click"
+                            ToolTip="Scan local network for notify server"  Tag="{DynamicResource IconScan}" />
+                  </Grid>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,8" HorizontalAlignment="Left">
+                    <Button x:Name="ConnectBtn" Content="Connect" Style="{DynamicResource BeigeButton}"
+                            MinWidth="100" Click="ConnectBtn_Click"  Tag="{DynamicResource IconConnect}" />
+                    <Button x:Name="DisconnectBtn" Content="Disconnect" Style="{DynamicResource BeigeButton}"
+                            MinWidth="100" IsEnabled="False" Click="DisconnectBtn_Click"  Tag="{DynamicResource IconDisconnect}" />
+                  </StackPanel>
+                  <CheckBox x:Name="AutoConnectCheck" Content="Auto-connect on start" Margin="0,0,0,8"
+                            Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
+                            Checked="AutoConnect_Changed" Unchecked="AutoConnect_Changed"
+                            ToolTip="Connect automatically when the app starts" />
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="OfflineAfterLabel" Text="Offline after (minutes):" VerticalAlignment="Center"
+                               Margin="0,0,8,0" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" HorizontalAlignment="Left" />
+                    <TextBox x:Name="OfflineMinutesBox" Grid.Column="1" Width="60"
+                             Style="{DynamicResource KaiTextBox}" Text="2"
+                             LostFocus="SettingsField_Changed" />
+                  </Grid>
+                </StackPanel>
+              </GroupBox>
+
               <GroupBox x:Name="GeneralGroup" Header="General" Style="{DynamicResource KaiGroupBox}">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                  </Grid.RowDefinitions>
-                  <TextBlock x:Name="LanguageLabel" Text="Language:" Style="{DynamicResource FieldLabel}"
-                             Width="Auto" HorizontalAlignment="Left" />
-                  <ComboBox x:Name="LanguageCombo" Grid.Column="1" Width="180" HorizontalAlignment="Left"
-                            Style="{DynamicResource KaiComboBox}"
-                            DisplayMemberPath="Name" SelectedValuePath="Code"
-                            SelectionChanged="LanguageCombo_SelectionChanged" />
-                  <TextBlock x:Name="ThemeLabel" Grid.Row="1" Text="Theme:" Style="{DynamicResource FieldLabel}"
-                             Width="Auto" HorizontalAlignment="Left" Margin="0,8,0,0" />
-                  <ComboBox x:Name="ThemeCombo" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left"
-                            Margin="0,8,0,0" Style="{DynamicResource KaiComboBox}"
-                            DisplayMemberPath="Name" SelectedValuePath="Code"
-                            SelectionChanged="ThemeCombo_SelectionChanged" />
-                </Grid>
+                <StackPanel>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="220" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock x:Name="LanguageLabel" Text="Language:" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" HorizontalAlignment="Left" />
+                    <ComboBox x:Name="LanguageCombo" Grid.Column="1" Width="180" HorizontalAlignment="Left"
+                              Style="{DynamicResource KaiComboBox}"
+                              DisplayMemberPath="Name" SelectedValuePath="Code"
+                              SelectionChanged="LanguageCombo_SelectionChanged" />
+                    <TextBlock x:Name="ThemeLabel" Grid.Row="1" Text="Theme:" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" HorizontalAlignment="Left" Margin="0,8,0,0" />
+                    <ComboBox x:Name="ThemeCombo" Grid.Row="1" Grid.Column="1" Width="180" HorizontalAlignment="Left"
+                              Margin="0,8,0,0" Style="{DynamicResource KaiComboBox}"
+                              DisplayMemberPath="Name" SelectedValuePath="Code"
+                              SelectionChanged="ThemeCombo_SelectionChanged" />
+                  </Grid>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button x:Name="OpenSettingsFolderBtn" Content="Open settings folder" Style="{DynamicResource BeigeButton}"
+                            HorizontalAlignment="Left" MinWidth="130" Margin="0,0,8,0"
+                            Click="OpenSettingsFolder_Click"  Tag="{DynamicResource IconFolder}" />
+                    <Button x:Name="OpenLogsFolderBtn" Content="Open logs folder" Style="{DynamicResource BeigeButton}"
+                            HorizontalAlignment="Left" MinWidth="130"
+                            Click="OpenLogsFolder_Click"  Tag="{DynamicResource IconFolder}" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="ExportClientSettingsBtn" Content="Export settings" Style="{DynamicResource BeigeButton}"
+                            Click="ExportClientSettings_Click" Margin="0,0,8,0" MinWidth="120"  Tag="{DynamicResource IconExport}" />
+                    <Button x:Name="ImportClientSettingsBtn" Content="Import settings" Style="{DynamicResource BeigeButton}"
+                            Click="ImportClientSettings_Click" MinWidth="120"  Tag="{DynamicResource IconImport}" />
+                  </StackPanel>
+                </StackPanel>
               </GroupBox>
 
               <GroupBox x:Name="StartupGroup" Header="Startup" Style="{DynamicResource KaiGroupBox}">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                  </Grid.RowDefinitions>
-                  <TextBlock x:Name="StartWithWindowsLabel" Text="Start with Windows:" VerticalAlignment="Center"
-                             Margin="0,0,0,8" Style="{DynamicResource FieldLabel}"
-                             Width="Auto" HorizontalAlignment="Left" />
-                  <CheckBox x:Name="StartWithWindowsCheck" Grid.Column="1" Content="Yes" Margin="0,0,0,8"
-                            VerticalAlignment="Center" Style="{DynamicResource KaiCheckBox}"
-                            HorizontalAlignment="Left"
+                <StackPanel>
+                  <CheckBox x:Name="StartWithWindowsCheck" Content="Start with Windows" Margin="0,0,0,8"
+                            Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
-                  <TextBlock x:Name="MinimizeToTrayLabel" Grid.Row="1" Text="Minimize to tray on start:"
-                             VerticalAlignment="Center" Margin="0,0,0,8" TextWrapping="Wrap"
-                             Style="{DynamicResource FieldLabel}"
-                             Width="Auto" HorizontalAlignment="Left" />
-                  <CheckBox x:Name="MinimizeToTrayCheck" Grid.Row="1" Grid.Column="1" Content="Yes" Margin="0,0,0,8"
-                            VerticalAlignment="Center" Style="{DynamicResource KaiCheckBox}"
-                            HorizontalAlignment="Left"
+                  <CheckBox x:Name="MinimizeToTrayCheck" Content="Minimize to tray on start" Margin="0,0,0,8"
+                            Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
-                  <TextBlock x:Name="MinimizeOnCloseLabel" Grid.Row="2" Text="Minimize on close:"
-                             VerticalAlignment="Center" Margin="0,0,0,8" Style="{DynamicResource FieldLabel}"
-                             Width="Auto" HorizontalAlignment="Left" />
-                  <CheckBox x:Name="MinimizeOnCloseCheck" Grid.Row="2" Grid.Column="1"
-                            Content="Yes (X hides to tray)" VerticalAlignment="Center" Margin="0,0,0,8"
-                            Style="{DynamicResource KaiCheckBox}"
+                  <CheckBox x:Name="MinimizeOnCloseCheck" Content="Yes (X hides to tray)" Margin="0,0,0,8"
+                            Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
-                  <TextBlock x:Name="AutoUpdateLabel" Grid.Row="3" Text="Auto update:"
-                             VerticalAlignment="Center" Margin="0,0,0,8" Style="{DynamicResource FieldLabel}"
-                             Width="Auto" HorizontalAlignment="Left" />
-                  <CheckBox x:Name="AutoUpdateCheck" Grid.Row="3" Grid.Column="1" Content="Yes" Margin="0,0,0,8"
-                            VerticalAlignment="Center" Style="{DynamicResource KaiCheckBox}"
-                            HorizontalAlignment="Left" IsChecked="True"
+                  <CheckBox x:Name="AutoUpdateCheck" Content="Auto update" Margin="0,0,0,8"
+                            Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left" IsChecked="True"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
-                  <Button x:Name="CheckForUpdatesBtn" Grid.Row="4" Grid.Column="1"
+                  <Button x:Name="CheckForUpdatesBtn"
                           Content="Check for updates" Style="{DynamicResource BeigeButton}"
-                          HorizontalAlignment="Left" Padding="10,4" Click="CheckForUpdates_Click" />
-                </Grid>
+                          HorizontalAlignment="Left" Padding="10,4" Click="CheckForUpdates_Click"  Tag="{DynamicResource IconUpdate}" />
+                </StackPanel>
               </GroupBox>
 
               <GroupBox x:Name="KeysSettingsGroup" Header="Keys" Style="{DynamicResource KaiGroupBox}">
@@ -527,7 +967,7 @@
                                VerticalAlignment="Center" Style="{DynamicResource FieldLabel}"
                                Width="Auto" HorizontalAlignment="Left" />
                     <TextBox x:Name="VinTipSecondsBox" Grid.Column="1" Width="60"
-                             Style="{DynamicResource KaiTextBox}" Text="8"
+                             Style="{DynamicResource KaiTextBox}" Text="10"
                              LostFocus="SettingsField_Changed" />
                   </Grid>
                   <CheckBox x:Name="ShowVinTipsCheck" Content="Info tip when VIN is read" Margin="0,0,0,6"
@@ -545,88 +985,15 @@
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
                   <Button x:Name="TestBalloonTipsBtn" Content="Test balloon tips" Style="{DynamicResource BeigeButton}"
                           HorizontalAlignment="Left" MinWidth="140"
-                          Click="TestBalloonTipsBtn_Click" />
+                          Click="TestBalloonTipsBtn_Click"  Tag="{DynamicResource IconInfo}" />
                 </StackPanel>
               </GroupBox>
 
               <GroupBox x:Name="AuthGroup" Header="Auth" Style="{DynamicResource KaiGroupBox}">
-                <StackPanel>
-                  <Button x:Name="ForceRegisterBtn" Content="Force Register" Style="{DynamicResource BeigeButton}"
-                          HorizontalAlignment="Left" MinWidth="140" Margin="0,0,0,10"
-                          Click="ForceRegister_Click"
-                          ToolTip="Always Register at Kai Zentral — ignores Health OK, auth cooldown, and Register-blocked" />
-                  <TextBlock x:Name="ForceRegisterHintText" TextWrapping="Wrap" FontSize="11"
-                             Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,10"
-                             Text="Requires connection to the notify server." />
-                  <Border x:Name="AuthGuardsStatusPanel" Background="{DynamicResource PanelMutedBgBrush}"
-                          BorderBrush="{DynamicResource FieldBorderBrush}"
-                          BorderThickness="1" CornerRadius="3" Padding="10,8">
-                    <StackPanel>
-                      <TextBlock x:Name="AuthGuardsStatusTitle" Text="Auth guards" FontWeight="SemiBold"
-                                 Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,6" />
-                      <TextBlock x:Name="AuthCooldownStatusLine" TextWrapping="Wrap" FontSize="12"
-                                 Foreground="{DynamicResource TextPrimaryBrush}" />
-                      <TextBlock x:Name="AuthCooldownExplainText" TextWrapping="Wrap" FontSize="11"
-                                 Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,0,8" />
-                      <TextBlock x:Name="AuthRegisterBlockedStatusLine" TextWrapping="Wrap" FontSize="12"
-                                 Foreground="{DynamicResource TextPrimaryBrush}" />
-                      <TextBlock x:Name="AuthRegisterBlockedExplainText" TextWrapping="Wrap" FontSize="11"
-                                 Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,0,0" />
-                    </StackPanel>
-                  </Border>
-                </StackPanel>
-              </GroupBox>
-
-              <GroupBox x:Name="ConnectionGroup" Header="Connection" Style="{DynamicResource KaiGroupBox}">
-                <StackPanel>
-                  <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="Auto" MinWidth="36" />
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="IpLabel" Text="IP:" VerticalAlignment="Center" Margin="0,0,8,0"
-                               Style="{DynamicResource FieldLabel}"
-                               Width="Auto" HorizontalAlignment="Left" />
-                    <ComboBox x:Name="HostCombo" Grid.Column="1" Height="28" Margin="0,0,8,0"
-                              IsEditable="True" VerticalContentAlignment="Center"
-                              Style="{DynamicResource KaiComboBox}"
-                              LostFocus="HostPort_LostFocus"
-                              ToolTip="Notify server IP — use Scan LAN or pick a recent host" />
-                    <TextBlock x:Name="PortLabel" Grid.Column="2" Text="Port:" VerticalAlignment="Center"
-                               Margin="0,0,8,0" Style="{DynamicResource FieldLabel}"
-                               Width="Auto" HorizontalAlignment="Left" />
-                    <TextBox x:Name="PortBox" Grid.Column="3" Width="72" Margin="0,0,8,0"
-                             Style="{DynamicResource KaiTextBox}" Text="17890" LostFocus="HostPort_LostFocus" />
-                    <Button x:Name="ScanLanBtn" Grid.Column="4" Content="Scan LAN"
-                            Style="{DynamicResource BeigeButton}" Click="ScanLan_Click"
-                            ToolTip="Scan local network for notify server" />
-                  </Grid>
-                  <StackPanel Orientation="Horizontal" Margin="0,0,0,8" HorizontalAlignment="Left">
-                    <Button x:Name="ConnectBtn" Content="Connect" Style="{DynamicResource BeigeButton}"
-                            MinWidth="100" Click="ConnectBtn_Click" />
-                    <Button x:Name="DisconnectBtn" Content="Disconnect" Style="{DynamicResource BeigeButton}"
-                            MinWidth="100" Margin="0,0,12,0" IsEnabled="False" Click="DisconnectBtn_Click" />
-                    <CheckBox x:Name="AutoConnectCheck" Content="Auto-connect on start" VerticalAlignment="Center"
-                              Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
-                              Checked="AutoConnect_Changed" Unchecked="AutoConnect_Changed"
-                              ToolTip="Connect automatically when the app starts" />
-                  </StackPanel>
-                  <Grid>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="OfflineAfterLabel" Text="Offline after (minutes):" VerticalAlignment="Center"
-                               Margin="0,0,8,0" Style="{DynamicResource FieldLabel}"
-                               Width="Auto" HorizontalAlignment="Left" />
-                    <TextBox x:Name="OfflineMinutesBox" Grid.Column="1" Width="60"
-                             Style="{DynamicResource KaiTextBox}" Text="2"
-                             LostFocus="SettingsField_Changed" />
-                  </Grid>
-                </StackPanel>
+                <CheckBox x:Name="BrowserPassHintCheck"
+                          Content="On auth failure, remind to match browser password"
+                          Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
+                          Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
               </GroupBox>
 
             </StackPanel>
@@ -663,20 +1030,11 @@
       <Button x:Name="AboutTabBtn" Content="About" Style="{DynamicResource AboutTabButton}"
               HorizontalAlignment="Right" VerticalAlignment="Top"
               Margin="0,2,0,0" MinWidth="72" Panel.ZIndex="2"
-              Click="AboutTabBtn_Click" />
+              Click="AboutTabBtn_Click"  />
       </Grid>
 
       <Border x:Name="ButtonsBorder" Grid.Row="2" Background="{DynamicResource WindowBgBrush}"
-              Padding="0,10,0,0" Visibility="Collapsed">
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-          <Button x:Name="AosCheckTokenBtn" Content="Check token" Style="{DynamicResource BeigeButton}"
-                  MinWidth="110" Click="AosCheckToken_Click" />
-          <Button x:Name="AosStartTimerBtn" Content="Start timer" Style="{DynamicResource BeigeButton}"
-                  MinWidth="110" Click="AosStartTimer_Click" />
-          <Button x:Name="AosStopTimerBtn" Content="Stop timer" Style="{DynamicResource BeigeButton}"
-                  MinWidth="110" Click="AosStopTimer_Click" />
-        </StackPanel>
-      </Border>
+              Padding="0" Visibility="Collapsed" Height="0" />
 
       <TextBlock x:Name="ConnStatusText" Grid.Row="3" Margin="0,8,0,0" TextWrapping="Wrap"
                  Foreground="{DynamicResource TextMutedBrush}" Visibility="Collapsed" />
@@ -693,7 +1051,8 @@
             <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="{DynamicResource StatusStoppedBrush}"
                      VerticalAlignment="Center" Margin="0,0,8,0" />
             <TextBlock x:Name="StatusText" Text="Not connected" VerticalAlignment="Center"
-                       FontSize="11" Foreground="{DynamicResource StatusStoppedBrush}" Margin="0,0,12,0" />
+                       FontSize="11" Foreground="{DynamicResource StatusStoppedBrush}" Margin="0,0,12,0"
+                       TextTrimming="CharacterEllipsis" MaxWidth="520" />
             <TextBlock x:Name="NextRunText" VerticalAlignment="Center"
                        FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
           </StackPanel>
@@ -720,13 +1079,15 @@
             <TextBlock x:Name="UpdateAvailableText" Text=""
                        FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
                        VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed" />
+            <ProgressBar x:Name="UpdateProgressBar" Width="110" Height="10" Minimum="0" Maximum="100"
+                         VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed" />
             <Button x:Name="FooterUpdateBtn" Content="Update" Style="{DynamicResource FooterUpdateButton}"
-                    VerticalAlignment="Center" Visibility="Collapsed" Click="FooterUpdate_Click" />
+                    VerticalAlignment="Center" Visibility="Collapsed" Click="FooterUpdate_Click"  Tag="{DynamicResource IconUpdate}" />
             <TextBlock x:Name="ServerUpdateAvailableText" Text=""
                        FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
                        VerticalAlignment="Center" Margin="8,0,0,0" Visibility="Collapsed" />
             <Button x:Name="FooterServerUpdateBtn" Content="Update server" Style="{DynamicResource FooterUpdateButton}"
-                    VerticalAlignment="Center" Visibility="Collapsed" Click="FooterServerUpdate_Click" />
+                    VerticalAlignment="Center" Visibility="Collapsed" Click="FooterServerUpdate_Click"  Tag="{DynamicResource IconUpdate}" />
           </StackPanel>
           <TextBlock x:Name="AuthGuardsFooterText"
                      FontSize="11" Foreground="{DynamicResource TextMutedBrush}"

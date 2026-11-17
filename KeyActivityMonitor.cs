@@ -243,8 +243,12 @@ namespace KaiAosRenew
         private static readonly Regex RxPaintUph = new Regex(
             @"%(\d{4})([A-Z0-9]{4})",
             RegexOptions.Compiled);
+        /// <summary>I-level family: any series letter + 3 hex (E/F/G/I/… and later).</summary>
         private static readonly Regex RxILevelFamily = new Regex(
-            @"F0[0-9A-F]{2}",
+            @"^[A-Z][0-9A-F]{3}$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex RxILevelAscii = new Regex(
+            @"\b([A-Z][0-9A-F]{3}-\d{2}-\d{2}-\d+)\b",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private FileSystemWatcher _watcher;
@@ -962,18 +966,32 @@ namespace KaiAosRenew
             if (letters < 2) return false;
 
             fields = new KeyBinFields { Vin = vin };
-            var pu = RxPaintUph.Match(ascii);
-            if (pu.Success)
+            // Paint/Upholstery: prefer %ddddXXXX closest to the VIN match.
+            var vinIndex = m.Index;
+            Match bestPu = null;
+            var bestPuDist = int.MaxValue;
+            for (var pu = RxPaintUph.Match(ascii); pu.Success; pu = pu.NextMatch())
             {
-                fields.Paint = pu.Groups[1].Value;
-                fields.Upholstery = pu.Groups[2].Value.ToUpperInvariant();
+                var dist = Math.Abs(pu.Index - vinIndex);
+                if (dist < bestPuDist)
+                {
+                    bestPuDist = dist;
+                    bestPu = pu;
+                }
+            }
+            if (bestPu != null)
+            {
+                fields.Paint = bestPu.Groups[1].Value;
+                fields.Upholstery = bestPu.Groups[2].Value.ToUpperInvariant();
             }
 
-            // I-levels: look for F0xx ASCII followed by 4 payload bytes
+            // I-levels: family [A-Z][0-9A-F]{3} ASCII followed by 4 payload bytes (any series).
             var levels = new List<string>();
             for (var i = 0; i + 7 < bytes.Length; i++)
             {
-                if (bytes[i] != (byte)'F' && bytes[i] != (byte)'f') continue;
+                var c0 = bytes[i];
+                if (!((c0 >= (byte)'A' && c0 <= (byte)'Z') || (c0 >= (byte)'a' && c0 <= (byte)'z')))
+                    continue;
                 if (i + 3 >= bytes.Length) break;
                 var fam = Encoding.ASCII.GetString(bytes, i, 4).ToUpperInvariant();
                 if (!RxILevelFamily.IsMatch(fam)) continue;
@@ -983,7 +1001,7 @@ namespace KaiAosRenew
                 var b1 = bytes[i + 5];
                 var b2 = bytes[i + 6];
                 var b3 = bytes[i + 7];
-                // Decode: yy = b0, mm = b1, build = b2<<8|b3 (heuristic from sample F020 18 0B 02 08)
+                // Decode: yy = b0, mm = b1, build = b2<<8|b3
                 var yy = b0;
                 var mm = b1;
                 var build = (b2 << 8) | b3;
@@ -992,16 +1010,24 @@ namespace KaiAosRenew
                     formatted = string.Format("{0}-{1:D2}-{2:D2}-{3}", fam, yy, mm, build);
                 else
                     formatted = fam;
-                // Avoid duplicates within 2 bytes
-                if (levels.Count > 0 && levels[levels.Count - 1].StartsWith(fam, StringComparison.Ordinal))
-                {
-                    // allow multiple F020 with different suffixes
-                    if (string.Equals(levels[levels.Count - 1], formatted, StringComparison.Ordinal))
-                        continue;
-                }
+                if (levels.Count > 0
+                    && string.Equals(levels[levels.Count - 1], formatted, StringComparison.Ordinal))
+                    continue;
                 levels.Add(formatted);
                 i += 7;
                 if (levels.Count >= 3) break;
+            }
+            // ASCII fallback when binary decode found nothing (pre-formatted I-levels in text).
+            if (levels.Count == 0)
+            {
+                for (var im = RxILevelAscii.Match(ascii); im.Success && levels.Count < 3; im = im.NextMatch())
+                {
+                    var formatted = im.Groups[1].Value.ToUpperInvariant();
+                    if (levels.Count > 0
+                        && string.Equals(levels[levels.Count - 1], formatted, StringComparison.Ordinal))
+                        continue;
+                    levels.Add(formatted);
+                }
             }
             if (levels.Count > 0) fields.ILevelCurrent = levels[0];
             if (levels.Count > 1) fields.ILevelBackup = levels[1];

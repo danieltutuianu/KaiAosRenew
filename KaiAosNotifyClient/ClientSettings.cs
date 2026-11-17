@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Xml.Serialization;
 using Microsoft.Win32;
 
 namespace KaiAosNotifyClient
@@ -25,7 +28,11 @@ namespace KaiAosNotifyClient
         public bool ShowVinTipsBmwFailOnly { get; set; }
         public bool AutoCopyVin { get; set; }
         public bool ShowAlertTips { get; set; }
+        /// <summary>When checking browser passwords, remind to match app password.</summary>
+        public bool BrowserPasswordHintOnAuthFail { get; set; }
         public int OfflineMinutes { get; set; }
+        /// <summary>Synced with server AuthRegisterBlockAfter (1–10).</summary>
+        public int AuthRegisterBlockAfter { get; set; }
         public string Language { get; set; }
         /// <summary>system | day | night</summary>
         public string Theme { get; set; }
@@ -33,6 +40,30 @@ namespace KaiAosNotifyClient
         public bool DebugMode { get; set; }
         /// <summary>Newest first, max 3, semicolon-separated in registry.</summary>
         public List<string> RecentHosts { get; private set; }
+
+        public static string StoreDir
+        {
+            get
+            {
+                var dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "KaiAosNotifyClient");
+                Directory.CreateDirectory(dir);
+                return dir;
+            }
+        }
+
+        public static string LogDir
+        {
+            get
+            {
+                var dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "KaiAosNotifyClient");
+                Directory.CreateDirectory(dir);
+                return dir;
+            }
+        }
 
         private static readonly string[] SupportedLanguages = new[]
         {
@@ -47,12 +78,14 @@ namespace KaiAosNotifyClient
             AutoConnect = true;
             Host = "";
             Port = "17890";
-            VinTipSeconds = 8;
+            VinTipSeconds = 10;
             ShowVinTips = true;
             ShowVinTipsBmwFailOnly = false;
             AutoCopyVin = false;
             ShowAlertTips = true;
+            BrowserPasswordHintOnAuthFail = true;
             OfflineMinutes = 2;
+            AuthRegisterBlockAfter = 3;
             Language = "en";
             Theme = "system";
             RecentHosts = new List<string>();
@@ -67,6 +100,8 @@ namespace KaiAosNotifyClient
             if (VinTipSeconds > 60) VinTipSeconds = 60;
             if (OfflineMinutes < 1) OfflineMinutes = 1;
             if (OfflineMinutes > 30) OfflineMinutes = 30;
+            if (AuthRegisterBlockAfter < 1) AuthRegisterBlockAfter = 1;
+            if (AuthRegisterBlockAfter > 10) AuthRegisterBlockAfter = 10;
             if (string.IsNullOrWhiteSpace(Language)) Language = "en";
             Language = Language.Trim().ToLowerInvariant();
             if (Language == "en-gb" || Language == "en-us") Language = "en";
@@ -116,13 +151,15 @@ namespace KaiAosNotifyClient
                     s.ShowVinTipsBmwFailOnly = ReadBool(key, "ShowVinTipsBmwFailOnly", false);
                     s.AutoCopyVin = ReadBool(key, "AutoCopyVin", false);
                     s.ShowAlertTips = ReadBool(key, "ShowAlertTips", true);
+                    s.BrowserPasswordHintOnAuthFail = ReadBool(key, "BrowserPasswordHintOnAuthFail", true);
                     s.DebugMode = ReadBool(key, "DebugMode", false);
                     var host = key.GetValue("Host") as string;
                     var port = key.GetValue("Port") as string;
                     if (!string.IsNullOrWhiteSpace(host)) s.Host = host.Trim();
                     if (!string.IsNullOrWhiteSpace(port)) s.Port = port.Trim();
-                    s.VinTipSeconds = ReadInt(key, "VinTipSeconds", 8);
+                    s.VinTipSeconds = ReadInt(key, "VinTipSeconds", 10);
                     s.OfflineMinutes = ReadInt(key, "OfflineMinutes", 2);
+                    s.AuthRegisterBlockAfter = ReadInt(key, "AuthRegisterBlockAfter", 3);
                     var lang = key.GetValue("Language") as string;
                     if (!string.IsNullOrWhiteSpace(lang)) s.Language = lang.Trim();
                     var theme = key.GetValue("Theme") as string;
@@ -162,9 +199,11 @@ namespace KaiAosNotifyClient
                     key.SetValue("ShowVinTipsBmwFailOnly", ShowVinTipsBmwFailOnly ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("AutoCopyVin", AutoCopyVin ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("ShowAlertTips", ShowAlertTips ? 1 : 0, RegistryValueKind.DWord);
+                    key.SetValue("BrowserPasswordHintOnAuthFail", BrowserPasswordHintOnAuthFail ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("DebugMode", DebugMode ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("VinTipSeconds", VinTipSeconds, RegistryValueKind.DWord);
                     key.SetValue("OfflineMinutes", OfflineMinutes, RegistryValueKind.DWord);
+                    key.SetValue("AuthRegisterBlockAfter", AuthRegisterBlockAfter, RegistryValueKind.DWord);
                     key.SetValue("Host", Host ?? "", RegistryValueKind.String);
                     key.SetValue("Port", Port ?? "17890", RegistryValueKind.String);
                     key.SetValue("Language", Language ?? "en", RegistryValueKind.String);
@@ -206,6 +245,112 @@ namespace KaiAosNotifyClient
             catch { }
             return defaultValue;
         }
+
+        public void ExportPortable(string path)
+        {
+            File.WriteAllText(path, ExportPortableToString() ?? "", Encoding.UTF8);
+        }
+
+        public string ExportPortableToString()
+        {
+            var portable = new ClientSettingsPortable
+            {
+                StartWithWindows = StartWithWindows,
+                MinimizeToTray = MinimizeToTray,
+                MinimizeOnClose = MinimizeOnClose,
+                AutoUpdate = AutoUpdate,
+                AutoConnect = AutoConnect,
+                Host = Host ?? "",
+                Port = Port ?? "17890",
+                VinTipSeconds = VinTipSeconds,
+                ShowVinTips = ShowVinTips,
+                ShowVinTipsBmwFailOnly = ShowVinTipsBmwFailOnly,
+                AutoCopyVin = AutoCopyVin,
+                ShowAlertTips = ShowAlertTips,
+                BrowserPasswordHintOnAuthFail = BrowserPasswordHintOnAuthFail,
+                OfflineMinutes = OfflineMinutes,
+                AuthRegisterBlockAfter = AuthRegisterBlockAfter,
+                Language = Language ?? "en",
+                Theme = Theme ?? "system",
+                RecentHosts = RecentHosts != null ? string.Join(";", RecentHosts.ToArray()) : ""
+            };
+            var ser = new XmlSerializer(typeof(ClientSettingsPortable));
+            using (var sw = new StringWriter())
+            {
+                ser.Serialize(sw, portable);
+                return sw.ToString();
+            }
+        }
+
+        public void ImportPortable(string path)
+        {
+            ImportPortableFromString(File.ReadAllText(path));
+        }
+
+        public void ImportPortableFromString(string xml)
+        {
+            if (string.IsNullOrWhiteSpace(xml))
+                throw new InvalidOperationException("Invalid settings file.");
+            var ser = new XmlSerializer(typeof(ClientSettingsPortable));
+            ClientSettingsPortable imported;
+            using (var sr = new StringReader(xml))
+                imported = ser.Deserialize(sr) as ClientSettingsPortable;
+            if (imported == null)
+                throw new InvalidOperationException("Invalid settings file.");
+
+            StartWithWindows = imported.StartWithWindows;
+            MinimizeToTray = imported.MinimizeToTray;
+            MinimizeOnClose = imported.MinimizeOnClose;
+            AutoUpdate = imported.AutoUpdate;
+            AutoConnect = imported.AutoConnect;
+            if (imported.Host != null) Host = imported.Host.Trim();
+            if (!string.IsNullOrWhiteSpace(imported.Port)) Port = imported.Port.Trim();
+            VinTipSeconds = imported.VinTipSeconds;
+            ShowVinTips = imported.ShowVinTips;
+            ShowVinTipsBmwFailOnly = imported.ShowVinTipsBmwFailOnly;
+            AutoCopyVin = imported.AutoCopyVin;
+            ShowAlertTips = imported.ShowAlertTips;
+            BrowserPasswordHintOnAuthFail = imported.BrowserPasswordHintOnAuthFail;
+            OfflineMinutes = imported.OfflineMinutes;
+            AuthRegisterBlockAfter = imported.AuthRegisterBlockAfter;
+            if (!string.IsNullOrWhiteSpace(imported.Language)) Language = imported.Language.Trim();
+            if (!string.IsNullOrWhiteSpace(imported.Theme)) Theme = imported.Theme.Trim();
+            if (RecentHosts == null) RecentHosts = new List<string>();
+            RecentHosts.Clear();
+            if (!string.IsNullOrWhiteSpace(imported.RecentHosts))
+            {
+                foreach (var part in imported.RecentHosts.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var h = part.Trim();
+                    if (h.Length > 0 && RecentHosts.Count < 3
+                        && !RecentHosts.Exists(x => string.Equals(x, h, StringComparison.OrdinalIgnoreCase)))
+                        RecentHosts.Add(h);
+                }
+            }
+            Normalize();
+        }
+    }
+
+    public sealed class ClientSettingsPortable
+    {
+        public bool StartWithWindows { get; set; }
+        public bool MinimizeToTray { get; set; }
+        public bool MinimizeOnClose { get; set; }
+        public bool AutoUpdate { get; set; }
+        public bool AutoConnect { get; set; }
+        public string Host { get; set; }
+        public string Port { get; set; }
+        public int VinTipSeconds { get; set; }
+        public bool ShowVinTips { get; set; }
+        public bool ShowVinTipsBmwFailOnly { get; set; }
+        public bool AutoCopyVin { get; set; }
+        public bool ShowAlertTips { get; set; }
+        public bool BrowserPasswordHintOnAuthFail { get; set; }
+        public int OfflineMinutes { get; set; }
+        public int AuthRegisterBlockAfter { get; set; }
+        public string Language { get; set; }
+        public string Theme { get; set; }
+        public string RecentHosts { get; set; }
     }
 
     public sealed class ClientKeyRow
@@ -309,6 +454,8 @@ namespace KaiAosNotifyClient
     public sealed class RegisterHistoryRow
     {
         public DateTime At { get; set; }
+        /// <summary>0=fail, 1=ok, 2=info.</summary>
+        public int Kind { get; set; }
         public bool Ok { get; set; }
         public string Text { get; set; }
         public string AgeText { get; set; }
@@ -322,10 +469,14 @@ namespace KaiAosNotifyClient
         internal static RegisterHistoryRow FromWire(RegisterWireRow row)
         {
             if (row == null) return null;
+            var kind = row.Kind;
+            if (kind < 0 || kind > 2)
+                kind = row.Ok ? 1 : 0;
             return new RegisterHistoryRow
             {
                 At = row.At,
-                Ok = row.Ok,
+                Kind = kind,
+                Ok = kind == 1,
                 Text = row.Text ?? "",
                 AgeText = "",
                 ResultText = ""

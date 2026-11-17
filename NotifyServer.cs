@@ -182,9 +182,32 @@ namespace KaiAosRenew
             lock (_gate)
             {
                 foreach (var c in _clients)
-                    list.Add(new NotifyClientInfo { Id = c.Id, Display = c.RemoteDisplay });
+                    list.Add(new NotifyClientInfo
+                    {
+                        Id = c.Id,
+                        Display = c.RemoteDisplay,
+                        Version = c.ClientVersion ?? ""
+                    });
             }
             return list;
+        }
+
+        public bool SetClientVersion(int clientId, string version)
+        {
+            if (clientId <= 0) return false;
+            var ver = (version ?? "").Trim();
+            lock (_gate)
+            {
+                foreach (var c in _clients)
+                {
+                    if (c.Id == clientId)
+                    {
+                        c.ClientVersion = ver;
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private static byte[] Encode(NotifyMessage msg)
@@ -245,13 +268,49 @@ namespace KaiAosRenew
                     if (listener == null) break;
                     var tcp = listener.AcceptTcpClient();
                     tcp.NoDelay = true;
+                    try
+                    {
+                        if (tcp.Client != null)
+                            tcp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                    }
+                    catch { }
                     int id;
                     ClientConn conn;
+                    List<ClientConn> replaced = null;
                     lock (_gate)
                     {
                         id = _nextClientId++;
                         conn = new ClientConn(id, tcp, OnClientMessage, RemoveClient);
+                        // One live socket per remote IP — drop stale reconnect ghosts.
+                        if (!string.IsNullOrEmpty(conn.RemoteIp))
+                        {
+                            for (var i = _clients.Count - 1; i >= 0; i--)
+                            {
+                                var old = _clients[i];
+                                if (old == null || !string.Equals(old.RemoteIp, conn.RemoteIp, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+                                _clients.RemoveAt(i);
+                                if (replaced == null) replaced = new List<ClientConn>();
+                                replaced.Add(old);
+                            }
+                        }
                         _clients.Add(conn);
+                    }
+                    if (replaced != null)
+                    {
+                        foreach (var old in replaced)
+                        {
+                            try { old.Dispose(); }
+                            catch { }
+                            try { RenewEngine.Log("Notify client replaced #" + old.Id + " (" + old.RemoteDisplay + ")"); }
+                            catch { }
+                            var disc = ClientDisconnected;
+                            if (disc != null)
+                            {
+                                try { disc(old.Id); }
+                                catch { }
+                            }
+                        }
                     }
                     conn.StartRead();
                     RenewEngine.Log("Notify client connected #" + id + " (" + ClientCount + ")");
@@ -328,6 +387,8 @@ namespace KaiAosRenew
 
             public int Id { get; private set; }
             public string RemoteDisplay { get; private set; }
+            public string RemoteIp { get; private set; }
+            public string ClientVersion { get; set; }
 
             public ClientConn(int id, TcpClient tcp, Action<int, NotifyMessage> onMessage, Action<ClientConn> onClosed)
             {
@@ -336,10 +397,18 @@ namespace KaiAosRenew
                 _stream = tcp.GetStream();
                 _onMessage = onMessage;
                 _onClosed = onClosed;
+                RemoteIp = "";
+                ClientVersion = "";
                 try
                 {
-                    var ep = tcp.Client != null ? tcp.Client.RemoteEndPoint : null;
-                    RemoteDisplay = ep != null ? ep.ToString() : ("#" + id);
+                    var ep = tcp.Client != null ? tcp.Client.RemoteEndPoint as IPEndPoint : null;
+                    if (ep != null)
+                    {
+                        RemoteIp = ep.Address.ToString();
+                        RemoteDisplay = ep.ToString();
+                    }
+                    else
+                        RemoteDisplay = "#" + id;
                 }
                 catch
                 {
@@ -425,6 +494,7 @@ namespace KaiAosRenew
     {
         public int Id { get; set; }
         public string Display { get; set; }
+        public string Version { get; set; }
     }
 
     internal sealed class NotifyMessage
@@ -613,7 +683,10 @@ namespace KaiAosRenew
                 if (row == null) continue;
                 if (sb.Length > 0) sb.Append('\n');
                 sb.Append(row.At.ToString("yyyy-MM-ddTHH:mm:ss"));
-                sb.Append('|').Append(row.Ok ? "1" : "0");
+                var kind = row.Kind;
+                if (kind < 0 || kind > 2)
+                    kind = row.Ok ? 1 : 0;
+                sb.Append('|').Append(kind.ToString());
                 sb.Append('|').Append(EscPipe(row.Text ?? ""));
             }
             return sb.ToString();
@@ -676,29 +749,76 @@ namespace KaiAosRenew
             return true;
         }
 
-        public static string EncodeAosSync(int intervalHours, string email, string password, bool? forceRegister = null)
+        public static string EncodeKvMap(IDictionary<string, string> map)
+        {
+            if (map == null || map.Count == 0) return "";
+            var sb = new StringBuilder();
+            foreach (var kv in map)
+            {
+                if (string.IsNullOrEmpty(kv.Key)) continue;
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append(EscPipe(kv.Key));
+                sb.Append('|').Append(EscPipe(kv.Value ?? ""));
+            }
+            return sb.ToString();
+        }
+
+        public static Dictionary<string, string> ParseKvMap(string text)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(text)) return map;
+            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var raw = lines[i];
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                var parts = SplitPipe(raw);
+                if (parts.Count < 2) continue;
+                var key = parts[0] ?? "";
+                if (key.Length == 0) continue;
+                map[key] = parts[1] ?? "";
+            }
+            return map;
+        }
+
+        public static string EncodeAosSync(int intervalHours, string email, string password, bool? forceRegister = null, int? registerBlockAfter = null)
         {
             var sb = new StringBuilder();
             sb.Append(intervalHours < 1 ? 1 : intervalHours);
             sb.Append('|').Append(EscPipe(email ?? ""));
             sb.Append('|').Append(EscPipe(password ?? ""));
-            if (forceRegister.HasValue)
-                sb.Append('|').Append(forceRegister.Value ? "1" : "0");
+            if (forceRegister.HasValue || registerBlockAfter.HasValue)
+                sb.Append('|').Append(forceRegister.HasValue ? (forceRegister.Value ? "1" : "0") : "");
+            if (registerBlockAfter.HasValue)
+            {
+                var n = registerBlockAfter.Value;
+                if (n < 1) n = 1;
+                if (n > 10) n = 10;
+                sb.Append('|').Append(n);
+            }
             return sb.ToString();
         }
 
         public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password)
         {
             bool? unused;
-            return TryParseAosSync(text, out intervalHours, out email, out password, out unused);
+            int? unusedBlock;
+            return TryParseAosSync(text, out intervalHours, out email, out password, out unused, out unusedBlock);
         }
 
         public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password, out bool? forceRegister)
+        {
+            int? unusedBlock;
+            return TryParseAosSync(text, out intervalHours, out email, out password, out forceRegister, out unusedBlock);
+        }
+
+        public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password, out bool? forceRegister, out int? registerBlockAfter)
         {
             intervalHours = 1;
             email = "";
             password = "";
             forceRegister = null;
+            registerBlockAfter = null;
             if (string.IsNullOrWhiteSpace(text)) return false;
             var parts = SplitPipe(text);
             if (parts.Count < 3) return false;
@@ -713,6 +833,15 @@ namespace KaiAosRenew
                 var f = (parts[3] ?? "").Trim();
                 if (f == "1") forceRegister = true;
                 else if (f == "0") forceRegister = false;
+            }
+            if (parts.Count >= 5)
+            {
+                int n;
+                if (int.TryParse((parts[4] ?? "").Trim(), out n) && n >= 1)
+                {
+                    if (n > 10) n = 10;
+                    registerBlockAfter = n;
+                }
             }
             return true;
         }
@@ -754,10 +883,18 @@ namespace KaiAosRenew
                 if (!DateTime.TryParse(parts[0], out at))
                     at = DateTime.Now;
                 var okFlag = (parts[1] ?? "").Trim();
+                int kind;
+                if (okFlag == "2" || string.Equals(okFlag, "info", StringComparison.OrdinalIgnoreCase))
+                    kind = 2;
+                else if (okFlag == "1" || string.Equals(okFlag, "ok", StringComparison.OrdinalIgnoreCase))
+                    kind = 1;
+                else
+                    kind = 0;
                 list.Add(new RegisterWireRow
                 {
                     At = DateTime.SpecifyKind(at, DateTimeKind.Local),
-                    Ok = okFlag == "1" || string.Equals(okFlag, "ok", StringComparison.OrdinalIgnoreCase),
+                    Kind = kind,
+                    Ok = kind == 1,
                     Text = parts[2] ?? ""
                 });
             }
@@ -869,6 +1006,8 @@ namespace KaiAosRenew
     internal sealed class RegisterWireRow
     {
         public DateTime At { get; set; }
+        /// <summary>0=fail, 1=ok, 2=info.</summary>
+        public int Kind { get; set; }
         public bool Ok { get; set; }
         public string Text { get; set; }
     }

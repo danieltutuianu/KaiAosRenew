@@ -21,6 +21,8 @@ namespace KaiAosRenew
         private readonly bool _hasBodyActivate;
         private Action _action;
         private Action _onBodyActivate;
+        private int _remainingSeconds;
+        private TextBlock _countdownText;
 
         private TrayBalloonWindow(
             string title,
@@ -124,14 +126,44 @@ namespace KaiAosRenew
             Grid.SetColumn(iconCircle, 1);
 
             var textPanel = new StackPanel { Margin = new Thickness(4, 12, 14, 12) };
-            textPanel.Children.Add(new TextBlock
+            var titleRow = new Grid();
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var titleBlock = new TextBlock
             {
                 Text = title ?? "KAI - AOS Renew",
                 FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
                 Foreground = new SolidColorBrush(titleFg),
                 TextWrapping = TextWrapping.Wrap
-            });
+            };
+            Grid.SetColumn(titleBlock, 0);
+            titleRow.Children.Add(titleBlock);
+            if (!_sticky)
+            {
+                _countdownText = new TextBlock
+                {
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var countdownBadge = new Border
+                {
+                    MinWidth = 28,
+                    Height = 26,
+                    CornerRadius = new CornerRadius(13),
+                    Background = new SolidColorBrush(accent),
+                    Padding = new Thickness(6, 0, 6, 0),
+                    Margin = new Thickness(8, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Child = _countdownText
+                };
+                Grid.SetColumn(countdownBadge, 1);
+                titleRow.Children.Add(countdownBadge);
+            }
+            textPanel.Children.Add(titleRow);
             textPanel.Children.Add(new TextBlock
             {
                 Text = text ?? "",
@@ -170,7 +202,7 @@ namespace KaiAosRenew
 
             MouseLeftButtonUp += Balloon_MouseLeftButtonUp;
             MouseDoubleClick += Balloon_MouseDoubleClick;
-            if (!_sticky && (_hasAction || _hasBodyActivate))
+            if (!_sticky)
             {
                 MouseEnter += delegate { PauseCloseTimer(); };
                 MouseLeave += delegate { ResumeCloseTimer(); };
@@ -187,13 +219,30 @@ namespace KaiAosRenew
                     seconds = _hasAction ? 8 : 4;
                 if (seconds < 3) seconds = 3;
                 if (seconds > 60) seconds = 60;
-                _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
-                _closeTimer.Tick += delegate
-                {
-                    _closeTimer.Stop();
-                    Close();
-                };
+                _remainingSeconds = seconds;
+                UpdateCountdownText();
+                _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                _closeTimer.Tick += CloseTimer_Tick;
             }
+        }
+
+        private void CloseTimer_Tick(object sender, EventArgs e)
+        {
+            if (_sticky) return;
+            _remainingSeconds--;
+            if (_remainingSeconds <= 0)
+            {
+                _closeTimer.Stop();
+                Close();
+                return;
+            }
+            UpdateCountdownText();
+        }
+
+        private void UpdateCountdownText()
+        {
+            if (_countdownText == null) return;
+            _countdownText.Text = _remainingSeconds + "s";
         }
 
         private void ActionButton_Click(object sender, RoutedEventArgs e)

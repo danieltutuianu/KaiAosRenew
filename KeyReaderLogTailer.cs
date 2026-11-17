@@ -344,10 +344,10 @@ namespace KaiAosRenew
         {
             if (string.IsNullOrEmpty(body))
                 return KeyReaderActivityKind.Info;
-            if (ContainsAny(body, "error", "fail", "exception", "denied", "cannot", "unable", "fatal",
+            if (ContainsAny(body, "error", "fail", "exception", "denied", "fatal",
                     "fehler", "fehlgeschlagen", "eșuat"))
                 return KeyReaderActivityKind.Error;
-            if (ContainsAny(body, "warn", "warning", "warnung", "avertisment"))
+            if (ContainsAny(body, "cannot", "unable", "warn", "warning", "warnung", "avertisment"))
                 return KeyReaderActivityKind.Warning;
             if (ContainsAny(body, "success", "written", "keyreader.bin", "read key", "key read",
                     "erfolgreich", "geschrieben", "scris cu succes", "date cheie disponibile"))

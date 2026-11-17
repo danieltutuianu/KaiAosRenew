@@ -105,6 +105,8 @@
     <Compile Include="NotifyMessage.cs" />
     <Compile Include="NotifyClient.cs" />
     <Compile Include="ToastWindow.cs" />
+    <Compile Include="SaveLogDialog.cs" />
+    <Compile Include="SettingsConflictDialog.cs" />
     <Compile Include="BrowserPassResultWindow.cs" />
     <Compile Include="..\ChromiumCrypto.cs">
       <Link>ChromiumCrypto.cs</Link>

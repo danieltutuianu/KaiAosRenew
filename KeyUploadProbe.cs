@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Reflection;
@@ -86,21 +87,24 @@ namespace KaiAosRenew
                 }
 
                 var asm = Assembly.LoadFrom(implPath);
-                var typ = asm.GetType(ProxyTypeName, false);
+                var typ = ResolveProxyType(asm);
                 if (typ == null)
                 {
                     result.Summary = "KaiZentralProxyUserRegistration type missing.";
                     return result;
                 }
-                var method = typ.GetMethod("UploadKeyData", BindingFlags.Public | BindingFlags.Instance);
-                if (method == null)
+                MethodInfo method;
+                string methodErr;
+                if (!TryFindUploadKeyData(typ, out method, out methodErr))
                 {
-                    result.Summary = "UploadKeyData method missing.";
+                    result.Summary = methodErr;
                     return result;
                 }
 
-                var proxy = Activator.CreateInstance(typ);
-                method.Invoke(proxy, new object[] { new Uri(uploadUrl), creds, token, kd });
+                object target = null;
+                if (!method.IsStatic)
+                    target = Activator.CreateInstance(typ);
+                method.Invoke(target, new object[] { new Uri(uploadUrl), creds, token, kd });
                 result.Ok = true;
                 result.HttpStatus = 200;
                 result.Summary = "Probe UploadKeyData OK (BMW accepted).";
@@ -192,6 +196,93 @@ namespace KaiAosRenew
                 "BMW", "ISPI", "KAI", "KAI");
             var path = Path.Combine(dir, ImplDllName);
             return File.Exists(path) ? path : null;
+        }
+
+        private static Type ResolveProxyType(Assembly asm)
+        {
+            if (asm == null) return null;
+            var typ = asm.GetType(ProxyTypeName, false);
+            if (typ != null) return typ;
+            Type[] types;
+            try { types = asm.GetTypes(); }
+            catch (ReflectionTypeLoadException rtle) { types = rtle.Types; }
+            catch { return null; }
+            if (types == null) return null;
+            Type fallback = null;
+            for (var i = 0; i < types.Length; i++)
+            {
+                var t = types[i];
+                if (t == null || !t.IsClass) continue;
+                var n = t.FullName ?? t.Name ?? "";
+                if (n.IndexOf("KaiZentral", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (n.IndexOf("Proxy", StringComparison.OrdinalIgnoreCase) < 0
+                    && n.IndexOf("Upload", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                if (string.Equals(n, ProxyTypeName, StringComparison.OrdinalIgnoreCase))
+                    return t;
+                if (fallback == null) fallback = t;
+            }
+            return fallback;
+        }
+
+        private static bool TryFindUploadKeyData(Type typ, out MethodInfo method, out string error)
+        {
+            method = null;
+            error = null;
+            if (typ == null)
+            {
+                error = "UploadKeyData method missing.";
+                return false;
+            }
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+            var preferred = typ.GetMethod(
+                "UploadKeyData",
+                flags,
+                null,
+                new[] { typeof(Uri), typeof(KaiCentralCredentials), typeof(string), typeof(KaiZentralKeyData) },
+                null);
+            if (preferred != null)
+            {
+                method = preferred;
+                return true;
+            }
+            MethodInfo byName = null;
+            MethodInfo fuzzy = null;
+            MethodInfo[] all;
+            try { all = typ.GetMethods(flags); }
+            catch
+            {
+                error = "UploadKeyData method missing.";
+                return false;
+            }
+            var relevant = new List<string>();
+            for (var i = 0; i < all.Length; i++)
+            {
+                var m = all[i];
+                if (m == null || m.IsSpecialName) continue;
+                var name = m.Name ?? "";
+                var lower = name.ToLowerInvariant();
+                if (lower.IndexOf("upload", StringComparison.Ordinal) >= 0
+                    || lower.IndexOf("key", StringComparison.Ordinal) >= 0)
+                {
+                    if (relevant.Count < 12)
+                        relevant.Add(name);
+                }
+                if (string.Equals(name, "UploadKeyData", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (byName == null) byName = m;
+                    continue;
+                }
+                if (fuzzy == null
+                    && lower.IndexOf("upload", StringComparison.Ordinal) >= 0
+                    && lower.IndexOf("key", StringComparison.Ordinal) >= 0)
+                    fuzzy = m;
+            }
+            method = byName ?? fuzzy;
+            if (method != null) return true;
+            var listed = relevant.Count > 0 ? string.Join(", ", relevant.ToArray()) : "(none)";
+            error = "UploadKeyData method missing (methods: " + listed + ").";
+            return false;
         }
 
         private static string ResolveWebEamUrl(AppSettings settings, string fromConfig)

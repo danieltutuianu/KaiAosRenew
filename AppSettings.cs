@@ -49,6 +49,10 @@ namespace KaiAosRenew
         public DateTime? AuthCooldownUntilUtc { get; set; }
         /// <summary>After wrong-password Register (401), block auto Register until the user changes the password.</summary>
         public bool AuthRegisterBlocked { get; set; }
+        /// <summary>Activate AuthRegisterBlocked after this many auto/failed Register strikes (1–10).</summary>
+        public int AuthRegisterBlockAfter { get; set; }
+        /// <summary>Current Register strike count toward AuthRegisterBlockAfter.</summary>
+        public int AuthRegisterStrikeCount { get; set; }
         /// <summary>UTC of last automatic Register attempt (Health-fail path); max one per 12h.</summary>
         public DateTime? LastAutoRegisterUtc { get; set; }
         /// <summary>Minutes to block Register after hard 401 (5–240).</summary>
@@ -78,6 +82,8 @@ namespace KaiAosRenew
         public int NotifyServerPort { get; set; }
         /// <summary>Force Update UI / debug banner until explicitly turned off.</summary>
         public bool DebugMode { get; set; }
+        /// <summary>User pressed Stop timer; suppresses auto-start until Start timer.</summary>
+        public bool TimerUserStopped { get; set; }
 
         public AppSettings()
         {
@@ -92,7 +98,10 @@ namespace KaiAosRenew
             PasswordRotateRemindHours = 1;
             MinimizeOnClose = true;
             AutoUpdate = true;
+            LogVerbose = true;
             AuthCooldownMinutes = 60;
+            AuthRegisterBlockAfter = 3;
+            AuthRegisterStrikeCount = 0;
             KeysBalloonEnabled = true;
             KeysVinTipBmwFailOnly = false;
             KeysStallAlertEnabled = true;
@@ -100,7 +109,7 @@ namespace KaiAosRenew
             KeysStallMinutes = 2;
             KeysAutoCopyVin = false;
             KeysRefreshSeconds = 3;
-            KeysVinTipSeconds = 8;
+            KeysVinTipSeconds = 10;
             KeysUploaderLogDir = @"C:\ProgramData\BMW\ISPI\Logs\KAI\KeyUploader";
             KeysKaiLogDir = @"C:\ProgramData\BMW\ISPI\Logs\KAI\KAI";
             KeysSqlitePath = @"C:\ProgramData\BMW\ISPI\data\KAI\KAI\SqliteKaiDb.db";
@@ -159,6 +168,9 @@ namespace KaiAosRenew
             if (KeysStallMinutes > 60) KeysStallMinutes = 60;
             if (AuthCooldownMinutes < 5) AuthCooldownMinutes = 5;
             if (AuthCooldownMinutes > 240) AuthCooldownMinutes = 240;
+            if (AuthRegisterBlockAfter < 1) AuthRegisterBlockAfter = 1;
+            if (AuthRegisterBlockAfter > 10) AuthRegisterBlockAfter = 10;
+            if (AuthRegisterStrikeCount < 0) AuthRegisterStrikeCount = 0;
             if (KeysRefreshSeconds < 1) KeysRefreshSeconds = 1;
             if (KeysRefreshSeconds > 60) KeysRefreshSeconds = 60;
             if (KeysVinTipSeconds < 3) KeysVinTipSeconds = 3;
@@ -176,6 +188,7 @@ namespace KaiAosRenew
             if (string.IsNullOrWhiteSpace(RegisterUrl))
                 RegisterUrl = "https://kai-b2i-basic.bmwgroup.com/api/agent/register";
             if (WebEamUrl == null) WebEamUrl = "";
+            LogVerbose = true;
         }
 
         public static AppSettings Load()
@@ -219,12 +232,15 @@ namespace KaiAosRenew
                         if (xml.IndexOf("AuthCooldownMinutes", StringComparison.OrdinalIgnoreCase) < 0
                             || loaded.AuthCooldownMinutes < 5)
                             loaded.AuthCooldownMinutes = 60;
+                        if (xml.IndexOf("AuthRegisterBlockAfter", StringComparison.OrdinalIgnoreCase) < 0
+                            || loaded.AuthRegisterBlockAfter < 1)
+                            loaded.AuthRegisterBlockAfter = 3;
                         if (xml.IndexOf("KeysRefreshSeconds", StringComparison.OrdinalIgnoreCase) < 0
                             || loaded.KeysRefreshSeconds < 1)
                             loaded.KeysRefreshSeconds = 3;
                         if (xml.IndexOf("KeysVinTipSeconds", StringComparison.OrdinalIgnoreCase) < 0
                             || loaded.KeysVinTipSeconds < 3)
-                            loaded.KeysVinTipSeconds = 8;
+                            loaded.KeysVinTipSeconds = 10;
                         if (xml.IndexOf("KeysUploaderLogDir", StringComparison.OrdinalIgnoreCase) < 0
                             || string.IsNullOrWhiteSpace(loaded.KeysUploaderLogDir))
                             loaded.KeysUploaderLogDir = @"C:\ProgramData\BMW\ISPI\Logs\KAI\KeyUploader";
@@ -257,6 +273,11 @@ namespace KaiAosRenew
         /// <summary>Portable settings without DPAPI password.</summary>
         public void ExportPortable(string path)
         {
+            File.WriteAllText(path, ExportPortableToString() ?? "", Encoding.UTF8);
+        }
+
+        public string ExportPortableToString()
+        {
             var portable = new AppSettings();
             portable.Email = Email;
             portable.IntervalHours = IntervalHours;
@@ -265,7 +286,7 @@ namespace KaiAosRenew
             portable.WebEamUrl = WebEamUrl;
             portable.Language = Language;
             portable.StartWithWindows = StartWithWindows;
-            portable.LogVerbose = LogVerbose;
+            portable.LogVerbose = true;
             portable.MinimizeToTray = MinimizeToTray;
             portable.MinimizeOnClose = MinimizeOnClose;
             portable.AutoUpdate = AutoUpdate;
@@ -274,6 +295,7 @@ namespace KaiAosRenew
             portable.PasswordRotateRemindHours = PasswordRotateRemindHours;
             portable.ThemeMode = ThemeMode;
             portable.AuthCooldownMinutes = AuthCooldownMinutes;
+            portable.AuthRegisterBlockAfter = AuthRegisterBlockAfter;
             portable.KeysBalloonEnabled = KeysBalloonEnabled;
             portable.KeysVinTipBmwFailOnly = KeysBalloonEnabled && KeysVinTipBmwFailOnly;
             portable.KeysStallAlertEnabled = KeysStallAlertEnabled;
@@ -286,16 +308,26 @@ namespace KaiAosRenew
             portable.KeysKaiLogDir = KeysKaiLogDir;
             portable.KeysSqlitePath = KeysSqlitePath;
             var ser = new XmlSerializer(typeof(AppSettings));
-            using (var fs = File.Create(path))
-                ser.Serialize(fs, portable);
+            using (var sw = new StringWriter())
+            {
+                ser.Serialize(sw, portable);
+                return sw.ToString();
+            }
         }
 
         public void ImportPortable(string path)
         {
+            ImportPortableFromString(File.ReadAllText(path));
+        }
+
+        public void ImportPortableFromString(string xml)
+        {
+            if (string.IsNullOrWhiteSpace(xml))
+                throw new InvalidOperationException("Invalid settings file.");
             var ser = new XmlSerializer(typeof(AppSettings));
             AppSettings imported;
-            using (var fs = File.OpenRead(path))
-                imported = ser.Deserialize(fs) as AppSettings;
+            using (var sr = new StringReader(xml))
+                imported = ser.Deserialize(sr) as AppSettings;
             if (imported == null)
                 throw new InvalidOperationException("Invalid settings file.");
             if (!string.IsNullOrWhiteSpace(imported.Email))
@@ -311,7 +343,7 @@ namespace KaiAosRenew
             if (!string.IsNullOrWhiteSpace(imported.Language))
                 Language = imported.Language.Trim();
             StartWithWindows = imported.StartWithWindows;
-            LogVerbose = imported.LogVerbose;
+            LogVerbose = true;
             MinimizeToTray = imported.MinimizeToTray;
             MinimizeOnClose = imported.MinimizeOnClose;
             AutoUpdate = imported.AutoUpdate;
@@ -322,6 +354,8 @@ namespace KaiAosRenew
             if (!string.IsNullOrWhiteSpace(imported.ThemeMode))
                 ThemeMode = imported.ThemeMode.Trim();
             AuthCooldownMinutes = imported.AuthCooldownMinutes;
+            if (imported.AuthRegisterBlockAfter >= 1 && imported.AuthRegisterBlockAfter <= 10)
+                AuthRegisterBlockAfter = imported.AuthRegisterBlockAfter;
             KeysBalloonEnabled = imported.KeysBalloonEnabled;
             KeysVinTipBmwFailOnly = imported.KeysBalloonEnabled && imported.KeysVinTipBmwFailOnly;
             KeysStallAlertEnabled = imported.KeysStallAlertEnabled;
