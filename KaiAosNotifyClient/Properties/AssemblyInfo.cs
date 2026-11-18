@@ -7,5 +7,5 @@ using System.Reflection;
 [assembly: AssemblyProduct("KAI - AOS Renew - Client")]
 [assembly: AssemblyCopyright("")]
 [assembly: AssemblyTrademark("")]
-[assembly: AssemblyVersion("1.0.18.0")]
-[assembly: AssemblyFileVersion("1.0.18.0")]
+[assembly: AssemblyVersion("1.2.19.0")]
+[assembly: AssemblyFileVersion("1.2.19.0")]

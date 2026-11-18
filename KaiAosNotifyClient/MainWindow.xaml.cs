@@ -192,10 +192,10 @@ namespace KaiAosNotifyClient
                 try
                 {
                     var v = Assembly.GetExecutingAssembly().GetName().Version;
-                    if (v == null) return "1.0.0";
+                    if (v == null) return "1.2.0";
                     return v.Major + "." + v.Minor + "." + v.Build;
                 }
-                catch { return "1.0.0"; }
+                catch { return "1.2.0"; }
             }
         }
 

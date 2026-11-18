@@ -249,16 +249,26 @@ namespace KaiAosRenew
 
         private async Task RefreshUpdateFeedAsync()
         {
-            string serverVer = "";
-            string clientVer = "";
-            try { serverVer = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ServerChannel) ?? ""; }
-            catch { serverVer = ""; }
-            try { clientVer = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ClientChannel) ?? ""; }
-            catch { clientVer = ""; }
-            _feedServerVer = serverVer;
-            _feedClientVer = clientVer;
-            await ApplyFeedToSelfAsync();
-            BroadcastUpdateFeed();
+            if (_updateFeedBusy) return;
+            _updateFeedBusy = true;
+            try
+            {
+                string serverVer = "";
+                string clientVer = "";
+                try { serverVer = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ServerChannel) ?? ""; }
+                catch { serverVer = ""; }
+                try { clientVer = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ClientChannel) ?? ""; }
+                catch { clientVer = ""; }
+                // Local peek is source of truth when non-empty; empty = failed peek, keep cache.
+                if (!string.IsNullOrEmpty(serverVer)) _feedServerVer = serverVer;
+                if (!string.IsNullOrEmpty(clientVer)) _feedClientVer = clientVer;
+                await ApplyFeedToSelfAsync();
+                BroadcastUpdateFeed();
+            }
+            finally
+            {
+                _updateFeedBusy = false;
+            }
         }
 
         private async Task ApplyFeedToSelfAsync()
@@ -279,10 +289,21 @@ namespace KaiAosRenew
             string serverVer;
             string clientVer;
             if (!NotifyMessage.TryParseUpdateFeed(text, out serverVer, out clientVer)) return;
-            _feedServerVer = serverVer ?? "";
-            _feedClientVer = clientVer ?? "";
+            MergeFeedVersion(ref _feedServerVer, serverVer);
+            MergeFeedVersion(ref _feedClientVer, clientVer);
             await ApplyFeedToSelfAsync();
             BroadcastUpdateFeed();
+        }
+
+        /// <summary>Keep non-empty feed; prefer the newer of current vs inbound.</summary>
+        private static void MergeFeedVersion(ref string current, string inbound)
+        {
+            var next = (inbound ?? "").Trim();
+            if (string.IsNullOrEmpty(next))
+                return;
+            var cur = current ?? "";
+            if (string.IsNullOrEmpty(cur) || UpdateService.IsNewerVersion(next, cur))
+                current = next;
         }
 
         private void ShowPendingUpdate(UpdateInfo update)

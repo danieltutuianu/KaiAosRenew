@@ -46,10 +46,16 @@ namespace KaiAosRenew
         {
             if (_settings == null || !_settings.NotifyServerEnabled) return;
             if (!NotifyServer.Instance.IsRunning) return;
-            if (!allowEmpty
-                && string.IsNullOrEmpty(_feedServerVer)
-                && string.IsNullOrEmpty(_feedClientVer))
+            // Never push a blank wipe that clears a client's known-good feed.
+            // allowEmpty only means "ok to reply after a refresh that found nothing"
+            // when we truly have no cached versions — not "force empty over good".
+            if (string.IsNullOrEmpty(_feedServerVer) && string.IsNullOrEmpty(_feedClientVer))
+            {
+                if (!allowEmpty) return;
+                // Intentional empty reply (both unknown) — still skip; empty Encode
+                // would only clobber client sticky offers. Prefer silence.
                 return;
+            }
             try
             {
                 NotifyServer.Instance.SendTo(clientId, new NotifyMessage
@@ -201,7 +207,8 @@ namespace KaiAosRenew
         {
             try { await RefreshUpdateFeedAsync(); }
             catch { }
-            SendUpdateFeedTo(clientId, true);
+            // Send only if we have something useful; never blank-wipe the client.
+            SendUpdateFeedTo(clientId, false);
         }
 
         private void MarkClientUpdating(int clientId, bool updating, string version)

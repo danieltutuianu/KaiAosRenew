@@ -194,6 +194,7 @@ namespace KaiAosRenew
         private readonly DispatcherTimer _updatePeekTimer = new DispatcherTimer();
         private UpdateInfo _pendingUpdate;
         private bool _updateCheckBusy;
+        private bool _updateFeedBusy;
         private bool _remoteServerUpdateBusy;
         private string _feedServerVer = "";
         private string _feedClientVer = "";

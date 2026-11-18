@@ -299,8 +299,9 @@ namespace KaiAosNotifyClient
                 catch { serverVer = ""; }
                 try { clientVer = await UpdateService.PeekLatestChannelVersionAsync(UpdateService.ClientChannel) ?? ""; }
                 catch { clientVer = ""; }
-                _feedServerVer = serverVer;
-                _feedClientVer = clientVer;
+                // Local peek is source of truth when non-empty; empty = failed peek, keep cache.
+                if (!string.IsNullOrEmpty(serverVer)) _feedServerVer = serverVer;
+                if (!string.IsNullOrEmpty(clientVer)) _feedClientVer = clientVer;
                 RefreshServerUpdateFromFeed();
                 await ApplyFeedToSelfAsync();
                 if (sendToServer)
@@ -314,10 +315,21 @@ namespace KaiAosNotifyClient
 
         private void ApplyCachedFeedVersions(string serverVer, string clientVer)
         {
-            _feedServerVer = serverVer ?? "";
-            _feedClientVer = clientVer ?? "";
+            MergeFeedVersion(ref _feedServerVer, serverVer);
+            MergeFeedVersion(ref _feedClientVer, clientVer);
             RefreshServerUpdateFromFeed();
             var ignore = ApplyFeedToSelfAsync();
+        }
+
+        /// <summary>Keep non-empty feed; prefer the newer of current vs inbound.</summary>
+        private static void MergeFeedVersion(ref string current, string inbound)
+        {
+            var next = (inbound ?? "").Trim();
+            if (string.IsNullOrEmpty(next))
+                return;
+            var cur = current ?? "";
+            if (string.IsNullOrEmpty(cur) || UpdateService.IsNewerVersion(next, cur))
+                current = next;
         }
 
         private async Task ApplyFeedToSelfAsync()
@@ -368,12 +380,33 @@ namespace KaiAosNotifyClient
 
         private void RefreshServerUpdateFromFeed()
         {
+            var footer = _serverVersionFromFooter ?? "";
             if (!string.IsNullOrEmpty(_feedServerVer)
-                && !string.IsNullOrEmpty(_serverVersionFromFooter)
-                && UpdateService.IsNewerVersion(_feedServerVer, _serverVersionFromFooter))
+                && !string.IsNullOrEmpty(footer)
+                && UpdateService.IsNewerVersion(_feedServerVer, footer))
+            {
                 _latestServerReleaseVer = _feedServerVer;
-            else
+            }
+            else if (!string.IsNullOrEmpty(_feedServerVer)
+                && !string.IsNullOrEmpty(footer)
+                && !UpdateService.IsNewerVersion(_feedServerVer, footer))
+            {
+                // Feed proves server is current (or feed is not newer) — clear offer.
                 _latestServerReleaseVer = "";
+            }
+            else if (!string.IsNullOrEmpty(_latestServerReleaseVer)
+                && !string.IsNullOrEmpty(footer)
+                && UpdateService.IsNewerVersion(_latestServerReleaseVer, footer))
+            {
+                // Sticky: keep existing offer while still newer than footer
+                // (empty/stale temporary _feedServerVer must not wipe it).
+            }
+            else if (!string.IsNullOrEmpty(_latestServerReleaseVer)
+                && !string.IsNullOrEmpty(footer)
+                && !UpdateService.IsNewerVersion(_latestServerReleaseVer, footer))
+            {
+                _latestServerReleaseVer = "";
+            }
             RefreshServerUpdateUi();
         }
 
@@ -542,8 +575,16 @@ namespace KaiAosNotifyClient
                 catch { }
                 if (update == null)
                 {
-                    MessageBox.Show(this, ClientUiStrings.T("UpdateNone"),
-                        ClientUiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    // Server offer may be active — don't claim "latest" or pump MessageBox over it.
+                    var serverOffer = !_awaitingServerUpdateReconnect
+                        && !string.IsNullOrEmpty(_latestServerReleaseVer)
+                        && !string.IsNullOrEmpty(_serverVersionFromFooter)
+                        && UpdateService.IsNewerVersion(_latestServerReleaseVer, _serverVersionFromFooter);
+                    if (!serverOffer)
+                    {
+                        MessageBox.Show(this, ClientUiStrings.T("UpdateNone"),
+                            ClientUiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
                     return;
                 }
                 await BeginClientSelfUpdateAsync(update);

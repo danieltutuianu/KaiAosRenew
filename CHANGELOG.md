@@ -4,6 +4,12 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.19] - 2026-11-18
+
+- Client: sticky footer “Update server” offer (no flash-and-vanish after Check for updates); skip false UpdateNone when server update is available
+- Update feed: merge inbound versions (never clobber with empty); server busy-lock + no blank wipe on updateFeedReq
+- Client AssemblyVersion aligned to 1.2.x with Velopack pack/release tags
+
 ## [1.2.18] - 2026-11-18
 
 - Notify: 1-click Windows Firewall allow (TCP/UDP); UDP LAN discovery with verified TCP fallback; optional pairing code (HMAC) + client InstanceGuid ghost replace
