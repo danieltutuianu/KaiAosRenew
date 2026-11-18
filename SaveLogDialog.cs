@@ -17,7 +17,14 @@ namespace KaiAosRenew
         public bool Confirmed { get; private set; }
 
         public SaveLogDialog(string title, DateTime defaultDay)
+            : this(title, defaultDay, null)
         {
+        }
+
+        public SaveLogDialog(string title, DateTime defaultDay, Func<string, string> t)
+        {
+            if (t == null)
+                t = key => key ?? "";
             Title = title ?? "Save log";
             Width = 360;
             SizeToContent = SizeToContent.Height;
@@ -28,7 +35,7 @@ namespace KaiAosRenew
             var root = new StackPanel { Margin = new Thickness(16) };
             root.Children.Add(new TextBlock
             {
-                Text = UiStrings.T("SaveLogDay"),
+                Text = t("SaveLogDay"),
                 Margin = new Thickness(0, 0, 0, 6)
             });
             _dayPicker = new DatePicker
@@ -40,13 +47,13 @@ namespace KaiAosRenew
 
             _clipRadio = new RadioButton
             {
-                Content = UiStrings.T("SaveLogClipboard"),
+                Content = t("SaveLogClipboard"),
                 IsChecked = true,
                 Margin = new Thickness(0, 0, 0, 6)
             };
             _fileRadio = new RadioButton
             {
-                Content = UiStrings.T("SaveLogFile"),
+                Content = t("SaveLogFile"),
                 Margin = new Thickness(0, 0, 0, 14)
             };
             root.Children.Add(_clipRadio);
@@ -59,7 +66,7 @@ namespace KaiAosRenew
             };
             var ok = new Button
             {
-                Content = UiStrings.T("SaveLogOk"),
+                Content = t("SaveLogOk"),
                 MinWidth = 80,
                 Margin = new Thickness(0, 0, 8, 0),
                 IsDefault = true
@@ -67,7 +74,7 @@ namespace KaiAosRenew
             ok.Click += Ok_Click;
             var cancel = new Button
             {
-                Content = UiStrings.T("SaveLogCancel"),
+                Content = t("SaveLogCancel"),
                 MinWidth = 80,
                 IsCancel = true
             };

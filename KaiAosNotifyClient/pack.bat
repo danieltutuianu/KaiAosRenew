@@ -12,6 +12,12 @@ if exist "%STAGE%" rmdir /S /Q "%STAGE%"
 mkdir "%STAGE%"
 
 copy /Y "%OUTDIR%\KAI - AOS Renew - Client.exe" "%STAGE%\" >nul
+if exist "%OUTDIR%\Velopack.dll" copy /Y "%OUTDIR%\Velopack.dll" "%STAGE%\" >nul
+if exist "%OUTDIR%\Newtonsoft.Json.dll" copy /Y "%OUTDIR%\Newtonsoft.Json.dll" "%STAGE%\" >nul
+if exist "%OUTDIR%\System.Data.SQLite.dll" copy /Y "%OUTDIR%\System.Data.SQLite.dll" "%STAGE%\" >nul
+if exist "%OUTDIR%\SQLite.Interop.dll" copy /Y "%OUTDIR%\SQLite.Interop.dll" "%STAGE%\" >nul
+if exist "%ROOT%..\CHANGELOG.md" copy /Y "%ROOT%..\CHANGELOG.md" "%STAGE%\" >nul
+if exist "%ROOT%CHANGELOG.md" copy /Y "%ROOT%CHANGELOG.md" "%STAGE%\" >nul
 
 set "ZIP=%DIST%\KaiAosNotifyClient.zip"
 if exist "%ZIP%" del /F /Q "%ZIP%"

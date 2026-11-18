@@ -87,6 +87,21 @@
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="MainWindow.Aos.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.Keys.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.Notify.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.Updates.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.Settings.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="ClientSettings.cs" />
     <Compile Include="ClientKeyHistory.cs" />
@@ -102,12 +117,23 @@
       <Link>IconFactory.cs</Link>
     </Compile>
     <Compile Include="LanServerDiscovery.cs" />
-    <Compile Include="NotifyMessage.cs" />
+    <Compile Include="ClientKeySync.cs" />
     <Compile Include="NotifyClient.cs" />
     <Compile Include="ToastWindow.cs" />
-    <Compile Include="SaveLogDialog.cs" />
+    <Compile Include="..\SaveLogDialog.cs">
+      <Link>SaveLogDialog.cs</Link>
+    </Compile>
     <Compile Include="SettingsConflictDialog.cs" />
     <Compile Include="BrowserPassResultWindow.cs" />
+    <Compile Include="..\Shared\NotifyMessage.cs">
+      <Link>Shared\NotifyMessage.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\TcpUtf8LineReader.cs">
+      <Link>Shared\TcpUtf8LineReader.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\NotifyPairing.cs">
+      <Link>Shared\NotifyPairing.cs</Link>
+    </Compile>
     <Compile Include="..\ChromiumCrypto.cs">
       <Link>ChromiumCrypto.cs</Link>
     </Compile>

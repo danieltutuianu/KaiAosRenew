@@ -42,6 +42,7 @@ namespace KaiAosRenew
         public string ILevelCurrent { get; set; }
         public string ILevelBackup { get; set; }
         public string ILevelPlant { get; set; }
+        public int? MileageKm { get; set; }
         public bool LocalSent { get; set; }
         public bool BmwUploaded { get; set; }
         public bool Failed { get; set; }
@@ -54,13 +55,23 @@ namespace KaiAosRenew
         [XmlIgnore]
         public string VinText { get { return string.IsNullOrEmpty(Vin) ? "—" : Vin; } }
         [XmlIgnore]
+        public string KmText
+        {
+            get
+            {
+                if (!MileageKm.HasValue || MileageKm.Value <= 0) return "—";
+                return MileageKm.Value.ToString("N0", System.Globalization.CultureInfo.CurrentCulture);
+            }
+        }
+        [XmlIgnore]
         public string RowToolTip
         {
             get
             {
-                if (string.IsNullOrEmpty(Vin))
-                    return "VIN: —";
-                return "VIN: " + Vin;
+                var tip = string.IsNullOrEmpty(Vin) ? "VIN: —" : ("VIN: " + Vin);
+                if (MileageKm.HasValue && MileageKm.Value > 0)
+                    tip += "\nKm: " + KmText;
+                return tip;
             }
         }
         [XmlIgnore]
@@ -151,6 +162,8 @@ namespace KaiAosRenew
         public string KaiLogPath { get; set; }
         public string Summary { get; set; }
         public int KeysToday { get; set; }
+        public string EncPath { get; set; }
+        public bool EncFileExists { get; set; }
 
         public KeyActivitySnapshot()
         {
@@ -524,6 +537,18 @@ namespace KaiAosRenew
 
                 try
                 {
+                    var enc = DesktopKeyReaderReg.ReadAbsolute().EncPath;
+                    snap.EncPath = enc;
+                    snap.EncFileExists = !string.IsNullOrEmpty(enc) && File.Exists(enc);
+                }
+                catch
+                {
+                    snap.EncPath = "";
+                    snap.EncFileExists = true; // unknown — do not warn
+                }
+
+                try
+                {
                     var bin = Path.Combine(_pickupFolder, "keyreader.bin");
                     if (File.Exists(bin))
                         snap.PickupFileLocal = File.GetLastWriteTime(bin);
@@ -541,11 +566,8 @@ namespace KaiAosRenew
                 AttachBinFields(merged);
                 InheritUploadStatusByVin(merged);
                 merged = DeduplicateVinRows(merged);
-                if (KeyDebugEnabled)
-                {
-                    foreach (var ev in merged)
-                        TryAssignDebugBinPath(ev);
-                }
+                foreach (var ev in merged)
+                    TryAssignDebugBinPath(ev);
                 snap.Events = merged;
                 snap.KeysToday = CountKeysToday(merged);
                 snap.NewEvents = DetectNewEvents(merged);
@@ -615,6 +637,7 @@ namespace KaiAosRenew
                 ILevelCurrent = ev.ILevelCurrent,
                 ILevelBackup = ev.ILevelBackup,
                 ILevelPlant = ev.ILevelPlant,
+                MileageKm = ev.MileageKm,
                 LocalSent = ev.LocalSent,
                 BmwUploaded = ev.BmwUploaded,
                 Failed = ev.Failed,
@@ -765,6 +788,7 @@ namespace KaiAosRenew
                         if (!string.IsNullOrEmpty(ev.ILevelCurrent)) existing.ILevelCurrent = ev.ILevelCurrent;
                         if (!string.IsNullOrEmpty(ev.ILevelBackup)) existing.ILevelBackup = ev.ILevelBackup;
                         if (!string.IsNullOrEmpty(ev.ILevelPlant)) existing.ILevelPlant = ev.ILevelPlant;
+                        if (ev.MileageKm.HasValue && ev.MileageKm.Value > 0) existing.MileageKm = ev.MileageKm;
                         if (!string.IsNullOrEmpty(ev.Detail)
                             && !KeyActivityEvent.IsPickupNoiseDetail(ev.Detail))
                             existing.Detail = ev.Detail;
@@ -849,7 +873,7 @@ namespace KaiAosRenew
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText =
-                            "SELECT Vin, Color, Upholstery, ReadDate FROM KeyBaseDataEntity " +
+                            "SELECT Vin, Color, Upholstery, TotalDistanceKm, ReadDate FROM KeyBaseDataEntity " +
                             "WHERE Vin IS NOT NULL AND Vin <> '' ORDER BY ReadDate DESC LIMIT 50";
                         using (var r = cmd.ExecuteReader())
                         {
@@ -860,6 +884,15 @@ namespace KaiAosRenew
                                 try { fields.Paint = Convert.ToString(r["Color"]); }
                                 catch { }
                                 try { fields.Upholstery = Convert.ToString(r["Upholstery"]); }
+                                catch { }
+                                try
+                                {
+                                    if (r["TotalDistanceKm"] != DBNull.Value && r["TotalDistanceKm"] != null)
+                                    {
+                                        var tk = Convert.ToInt64(r["TotalDistanceKm"]);
+                                        if (tk > 0 && tk <= int.MaxValue) fields.MileageKm = (int)tk;
+                                    }
+                                }
                                 catch { }
                                 DateTime when = DateTime.Now;
                                 if (r["ReadDate"] != DBNull.Value && r["ReadDate"] != null)
@@ -948,6 +981,9 @@ namespace KaiAosRenew
                 if (string.IsNullOrEmpty(ev.ILevelCurrent)) ev.ILevelCurrent = best.ILevelCurrent;
                 if (string.IsNullOrEmpty(ev.ILevelBackup)) ev.ILevelBackup = best.ILevelBackup;
                 if (string.IsNullOrEmpty(ev.ILevelPlant)) ev.ILevelPlant = best.ILevelPlant;
+                if ((!ev.MileageKm.HasValue || ev.MileageKm.Value <= 0)
+                    && best.MileageKm.HasValue && best.MileageKm.Value > 0)
+                    ev.MileageKm = best.MileageKm;
                 TryAssignDebugBinPath(ev);
             }
         }
@@ -955,11 +991,21 @@ namespace KaiAosRenew
         private void TryAssignDebugBinPath(KeyActivityEvent ev)
         {
             if (ev == null || string.IsNullOrEmpty(ev.Vin)) return;
-            string path;
+            string path = null;
             lock (_gate)
             {
-                if (!_lastDebugBinByVin.TryGetValue(ev.Vin, out path))
-                    return;
+                _lastDebugBinByVin.TryGetValue(ev.Vin, out path);
+            }
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                path = ResolveDebugBinForVin(ev.Vin);
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    lock (_gate)
+                    {
+                        _lastDebugBinByVin[ev.Vin] = path;
+                    }
+                }
             }
             if (!string.IsNullOrEmpty(path) && File.Exists(path))
                 ev.DebugBinPath = path;
@@ -975,21 +1021,18 @@ namespace KaiAosRenew
                 if (!TryReadKeyReaderBytes(path, out bytes, out mtimeUtc)) return;
                 KeyBinFields fields;
                 if (!TryParseKeyReaderBytes(bytes, out fields)) return;
-                if (KeyDebugEnabled)
+                try
                 {
-                    try
+                    var archived = WriteKeyReadDebug(path, bytes, mtimeUtc, fields);
+                    if (!string.IsNullOrEmpty(archived) && fields != null && !string.IsNullOrEmpty(fields.Vin))
                     {
-                        var archived = WriteKeyReadDebug(path, bytes, mtimeUtc, fields);
-                        if (!string.IsNullOrEmpty(archived) && fields != null && !string.IsNullOrEmpty(fields.Vin))
+                        lock (_gate)
                         {
-                            lock (_gate)
-                            {
-                                _lastDebugBinByVin[fields.Vin] = archived;
-                            }
+                            _lastDebugBinByVin[fields.Vin] = archived;
                         }
                     }
-                    catch { }
                 }
+                catch { }
                 RememberBin(File.GetLastWriteTime(path), fields);
             }
             catch { }
@@ -1210,6 +1253,9 @@ namespace KaiAosRenew
                     .Append(" Upholstery=")
                     .Append(fields != null && !string.IsNullOrEmpty(fields.Upholstery) ? fields.Upholstery : "(none)")
                     .AppendLine();
+                sb.Append("Km=")
+                    .Append(fields != null && fields.MileageKm.HasValue ? fields.MileageKm.Value.ToString() : "(none)")
+                    .AppendLine();
                 sb.Append("ILevelCurrent=")
                     .Append(fields != null && !string.IsNullOrEmpty(fields.ILevelCurrent) ? fields.ILevelCurrent : "(none)")
                     .Append(" Backup=")
@@ -1249,6 +1295,21 @@ namespace KaiAosRenew
                 sb.AppendLine();
 
                 var logPath = Path.Combine(store, "key-reader-parse.log");
+                try
+                {
+                    if (File.Exists(logPath))
+                    {
+                        var fi = new FileInfo(logPath);
+                        if (fi.Length >= 10L * 1024 * 1024)
+                        {
+                            var bak = logPath + ".1";
+                            if (File.Exists(bak))
+                                File.Delete(bak);
+                            File.Move(logPath, bak);
+                        }
+                    }
+                }
+                catch { }
                 File.AppendAllText(logPath, sb.ToString(), Encoding.UTF8);
 
                 _lastKeyDebugVin = vin ?? "";
@@ -1291,6 +1352,19 @@ namespace KaiAosRenew
             {
                 fields.Paint = bestPu.Groups[1].Value;
                 fields.Upholstery = bestPu.Groups[2].Value.ToUpperInvariant();
+            }
+
+            // Mileage: big-endian 24-bit, 13 bytes after the %paintUph token, else fixed offset 0x28.
+            var kmOffset = -1;
+            if (bestPu != null && bestPu.Index + 13 + 3 <= bytes.Length)
+                kmOffset = bestPu.Index + 13;
+            else if (bytes.Length > 0x2A)
+                kmOffset = 0x28;
+            if (kmOffset >= 0 && kmOffset + 3 <= bytes.Length)
+            {
+                var km = (bytes[kmOffset] << 16) | (bytes[kmOffset + 1] << 8) | bytes[kmOffset + 2];
+                if (km >= 1 && km <= 1999999 && km != 0xFFFFFF)
+                    fields.MileageKm = km;
             }
 
             // I-levels: family [A-Z][0-9A-F]{3} ASCII followed by 4 payload bytes (any series).
@@ -1375,6 +1449,20 @@ namespace KaiAosRenew
             return sb.ToString();
         }
 
+        /// <summary>Quick reader row read (no gate) for startup self-check.</summary>
+        public bool? PeekReaderInactive()
+        {
+            try
+            {
+                var r = ReadReaderSnapshot();
+                return r != null && r.Ok ? r.Inactive : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private KeyReaderSnapshot ReadReaderSnapshot()
         {
             var info = new KeyReaderSnapshot();
@@ -1413,6 +1501,20 @@ namespace KaiAosRenew
                                 try { info.LastKeyReceivedLocal = Convert.ToDateTime(r["LastKeyReceived"]); }
                                 catch { }
                             }
+                            try
+                            {
+                                var inactiveRaw = r["Inactive"];
+                                if (inactiveRaw != DBNull.Value && inactiveRaw != null)
+                                {
+                                    try { info.Inactive = Convert.ToInt32(inactiveRaw) != 0; }
+                                    catch
+                                    {
+                                        try { info.Inactive = Convert.ToBoolean(inactiveRaw); }
+                                        catch { }
+                                    }
+                                }
+                            }
+                            catch { }
                             info.Message = "OK";
                         }
                     }
@@ -1903,6 +2005,7 @@ namespace KaiAosRenew
             public string ILevelCurrent;
             public string ILevelBackup;
             public string ILevelPlant;
+            public int? MileageKm;
 
             public static BinHint From(DateTime when, KeyBinFields f)
             {
@@ -1914,7 +2017,8 @@ namespace KaiAosRenew
                     Upholstery = f.Upholstery,
                     ILevelCurrent = f.ILevelCurrent,
                     ILevelBackup = f.ILevelBackup,
-                    ILevelPlant = f.ILevelPlant
+                    ILevelPlant = f.ILevelPlant,
+                    MileageKm = f.MileageKm
                 };
             }
         }
@@ -1927,6 +2031,7 @@ namespace KaiAosRenew
             public string ILevelCurrent;
             public string ILevelBackup;
             public string ILevelPlant;
+            public int? MileageKm;
         }
     }
 }

@@ -18,6 +18,25 @@ namespace KaiAosRenew
         /// <summary>Owned by the running UI instance; second launches Set() this to restore from tray.</summary>
         public static EventWaitHandle ShowWindowEvent { get { return _showWindowEvent; } }
 
+        /// <summary>Release mutex/event before Velopack ApplyUpdatesAndRestart so the new process can start.</summary>
+        internal static void ReleaseSingleInstanceForRestart()
+        {
+            if (_showWindowEvent != null)
+            {
+                try { _showWindowEvent.Dispose(); }
+                catch { }
+                _showWindowEvent = null;
+            }
+            if (_mutex != null)
+            {
+                try { _mutex.ReleaseMutex(); }
+                catch { }
+                try { _mutex.Dispose(); }
+                catch { }
+                _mutex = null;
+            }
+        }
+
         [STAThread]
         private static void Main(string[] args)
         {
@@ -70,16 +89,51 @@ namespace KaiAosRenew
                     Environment.Exit(restart.Ok ? 0 : 1);
                     return;
                 }
+                if (string.Equals(args[i], NotifyFirewallHelper.ArgAllow, StringComparison.OrdinalIgnoreCase))
+                {
+                    var port = NotifyServer.DefaultPort;
+                    if (i + 1 < args.Length)
+                    {
+                        int parsed;
+                        if (int.TryParse(args[i + 1], out parsed) && parsed >= 1024 && parsed <= 65535)
+                            port = parsed;
+                    }
+                    var fw = NotifyFirewallHelper.AllowPort(port);
+                    Console.WriteLine(fw.Ok ? "OK" : "FAIL");
+                    Console.WriteLine(fw.Message ?? "");
+                    Environment.Exit(fw.Ok ? 0 : 1);
+                    return;
+                }
             }
 
+            const string mutexName = @"Local\KaiAosRenew.SingleInstance";
             bool created;
-            _mutex = new Mutex(true, @"Local\KaiAosRenew.SingleInstance", out created);
+            _mutex = new Mutex(true, mutexName, out created);
             if (!created)
             {
-                // Pin/taskbar second launch: ask the tray instance to show, then exit.
-                // Never kill the live tray process — that looked like "close and reopen in tray".
+                // Pin/taskbar second launch: ask the tray instance to show.
                 NativeMethods.TryActivateOtherInstance();
-                return;
+                // After Velopack restart the old process may still hold the mutex briefly.
+                for (var i = 0; i < 4 && !created; i++)
+                {
+                    Thread.Sleep(300);
+                    try
+                    {
+                        if (_mutex != null)
+                        {
+                            try { _mutex.Dispose(); }
+                            catch { }
+                            _mutex = null;
+                        }
+                    }
+                    catch { }
+                    _mutex = new Mutex(true, mutexName, out created);
+                }
+                if (!created)
+                {
+                    NativeMethods.TryActivateOtherInstance();
+                    return;
+                }
             }
 
             try

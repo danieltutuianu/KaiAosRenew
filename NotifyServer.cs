@@ -13,16 +13,21 @@ namespace KaiAosRenew
     internal sealed class NotifyServer : IDisposable
     {
         public const int DefaultPort = 17890;
+        public const string UdpDiscoverRequest = "KAI_DISCOVER_V1";
+        public const string UdpDiscoverResponsePrefix = "KAI_HERE_V1|";
         private static NotifyServer _instance;
         private readonly object _gate = new object();
         private TcpListener _listener;
         private Thread _acceptThread;
+        private UdpClient _udp;
+        private Thread _udpThread;
         private volatile bool _running;
         private readonly List<ClientConn> _clients = new List<ClientConn>();
         private int _port = DefaultPort;
         private Timer _pingTimer;
         private const int PingIntervalMs = 30000;
         private int _nextClientId = 1;
+        private string _pairingCode = "";
 
         public static NotifyServer Instance
         {
@@ -36,7 +41,17 @@ namespace KaiAosRenew
 
         public bool IsRunning { get { return _running; } }
         public int Port { get { return _port; } }
-        /// <summary>Raised on the accept thread after a client is added (arg = client id).</summary>
+        /// <summary>Optional LAN pairing code. Empty = no auth (compat with older clients).</summary>
+        public string PairingCode
+        {
+            get { lock (_gate) return _pairingCode ?? ""; }
+            set
+            {
+                lock (_gate)
+                    _pairingCode = (value ?? "").Trim();
+            }
+        }
+        /// <summary>Raised on the accept thread after a client is authenticated (arg = client id).</summary>
         public event Action<int> ClientConnected;
         /// <summary>Raised after a client is removed (arg = client id).</summary>
         public event Action<int> ClientDisconnected;
@@ -46,14 +61,29 @@ namespace KaiAosRenew
         {
             get
             {
-                lock (_gate) return _clients.Count;
+                lock (_gate)
+                {
+                    var n = 0;
+                    foreach (var c in _clients)
+                    {
+                        if (c != null && c.Authenticated) n++;
+                    }
+                    return n;
+                }
             }
         }
 
         public void ApplySettings(bool enabled, int port)
         {
+            ApplySettings(enabled, port, null);
+        }
+
+        public void ApplySettings(bool enabled, int port, string pairingCode)
+        {
             if (port < 1024) port = DefaultPort;
             if (port > 65535) port = DefaultPort;
+            if (pairingCode != null)
+                PairingCode = pairingCode;
             if (!enabled)
             {
                 Stop();
@@ -78,12 +108,14 @@ namespace KaiAosRenew
                     _running = true;
                     _acceptThread = new Thread(AcceptLoop) { IsBackground = true, Name = "NotifyServerAccept" };
                     _acceptThread.Start();
+                    StartUdpDiscovery(port);
                     StartPingTimer();
-                    RenewEngine.Log("Notify server listening on 0.0.0.0:" + port);
+                    RenewEngine.Log("Notify server listening on 0.0.0.0:" + port + " (TCP+UDP)");
                 }
                 catch (Exception ex)
                 {
                     _running = false;
+                    StopUdpDiscovery();
                     _listener = null;
                     RenewEngine.Log("Notify server start failed: " + ex.Message);
                 }
@@ -96,6 +128,7 @@ namespace KaiAosRenew
             {
                 _running = false;
                 StopPingTimer();
+                StopUdpDiscovery();
                 try
                 {
                     if (_listener != null)
@@ -109,6 +142,84 @@ namespace KaiAosRenew
                     catch { }
                 }
                 _clients.Clear();
+            }
+        }
+
+        private void StartUdpDiscovery(int port)
+        {
+            StopUdpDiscovery();
+            try
+            {
+                _udp = new UdpClient(new IPEndPoint(IPAddress.Any, port));
+                try { _udp.EnableBroadcast = true; }
+                catch { }
+                _udpThread = new Thread(UdpDiscoverLoop)
+                {
+                    IsBackground = true,
+                    Name = "NotifyServerUdpDiscover"
+                };
+                _udpThread.Start();
+            }
+            catch (Exception ex)
+            {
+                _udp = null;
+                try { RenewEngine.Log("Notify UDP discovery start failed: " + ex.Message); }
+                catch { }
+            }
+        }
+
+        private void StopUdpDiscovery()
+        {
+            try
+            {
+                if (_udp != null)
+                    _udp.Close();
+            }
+            catch { }
+            _udp = null;
+            _udpThread = null;
+        }
+
+        private void UdpDiscoverLoop()
+        {
+            var expected = Encoding.ASCII.GetBytes(UdpDiscoverRequest);
+            while (_running)
+            {
+                try
+                {
+                    var udp = _udp;
+                    if (udp == null) break;
+                    IPEndPoint remote = null;
+                    var data = udp.Receive(ref remote);
+                    if (!_running || data == null || remote == null) continue;
+                    if (data.Length < expected.Length) continue;
+                    var match = true;
+                    for (var i = 0; i < expected.Length; i++)
+                    {
+                        if (data[i] != expected[i])
+                        {
+                            match = false;
+                            break;
+                        }
+                    }
+                    if (!match) continue;
+                    var reply = Encoding.ASCII.GetBytes(
+                        UdpDiscoverResponsePrefix + _port + "|" + Environment.MachineName);
+                    udp.Send(reply, reply.Length, remote);
+                }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
+                catch (SocketException)
+                {
+                    if (!_running) break;
+                }
+                catch
+                {
+                    if (!_running) break;
+                    Thread.Sleep(50);
+                }
             }
         }
 
@@ -151,7 +262,14 @@ namespace KaiAosRenew
             var bytes = Encode(msg);
             List<ClientConn> snapshot;
             lock (_gate)
-                snapshot = new List<ClientConn>(_clients);
+            {
+                snapshot = new List<ClientConn>();
+                foreach (var c in _clients)
+                {
+                    if (c != null && c.Authenticated)
+                        snapshot.Add(c);
+                }
+            }
             foreach (var c in snapshot)
                 TrySendOrDrop(c, bytes);
         }
@@ -172,7 +290,7 @@ namespace KaiAosRenew
                     }
                 }
             }
-            if (target == null) return false;
+            if (target == null || !target.Authenticated) return false;
             return TrySendOrDrop(target, bytes);
         }
 
@@ -182,12 +300,15 @@ namespace KaiAosRenew
             lock (_gate)
             {
                 foreach (var c in _clients)
+                {
+                    if (c == null || !c.Authenticated) continue;
                     list.Add(new NotifyClientInfo
                     {
                         Id = c.Id,
                         Display = c.RemoteDisplay,
                         Version = c.ClientVersion ?? ""
                     });
+                }
             }
             return list;
         }
@@ -208,6 +329,74 @@ namespace KaiAosRenew
                 }
             }
             return false;
+        }
+
+        /// <summary>
+        /// Apply clientHello identity and dispose ghost sockets for the same InstanceGuid
+        /// (or same RemoteIp when Guid is empty — legacy clients).
+        /// </summary>
+        public void ApplyClientHello(int clientId, string version, string instanceGuid)
+        {
+            if (clientId <= 0) return;
+            var ver = (version ?? "").Trim();
+            var guid = (instanceGuid ?? "").Trim();
+            List<ClientConn> replaced = null;
+            lock (_gate)
+            {
+                ClientConn self = null;
+                foreach (var c in _clients)
+                {
+                    if (c != null && c.Id == clientId)
+                    {
+                        self = c;
+                        break;
+                    }
+                }
+                if (self == null) return;
+                self.ClientVersion = ver;
+                self.InstanceGuid = guid;
+
+                for (var i = _clients.Count - 1; i >= 0; i--)
+                {
+                    var old = _clients[i];
+                    if (old == null || old.Id == clientId) continue;
+                    var match = false;
+                    if (!string.IsNullOrEmpty(guid))
+                    {
+                        match = string.Equals(old.InstanceGuid, guid, StringComparison.OrdinalIgnoreCase);
+                    }
+                    else if (!string.IsNullOrEmpty(self.RemoteIp))
+                    {
+                        match = string.Equals(old.RemoteIp, self.RemoteIp, StringComparison.OrdinalIgnoreCase);
+                    }
+                    if (!match) continue;
+                    _clients.RemoveAt(i);
+                    if (replaced == null) replaced = new List<ClientConn>();
+                    replaced.Add(old);
+                }
+            }
+            if (replaced == null) return;
+            foreach (var old in replaced)
+            {
+                var wasAuth = old.Authenticated;
+                try { old.Dispose(); }
+                catch { }
+                try
+                {
+                    RenewEngine.Log("Notify client replaced #" + old.Id + " (" + old.RemoteDisplay + ")"
+                        + (string.IsNullOrEmpty(guid) ? " by RemoteIp" : " by InstanceGuid"));
+                }
+                catch { }
+                if (wasAuth)
+                {
+                    var disc = ClientDisconnected;
+                    if (disc != null)
+                    {
+                        try { disc(old.Id); }
+                        catch { }
+                    }
+                }
+            }
         }
 
         private static byte[] Encode(NotifyMessage msg)
@@ -276,53 +465,19 @@ namespace KaiAosRenew
                     catch { }
                     int id;
                     ClientConn conn;
-                    List<ClientConn> replaced = null;
+                    string pairing;
                     lock (_gate)
                     {
                         id = _nextClientId++;
-                        conn = new ClientConn(id, tcp, OnClientMessage, RemoveClient);
-                        // One live socket per remote IP — drop stale reconnect ghosts.
-                        if (!string.IsNullOrEmpty(conn.RemoteIp))
-                        {
-                            for (var i = _clients.Count - 1; i >= 0; i--)
-                            {
-                                var old = _clients[i];
-                                if (old == null || !string.Equals(old.RemoteIp, conn.RemoteIp, StringComparison.OrdinalIgnoreCase))
-                                    continue;
-                                _clients.RemoveAt(i);
-                                if (replaced == null) replaced = new List<ClientConn>();
-                                replaced.Add(old);
-                            }
-                        }
+                        pairing = _pairingCode ?? "";
+                        conn = new ClientConn(id, tcp, OnClientMessage, RemoveClient, OnClientAuthenticated, pairing);
+                        // Ghost replace happens on clientHello (InstanceGuid / RemoteIp fallback).
                         _clients.Add(conn);
                     }
-                    if (replaced != null)
-                    {
-                        foreach (var old in replaced)
-                        {
-                            try { old.Dispose(); }
-                            catch { }
-                            try { RenewEngine.Log("Notify client replaced #" + old.Id + " (" + old.RemoteDisplay + ")"); }
-                            catch { }
-                            var disc = ClientDisconnected;
-                            if (disc != null)
-                            {
-                                try { disc(old.Id); }
-                                catch { }
-                            }
-                        }
-                    }
                     conn.StartRead();
-                    RenewEngine.Log("Notify client connected #" + id + " (" + ClientCount + ")");
-                    var handler = ClientConnected;
-                    if (handler != null)
-                    {
-                        try { handler(id); }
-                        catch (Exception ex)
-                        {
-                            RenewEngine.Log("Notify ClientConnected handler: " + ex.Message);
-                        }
-                    }
+                    conn.BeginAuthIfNeeded();
+                    RenewEngine.Log("Notify client socket #" + id + " (" + conn.RemoteDisplay + ")"
+                        + (string.IsNullOrEmpty(pairing) ? "" : " — awaiting pairing"));
                 }
                 catch (SocketException)
                 {
@@ -332,6 +487,23 @@ namespace KaiAosRenew
                 {
                     if (!_running) break;
                     Thread.Sleep(200);
+                }
+            }
+        }
+
+        private void OnClientAuthenticated(ClientConn c)
+        {
+            if (c == null) return;
+            try { RenewEngine.Log("Notify client connected #" + c.Id + " (" + ClientCount + ")"); }
+            catch { }
+            var handler = ClientConnected;
+            if (handler != null)
+            {
+                try { handler(c.Id); }
+                catch (Exception ex)
+                {
+                    try { RenewEngine.Log("Notify ClientConnected handler: " + ex.Message); }
+                    catch { }
                 }
             }
         }
@@ -353,16 +525,22 @@ namespace KaiAosRenew
             if (c == null) return;
             var removed = false;
             var id = 0;
+            var wasAuth = false;
             lock (_gate)
             {
                 removed = _clients.Remove(c);
-                if (removed) id = c.Id;
+                if (removed)
+                {
+                    id = c.Id;
+                    wasAuth = c.Authenticated;
+                }
             }
             if (!removed) return;
             try { c.Dispose(); }
             catch { }
             try { RenewEngine.Log("Notify client disconnected #" + id + " (" + ClientCount + ")"); }
             catch { }
+            if (!wasAuth) return;
             var handler = ClientDisconnected;
             if (handler != null)
             {
@@ -382,23 +560,40 @@ namespace KaiAosRenew
             private readonly object _writeGate = new object();
             private readonly Action<int, NotifyMessage> _onMessage;
             private readonly Action<ClientConn> _onClosed;
+            private readonly Action<ClientConn> _onAuthenticated;
+            private readonly string _pairingCode;
+            private readonly TcpUtf8LineReader _lineReader = new TcpUtf8LineReader();
             private Thread _readThread;
             private volatile bool _disposed;
+            private string _authNonce;
+            private int _authNotified;
 
             public int Id { get; private set; }
             public string RemoteDisplay { get; private set; }
             public string RemoteIp { get; private set; }
             public string ClientVersion { get; set; }
+            public string InstanceGuid { get; set; }
+            public bool Authenticated { get; private set; }
 
-            public ClientConn(int id, TcpClient tcp, Action<int, NotifyMessage> onMessage, Action<ClientConn> onClosed)
+            public ClientConn(
+                int id,
+                TcpClient tcp,
+                Action<int, NotifyMessage> onMessage,
+                Action<ClientConn> onClosed,
+                Action<ClientConn> onAuthenticated,
+                string pairingCode)
             {
                 Id = id;
                 _tcp = tcp;
                 _stream = tcp.GetStream();
                 _onMessage = onMessage;
                 _onClosed = onClosed;
+                _onAuthenticated = onAuthenticated;
+                _pairingCode = (pairingCode ?? "").Trim();
+                Authenticated = string.IsNullOrEmpty(_pairingCode);
                 RemoteIp = "";
                 ClientVersion = "";
+                InstanceGuid = "";
                 try
                 {
                     var ep = tcp.Client != null ? tcp.Client.RemoteEndPoint as IPEndPoint : null;
@@ -414,6 +609,23 @@ namespace KaiAosRenew
                 {
                     RemoteDisplay = "#" + id;
                 }
+            }
+
+            public void BeginAuthIfNeeded()
+            {
+                if (Authenticated)
+                {
+                    NotifyAuthenticatedOnce();
+                    return;
+                }
+                _authNonce = NotifyPairing.CreateNonce();
+                TrySend(Encode(new NotifyMessage
+                {
+                    Kind = "authChallenge",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = _authNonce
+                }));
             }
 
             public void StartRead()
@@ -432,27 +644,16 @@ namespace KaiAosRenew
                 try
                 {
                     var buf = new byte[4096];
-                    var sb = new StringBuilder();
                     while (!_disposed)
                     {
                         var n = _stream.Read(buf, 0, buf.Length);
                         if (n <= 0) break;
-                        sb.Append(Encoding.UTF8.GetString(buf, 0, n));
-                        var chunk = sb.ToString();
-                        int nl;
-                        while ((nl = chunk.IndexOf('\n')) >= 0)
+                        if (!_lineReader.Append(buf, 0, n, HandleLine))
                         {
-                            var line = chunk.Substring(0, nl).Trim('\r', '\n', ' ');
-                            chunk = chunk.Substring(nl + 1);
-                            if (line.Length > 0)
-                            {
-                                var msg = NotifyMessage.ParseLine(line);
-                                if (msg != null && _onMessage != null)
-                                    _onMessage(Id, msg);
-                            }
+                            try { RenewEngine.Log("Notify client #" + Id + " line too long — dropped"); }
+                            catch { }
+                            break;
                         }
-                        sb.Length = 0;
-                        sb.Append(chunk);
                     }
                 }
                 catch (IOException) { }
@@ -465,6 +666,75 @@ namespace KaiAosRenew
                         try { _onClosed(this); }
                         catch { }
                     }
+                }
+            }
+
+            private void HandleLine(string line)
+            {
+                var msg = NotifyMessage.ParseLine(line);
+                if (msg == null) return;
+                var kind = (msg.Kind ?? "").Trim().ToLowerInvariant();
+                // LAN Scan probes may send discoverPing before pairing; reply without auth.
+                if (kind == "discoverping")
+                {
+                    TrySend(Encode(new NotifyMessage
+                    {
+                        Kind = "discoverPong",
+                        Level = "info",
+                        Title = "KAI - AOS Renew",
+                        Text = Environment.MachineName
+                    }));
+                    return;
+                }
+                if (!Authenticated)
+                {
+                    if (kind == "authresponse")
+                    {
+                        HandleAuthResponse(msg.Text);
+                        return;
+                    }
+                    // Allow clientHello only after auth; drop everything else until paired.
+                    return;
+                }
+                if (_onMessage != null)
+                    _onMessage(Id, msg);
+            }
+
+            private void HandleAuthResponse(string response)
+            {
+                if (Authenticated) return;
+                if (NotifyPairing.VerifyResponse(_pairingCode, _authNonce, response))
+                {
+                    Authenticated = true;
+                    TrySend(Encode(new NotifyMessage
+                    {
+                        Kind = "authOk",
+                        Level = "info",
+                        Title = "KAI - AOS Renew",
+                        Text = "ok"
+                    }));
+                    NotifyAuthenticatedOnce();
+                    return;
+                }
+                TrySend(Encode(new NotifyMessage
+                {
+                    Kind = "authFailed",
+                    Level = "error",
+                    Title = "KAI - AOS Renew",
+                    Text = "Invalid pairing code"
+                }));
+                try { RenewEngine.Log("Notify client #" + Id + " pairing failed"); }
+                catch { }
+                Dispose();
+            }
+
+            private void NotifyAuthenticatedOnce()
+            {
+                if (Interlocked.Exchange(ref _authNotified, 1) != 0) return;
+                if (_onAuthenticated != null)
+                {
+                    try { _onAuthenticated(this); }
+                    catch { }
                 }
             }
 
@@ -495,522 +765,5 @@ namespace KaiAosRenew
         public int Id { get; set; }
         public string Display { get; set; }
         public string Version { get; set; }
-    }
-
-    internal sealed class NotifyMessage
-    {
-        public int V = 1;
-        public string Kind;      // vin | info | warning | error | keySync | ping
-        public string Level;     // info | warning | error
-        public string Title;
-        public string Text;
-        public string Vin;
-        public string Action;    // copyVin | null
-        public int Seconds;
-        // Key row fields (live vin / keySync line payload)
-        public string At;        // yyyy-MM-ddTHH:mm:ss local
-        public string Paint;
-        public string Uph;
-        public string ILevel;
-        public string Reader;
-        public string Detail;
-        public string Status;    // Waiting|LocalOk|BmwOk|Failed
-        public int Local = -1;   // -1 unset, 0/1
-        public int Bmw = -1;
-        public int Failed = -1;
-
-        public string ToJsonLine()
-        {
-            var sb = new StringBuilder(256);
-            sb.Append("{\"v\":").Append(V);
-            sb.Append(",\"kind\":\"").Append(Esc(Kind)).Append("\"");
-            sb.Append(",\"level\":\"").Append(Esc(Level)).Append("\"");
-            sb.Append(",\"title\":\"").Append(Esc(Title)).Append("\"");
-            sb.Append(",\"text\":\"").Append(Esc(Text)).Append("\"");
-            if (!string.IsNullOrEmpty(Vin))
-                sb.Append(",\"vin\":\"").Append(Esc(Vin)).Append("\"");
-            if (!string.IsNullOrEmpty(Action))
-                sb.Append(",\"action\":\"").Append(Esc(Action)).Append("\"");
-            if (Seconds > 0)
-                sb.Append(",\"seconds\":").Append(Seconds);
-            if (!string.IsNullOrEmpty(At))
-                sb.Append(",\"at\":\"").Append(Esc(At)).Append("\"");
-            if (!string.IsNullOrEmpty(Paint))
-                sb.Append(",\"paint\":\"").Append(Esc(Paint)).Append("\"");
-            if (!string.IsNullOrEmpty(Uph))
-                sb.Append(",\"uph\":\"").Append(Esc(Uph)).Append("\"");
-            if (!string.IsNullOrEmpty(ILevel))
-                sb.Append(",\"ilevel\":\"").Append(Esc(ILevel)).Append("\"");
-            if (!string.IsNullOrEmpty(Reader))
-                sb.Append(",\"reader\":\"").Append(Esc(Reader)).Append("\"");
-            if (!string.IsNullOrEmpty(Detail))
-                sb.Append(",\"detail\":\"").Append(Esc(Detail)).Append("\"");
-            if (!string.IsNullOrEmpty(Status))
-                sb.Append(",\"status\":\"").Append(Esc(Status)).Append("\"");
-            if (Local >= 0)
-                sb.Append(",\"local\":").Append(Local);
-            if (Bmw >= 0)
-                sb.Append(",\"bmw\":").Append(Bmw);
-            if (Failed >= 0)
-                sb.Append(",\"failed\":").Append(Failed);
-            sb.Append("}");
-            return sb.ToString();
-        }
-
-        private static string Esc(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return "";
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n");
-        }
-
-        public static NotifyMessage ParseLine(string line)
-        {
-            if (string.IsNullOrWhiteSpace(line)) return null;
-            line = line.Trim();
-            var m = new NotifyMessage();
-            m.Kind = JsonStr(line, "kind") ?? "info";
-            m.Level = JsonStr(line, "level") ?? "info";
-            m.Title = JsonStr(line, "title") ?? "KAI - AOS Renew";
-            m.Text = JsonStr(line, "text") ?? "";
-            m.Vin = JsonStr(line, "vin");
-            m.Action = JsonStr(line, "action");
-            m.Seconds = JsonInt(line, "seconds");
-            m.At = JsonStr(line, "at");
-            m.Paint = JsonStr(line, "paint");
-            m.Uph = JsonStr(line, "uph");
-            m.ILevel = JsonStr(line, "ilevel");
-            m.Reader = JsonStr(line, "reader");
-            m.Detail = JsonStr(line, "detail");
-            m.Status = JsonStr(line, "status");
-            m.Local = JsonIntOpt(line, "local");
-            m.Bmw = JsonIntOpt(line, "bmw");
-            m.Failed = JsonIntOpt(line, "failed");
-            return m;
-        }
-
-        private static int JsonIntOpt(string json, string key)
-        {
-            var i = IndexOfKeyColon(json, key);
-            if (i < 0) return -1;
-            i++;
-            while (i < json.Length && (json[i] == ' ' || json[i] == '\t')) i++;
-            var start = i;
-            while (i < json.Length && (char.IsDigit(json[i]) || json[i] == '-')) i++;
-            if (i == start) return -1;
-            int v;
-            return int.TryParse(json.Substring(start, i - start), out v) ? v : -1;
-        }
-
-        /// <summary>Encode up to N key rows for kind=keySync text (newline + pipe).</summary>
-        public static string EncodeKeySync(IList<KeyActivityEvent> rows)
-        {
-            if (rows == null || rows.Count == 0) return "";
-            var sb = new StringBuilder();
-            foreach (var ev in rows)
-            {
-                if (ev == null || string.IsNullOrEmpty(ev.Vin)) continue;
-                if (sb.Length > 0) sb.Append('\n');
-                sb.Append(ev.DetectedLocal.ToString("yyyy-MM-ddTHH:mm:ss"));
-                sb.Append('|').Append(EscPipe(ev.Vin ?? ""));
-                sb.Append('|').Append(EscPipe(ev.Paint ?? ""));
-                sb.Append('|').Append(EscPipe(ev.Upholstery ?? ""));
-                sb.Append('|').Append(EscPipe(ev.ILevelCurrent ?? ""));
-                sb.Append('|').Append(EscPipe(ev.ReaderId ?? ""));
-                sb.Append('|').Append(ev.LocalSent ? "1" : "0");
-                sb.Append('|').Append(ev.BmwUploaded ? "1" : "0");
-                sb.Append('|').Append(ev.Failed ? "1" : "0");
-                sb.Append('|').Append(EscPipe(StatusName(ev.Status)));
-                sb.Append('|').Append(EscPipe(ev.DetailText ?? ""));
-                var hasBin = !string.IsNullOrEmpty(ev.DebugBinPath) && File.Exists(ev.DebugBinPath);
-                sb.Append('|').Append(hasBin ? "1" : "0");
-            }
-            return sb.ToString();
-        }
-
-        public static string StatusName(KeyEventStatus status)
-        {
-            switch (status)
-            {
-                case KeyEventStatus.Waiting: return "Waiting";
-                case KeyEventStatus.LocalOk: return "LocalOk";
-                case KeyEventStatus.BmwOk: return "BmwOk";
-                case KeyEventStatus.Failed: return "Failed";
-                default: return "Waiting";
-            }
-        }
-
-        public static void ApplyKeyEventFields(NotifyMessage m, KeyActivityEvent ev)
-        {
-            if (m == null || ev == null) return;
-            m.At = ev.DetectedLocal.ToString("yyyy-MM-ddTHH:mm:ss");
-            m.Vin = ev.Vin;
-            m.Paint = ev.Paint ?? "";
-            m.Uph = ev.Upholstery ?? "";
-            m.ILevel = ev.ILevelCurrent ?? "";
-            m.Reader = ev.ReaderId ?? "";
-            m.Detail = ev.DetailText ?? "";
-            m.Status = StatusName(ev.Status);
-            m.Local = ev.LocalSent ? 1 : 0;
-            m.Bmw = ev.BmwUploaded ? 1 : 0;
-            m.Failed = ev.Failed ? 1 : 0;
-        }
-
-        private static string EscPipe(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return "";
-            return s.Replace("\\", "\\\\").Replace("|", "\\p").Replace("\r", "").Replace("\n", "\\n");
-        }
-
-        public static string EncodeActivitySync(IList<ActivityWireRow> rows)
-        {
-            if (rows == null || rows.Count == 0) return "";
-            var sb = new StringBuilder();
-            foreach (var row in rows)
-            {
-                if (row == null) continue;
-                if (sb.Length > 0) sb.Append('\n');
-                sb.Append(row.At.ToString("yyyy-MM-ddTHH:mm:ss"));
-                sb.Append('|').Append(EscPipe(row.Level ?? "info"));
-                sb.Append('|').Append(EscPipe(row.Text ?? ""));
-            }
-            return sb.ToString();
-        }
-
-        public static string EncodeRegisterSync(IList<RegisterWireRow> rows)
-        {
-            if (rows == null || rows.Count == 0) return "";
-            var sb = new StringBuilder();
-            foreach (var row in rows)
-            {
-                if (row == null) continue;
-                if (sb.Length > 0) sb.Append('\n');
-                sb.Append(row.At.ToString("yyyy-MM-ddTHH:mm:ss"));
-                var kind = row.Kind;
-                if (kind < 0 || kind > 2)
-                    kind = row.Ok ? 1 : 0;
-                sb.Append('|').Append(kind.ToString());
-                sb.Append('|').Append(EscPipe(row.Text ?? ""));
-            }
-            return sb.ToString();
-        }
-
-        /// <summary>
-        /// kind=kaiSync text. Line 1: install|registerUrl|webEamUrl|uploadUrl|tokenExpiryText|allOk|anyRunning|svcAlert
-        /// then up to 2 lines: name|statusText|startTypeText|ok
-        /// </summary>
-        public static string EncodeKaiSync(
-            string install, string registerUrl, string webEamUrl, string uploadUrl, string tokenExpiryText,
-            bool allOk, bool anyRunning, bool svcAlert, bool cmdBusy, IList<KaiSvcWireRow> services)
-        {
-            var sb = new StringBuilder();
-            sb.Append(EscPipe(install ?? ""));
-            sb.Append('|').Append(EscPipe(registerUrl ?? ""));
-            sb.Append('|').Append(EscPipe(webEamUrl ?? ""));
-            sb.Append('|').Append(EscPipe(uploadUrl ?? ""));
-            sb.Append('|').Append(EscPipe(tokenExpiryText ?? ""));
-            sb.Append('|').Append(allOk ? "1" : "0");
-            sb.Append('|').Append(anyRunning ? "1" : "0");
-            sb.Append('|').Append(svcAlert ? "1" : "0");
-            sb.Append('|').Append(cmdBusy ? "1" : "0");
-            if (services != null)
-            {
-                var n = 0;
-                foreach (var s in services)
-                {
-                    if (s == null) continue;
-                    if (n >= 2) break;
-                    sb.Append('\n');
-                    sb.Append(EscPipe(s.Name ?? ""));
-                    sb.Append('|').Append(EscPipe(s.StatusText ?? ""));
-                    sb.Append('|').Append(EscPipe(s.StartTypeText ?? ""));
-                    sb.Append('|').Append(s.Ok ? "1" : "0");
-                    n++;
-                }
-            }
-            return sb.ToString();
-        }
-
-        public static string EncodeUpdateFeed(string serverVer, string clientVer)
-        {
-            return (serverVer ?? "") + "\u001f" + (clientVer ?? "");
-        }
-
-        public static bool TryParseUpdateFeed(string text, out string serverVer, out string clientVer)
-        {
-            serverVer = "";
-            clientVer = "";
-            if (text == null) return false;
-            var i = text.IndexOf('\u001f');
-            if (i < 0)
-            {
-                serverVer = text;
-                return true;
-            }
-            serverVer = text.Substring(0, i);
-            clientVer = i + 1 < text.Length ? text.Substring(i + 1) : "";
-            return true;
-        }
-
-        public static string EncodeKvMap(IDictionary<string, string> map)
-        {
-            if (map == null || map.Count == 0) return "";
-            var sb = new StringBuilder();
-            foreach (var kv in map)
-            {
-                if (string.IsNullOrEmpty(kv.Key)) continue;
-                if (sb.Length > 0) sb.Append('\n');
-                sb.Append(EscPipe(kv.Key));
-                sb.Append('|').Append(EscPipe(kv.Value ?? ""));
-            }
-            return sb.ToString();
-        }
-
-        public static Dictionary<string, string> ParseKvMap(string text)
-        {
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (string.IsNullOrWhiteSpace(text)) return map;
-            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-            for (var i = 0; i < lines.Length; i++)
-            {
-                var raw = lines[i];
-                if (string.IsNullOrWhiteSpace(raw)) continue;
-                var parts = SplitPipe(raw);
-                if (parts.Count < 2) continue;
-                var key = parts[0] ?? "";
-                if (key.Length == 0) continue;
-                map[key] = parts[1] ?? "";
-            }
-            return map;
-        }
-
-        public static string EncodeAosSync(int intervalHours, string email, string password, bool? forceRegister = null, int? registerBlockAfter = null)
-        {
-            var sb = new StringBuilder();
-            sb.Append(intervalHours < 1 ? 1 : intervalHours);
-            sb.Append('|').Append(EscPipe(email ?? ""));
-            sb.Append('|').Append(EscPipe(password ?? ""));
-            if (forceRegister.HasValue || registerBlockAfter.HasValue)
-                sb.Append('|').Append(forceRegister.HasValue ? (forceRegister.Value ? "1" : "0") : "");
-            if (registerBlockAfter.HasValue)
-            {
-                var n = registerBlockAfter.Value;
-                if (n < 1) n = 1;
-                if (n > 10) n = 10;
-                sb.Append('|').Append(n);
-            }
-            return sb.ToString();
-        }
-
-        public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password)
-        {
-            bool? unused;
-            int? unusedBlock;
-            return TryParseAosSync(text, out intervalHours, out email, out password, out unused, out unusedBlock);
-        }
-
-        public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password, out bool? forceRegister)
-        {
-            int? unusedBlock;
-            return TryParseAosSync(text, out intervalHours, out email, out password, out forceRegister, out unusedBlock);
-        }
-
-        public static bool TryParseAosSync(string text, out int intervalHours, out string email, out string password, out bool? forceRegister, out int? registerBlockAfter)
-        {
-            intervalHours = 1;
-            email = "";
-            password = "";
-            forceRegister = null;
-            registerBlockAfter = null;
-            if (string.IsNullOrWhiteSpace(text)) return false;
-            var parts = SplitPipe(text);
-            if (parts.Count < 3) return false;
-            int h;
-            if (!int.TryParse(parts[0], out h) || h < 1)
-                h = 1;
-            intervalHours = h;
-            email = parts[1] ?? "";
-            password = parts[2] ?? "";
-            if (parts.Count >= 4)
-            {
-                var f = (parts[3] ?? "").Trim();
-                if (f == "1") forceRegister = true;
-                else if (f == "0") forceRegister = false;
-            }
-            if (parts.Count >= 5)
-            {
-                int n;
-                if (int.TryParse((parts[4] ?? "").Trim(), out n) && n >= 1)
-                {
-                    if (n > 10) n = 10;
-                    registerBlockAfter = n;
-                }
-            }
-            return true;
-        }
-
-        public static List<ActivityWireRow> ParseActivitySync(string text)
-        {
-            var list = new List<ActivityWireRow>();
-            if (string.IsNullOrWhiteSpace(text)) return list;
-            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-            foreach (var raw in lines)
-            {
-                if (string.IsNullOrWhiteSpace(raw)) continue;
-                var parts = SplitPipe(raw);
-                if (parts.Count < 3) continue;
-                DateTime at;
-                if (!DateTime.TryParse(parts[0], out at))
-                    at = DateTime.Now;
-                list.Add(new ActivityWireRow
-                {
-                    At = DateTime.SpecifyKind(at, DateTimeKind.Local),
-                    Level = parts[1] ?? "info",
-                    Text = parts[2] ?? ""
-                });
-            }
-            return list;
-        }
-
-        public static List<RegisterWireRow> ParseRegisterSync(string text)
-        {
-            var list = new List<RegisterWireRow>();
-            if (string.IsNullOrWhiteSpace(text)) return list;
-            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-            foreach (var raw in lines)
-            {
-                if (string.IsNullOrWhiteSpace(raw)) continue;
-                var parts = SplitPipe(raw);
-                if (parts.Count < 3) continue;
-                DateTime at;
-                if (!DateTime.TryParse(parts[0], out at))
-                    at = DateTime.Now;
-                var okFlag = (parts[1] ?? "").Trim();
-                int kind;
-                if (okFlag == "2" || string.Equals(okFlag, "info", StringComparison.OrdinalIgnoreCase))
-                    kind = 2;
-                else if (okFlag == "1" || string.Equals(okFlag, "ok", StringComparison.OrdinalIgnoreCase))
-                    kind = 1;
-                else
-                    kind = 0;
-                list.Add(new RegisterWireRow
-                {
-                    At = DateTime.SpecifyKind(at, DateTimeKind.Local),
-                    Kind = kind,
-                    Ok = kind == 1,
-                    Text = parts[2] ?? ""
-                });
-            }
-            return list;
-        }
-
-        private static List<string> SplitPipe(string line)
-        {
-            var parts = new List<string>();
-            if (line == null) return parts;
-            var sb = new StringBuilder();
-            for (var i = 0; i < line.Length; i++)
-            {
-                var c = line[i];
-                if (c == '\\' && i + 1 < line.Length)
-                {
-                    var n = line[i + 1];
-                    if (n == 'p') { sb.Append('|'); i++; continue; }
-                    if (n == 'n') { sb.Append('\n'); i++; continue; }
-                    if (n == '\\') { sb.Append('\\'); i++; continue; }
-                }
-                if (c == '|')
-                {
-                    parts.Add(sb.ToString());
-                    sb.Length = 0;
-                    continue;
-                }
-                sb.Append(c);
-            }
-            parts.Add(sb.ToString());
-            return parts;
-        }
-
-        /// <summary>Find "key" : value — must not match a string value equal to key (e.g. kind:"vin").</summary>
-        private static int IndexOfKeyColon(string json, string key)
-        {
-            var needle = "\"" + key + "\"";
-            var start = 0;
-            while (start < json.Length)
-            {
-                var i = json.IndexOf(needle, start, StringComparison.OrdinalIgnoreCase);
-                if (i < 0) return -1;
-                var j = i + needle.Length;
-                while (j < json.Length && (json[j] == ' ' || json[j] == '\t')) j++;
-                if (j < json.Length && json[j] == ':')
-                    return j;
-                start = i + needle.Length;
-            }
-            return -1;
-        }
-
-        private static string JsonStr(string json, string key)
-        {
-            var i = IndexOfKeyColon(json, key);
-            if (i < 0) return null;
-            i = json.IndexOf('"', i + 1);
-            if (i < 0) return null;
-            var j = i + 1;
-            var sb = new StringBuilder();
-            while (j < json.Length)
-            {
-                var c = json[j];
-                if (c == '\\' && j + 1 < json.Length)
-                {
-                    var n = json[j + 1];
-                    if (n == 'n') sb.Append('\n');
-                    else if (n == 'r') sb.Append('\r');
-                    else if (n == 't') sb.Append('\t');
-                    else sb.Append(n);
-                    j += 2;
-                    continue;
-                }
-                if (c == '"') break;
-                sb.Append(c);
-                j++;
-            }
-            return sb.ToString();
-        }
-
-        private static int JsonInt(string json, string key)
-        {
-            var i = IndexOfKeyColon(json, key);
-            if (i < 0) return 0;
-            i++;
-            while (i < json.Length && (json[i] == ' ' || json[i] == '\t')) i++;
-            var start = i;
-            while (i < json.Length && char.IsDigit(json[i])) i++;
-            if (i == start) return 0;
-            int v;
-            return int.TryParse(json.Substring(start, i - start), out v) ? v : 0;
-        }
-    }
-
-    internal sealed class KaiSvcWireRow
-    {
-        public string Name { get; set; }
-        public string StatusText { get; set; }
-        public string StartTypeText { get; set; }
-        public bool Ok { get; set; }
-    }
-
-    internal sealed class ActivityWireRow
-    {
-        public DateTime At { get; set; }
-        public string Level { get; set; }
-        public string Text { get; set; }
-    }
-
-    internal sealed class RegisterWireRow
-    {
-        public DateTime At { get; set; }
-        /// <summary>0=fail, 1=ok, 2=info.</summary>
-        public int Kind { get; set; }
-        public bool Ok { get; set; }
-        public string Text { get; set; }
     }
 }

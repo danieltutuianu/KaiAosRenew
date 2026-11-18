@@ -42,6 +42,7 @@ namespace KaiAosRenew
                 return null;
             try
             {
+                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
                 var url = RepoUrl.TrimEnd('/') + "/releases/latest/download/releases." + channel.Trim() + ".json";
                 string json;
                 using (var wc = new WebClient())
@@ -141,7 +142,8 @@ namespace KaiAosRenew
             UpdateInfo update,
             Func<string, string> t,
             bool prompt,
-            Action<string, int> progress = null)
+            Action<string, int> progress = null,
+            Action beforeRestart = null)
         {
             if (t == null) t = key => key;
             if (update == null) return;
@@ -172,6 +174,12 @@ namespace KaiAosRenew
             await mgr.DownloadUpdatesAsync(update, percent => report("downloading", percent)).ConfigureAwait(true);
             report("installing", 100);
             report("restarting", -1);
+            // Release SingleInstance / listeners only after download succeeded.
+            if (beforeRestart != null)
+            {
+                try { beforeRestart(); }
+                catch { }
+            }
             mgr.ApplyUpdatesAndRestart(update);
         }
 

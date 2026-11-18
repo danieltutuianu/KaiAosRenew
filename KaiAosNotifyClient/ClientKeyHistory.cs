@@ -84,7 +84,9 @@ namespace KaiAosNotifyClient
                 BmwUploaded = row.BmwUploaded,
                 Failed = row.Failed,
                 Status = row.Status,
-                Detail = row.Detail
+                Detail = row.Detail,
+                HasBin = row.HasBin,
+                MileageKm = row.MileageKm
             };
         }
 

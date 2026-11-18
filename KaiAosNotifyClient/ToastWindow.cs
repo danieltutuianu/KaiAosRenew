@@ -13,11 +13,20 @@ namespace KaiAosNotifyClient
         private static ToastWindow _current;
         private readonly DispatcherTimer _closeTimer;
         private readonly bool _sticky;
+        private readonly bool _hasBodyActivate;
         private Action _action;
+        private Action _onBodyActivate;
         private int _remainingSeconds;
         private TextBlock _countdownText;
 
-        private ToastWindow(string title, string text, string level, string actionLabel, Action action, int durationSeconds)
+        private ToastWindow(
+            string title,
+            string text,
+            string level,
+            string actionLabel,
+            Action action,
+            int durationSeconds,
+            Action onBodyActivate)
         {
             Title = title;
             Width = 360;
@@ -32,6 +41,8 @@ namespace KaiAosNotifyClient
             FontFamily = new FontFamily("Segoe UI");
 
             _action = action;
+            _onBodyActivate = onBodyActivate;
+            _hasBodyActivate = onBodyActivate != null;
             _sticky = durationSeconds < 0;
             var hasAction = !string.IsNullOrEmpty(actionLabel) && action != null;
 
@@ -54,12 +65,13 @@ namespace KaiAosNotifyClient
                 iconGlyph = "i";
             }
 
-            var panelBg = Color.FromRgb(250, 248, 244);
-            var panelBorder = Color.FromRgb(170, 160, 145);
-            var titleFg = Color.FromRgb(40, 40, 40);
-            var bodyFg = Color.FromRgb(70, 70, 70);
-            var btnBg = Color.FromRgb(235, 230, 220);
-            var btnBorder = Color.FromRgb(160, 150, 135);
+            var night = ClientThemeManager.IsNight;
+            var panelBg = night ? Color.FromRgb(45, 45, 45) : Color.FromRgb(250, 248, 244);
+            var panelBorder = night ? Color.FromRgb(90, 90, 90) : Color.FromRgb(170, 160, 145);
+            var titleFg = night ? Color.FromRgb(232, 232, 232) : Color.FromRgb(40, 40, 40);
+            var bodyFg = night ? Color.FromRgb(180, 180, 180) : Color.FromRgb(70, 70, 70);
+            var btnBg = night ? Color.FromRgb(60, 60, 60) : Color.FromRgb(235, 230, 220);
+            var btnBorder = night ? Color.FromRgb(110, 110, 110) : Color.FromRgb(160, 150, 135);
 
             var border = new Border
             {
@@ -195,11 +207,8 @@ namespace KaiAosNotifyClient
 
             if (!_sticky)
             {
-                MouseLeftButtonUp += delegate(object s, MouseButtonEventArgs e)
-                {
-                    if (e.OriginalSource is Button) return;
-                    Close();
-                };
+                MouseLeftButtonUp += Toast_MouseLeftButtonUp;
+                MouseDoubleClick += Toast_MouseDoubleClick;
             }
 
             if (_sticky)
@@ -217,6 +226,43 @@ namespace KaiAosNotifyClient
                 _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
                 _closeTimer.Tick += CloseTimer_Tick;
             }
+        }
+
+        private void Toast_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (_sticky) return;
+            if (e.OriginalSource is Button || IsDescendantOfButton(e.OriginalSource as DependencyObject))
+                return;
+            // When double-click can navigate, ignore single click so the second click can land.
+            if (_hasBodyActivate)
+                return;
+            Close();
+        }
+
+        private void Toast_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (_sticky) return;
+            if (e.OriginalSource is Button || IsDescendantOfButton(e.OriginalSource as DependencyObject))
+                return;
+            if (!_hasBodyActivate) return;
+            e.Handled = true;
+            try
+            {
+                if (_onBodyActivate != null)
+                    _onBodyActivate();
+            }
+            catch { }
+            Close();
+        }
+
+        private static bool IsDescendantOfButton(DependencyObject node)
+        {
+            while (node != null)
+            {
+                if (node is Button) return true;
+                node = VisualTreeHelper.GetParent(node);
+            }
+            return false;
         }
 
         private void CloseTimer_Tick(object sender, EventArgs e)
@@ -252,6 +298,7 @@ namespace KaiAosNotifyClient
         {
             _closeTimer.Stop();
             _action = null;
+            _onBodyActivate = null;
             if (ReferenceEquals(_current, this))
                 _current = null;
             base.OnClosed(e);
@@ -260,10 +307,22 @@ namespace KaiAosNotifyClient
         /// <summary>Sticky tip: stays until the user clicks OK (no auto-close).</summary>
         public static void ShowSticky(string title, string text, string level)
         {
-            ShowTip(title, text, level, "OK", () => { }, -1);
+            ShowTip(title, text, level, "OK", () => { }, -1, null);
         }
 
         public static void ShowTip(string title, string text, string level, string actionLabel, Action action, int seconds)
+        {
+            ShowTip(title, text, level, actionLabel, action, seconds, null);
+        }
+
+        public static void ShowTip(
+            string title,
+            string text,
+            string level,
+            string actionLabel,
+            Action action,
+            int seconds,
+            Action onBodyActivate)
         {
             if (_current != null)
             {
@@ -271,7 +330,7 @@ namespace KaiAosNotifyClient
                 catch { }
                 _current = null;
             }
-            var win = new ToastWindow(title, text, level, actionLabel, action, seconds);
+            var win = new ToastWindow(title, text, level, actionLabel, action, seconds, onBodyActivate);
             _current = win;
             win.Show();
         }

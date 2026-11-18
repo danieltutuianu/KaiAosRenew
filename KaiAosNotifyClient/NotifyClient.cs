@@ -1,33 +1,45 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using KaiAosRenew;
 
 namespace KaiAosNotifyClient
 {
     internal sealed class NotifyClient : IDisposable
     {
         private const int ReconnectDelayMs = 3000;
+        private const int ConnectTimeoutMs = 5000;
+        private const int PingWatchdogMs = 75000;
+        private const int WatchdogPollMs = 5000;
 
         private readonly object _gate = new object();
         private TcpClient _tcp;
         private Thread _readThread;
         private Thread _reconnectThread;
+        private Thread _watchdogThread;
         private volatile bool _wantConnect;
         private volatile bool _disposed;
         private int _connectFlight;
         private string _host = "127.0.0.1";
         private int _port = 17890;
+        private string _pairingCode = "";
         private int _reconnectAttempt;
         private string _lastDisconnectReason = "";
         private DateTime _nextRetryUtc = DateTime.MinValue;
         private int _forceRetry;
+        private DateTime _lastRxUtc = DateTime.MinValue;
+        private volatile bool _authFailedStop;
+        private volatile bool _awaitingAuth;
+        private int _connectedRaised;
 
         public event Action Connected;
         public event Action Disconnected;
         public event Action<string> Status;
         public event Action<NotifyMessage> MessageReceived;
+        /// <summary>Raised when server rejects the pairing code (auto-reconnect stopped).</summary>
+        public event Action<string> AuthFailed;
 
         public bool IsConnected
         {
@@ -50,6 +62,11 @@ namespace KaiAosNotifyClient
             get { lock (_gate) return _port; }
         }
 
+        public string PairingCode
+        {
+            get { lock (_gate) return _pairingCode ?? ""; }
+        }
+
         public int ReconnectAttempt { get { return _reconnectAttempt; } }
 
         public string LastDisconnectReason
@@ -61,24 +78,39 @@ namespace KaiAosNotifyClient
 
         public void Connect(string host, int port)
         {
+            Connect(host, port, null);
+        }
+
+        public void Connect(string host, int port, string pairingCode)
+        {
             if (string.IsNullOrWhiteSpace(host)) host = "127.0.0.1";
             if (port < 1 || port > 65535) port = 17890;
             lock (_gate)
             {
                 _host = host.Trim();
                 _port = port;
+                if (pairingCode != null)
+                    _pairingCode = pairingCode.Trim();
                 _wantConnect = true;
             }
+            _authFailedStop = false;
             Interlocked.Exchange(ref _forceRetry, 1);
             _nextRetryUtc = DateTime.MinValue;
             DisconnectSocket();
             StartReconnectLoop();
+            StartWatchdogLoop();
             TryConnectOnce();
+        }
+
+        public void SetPairingCode(string pairingCode)
+        {
+            lock (_gate)
+                _pairingCode = (pairingCode ?? "").Trim();
         }
 
         public void RetryNow()
         {
-            if (!_wantConnect || _disposed) return;
+            if (!_wantConnect || _disposed || _authFailedStop) return;
             Interlocked.Exchange(ref _forceRetry, 1);
             _nextRetryUtc = DateTime.MinValue;
             TryConnectOnce();
@@ -87,6 +119,7 @@ namespace KaiAosNotifyClient
         public void Disconnect()
         {
             _wantConnect = false;
+            _authFailedStop = false;
             Interlocked.Exchange(ref _forceRetry, 0);
             _reconnectAttempt = 0;
             _lastDisconnectReason = "";
@@ -143,11 +176,38 @@ namespace KaiAosNotifyClient
             _reconnectThread.Start();
         }
 
+        private void StartWatchdogLoop()
+        {
+            if (_watchdogThread != null && _watchdogThread.IsAlive) return;
+            _watchdogThread = new Thread(WatchdogLoop)
+            {
+                IsBackground = true,
+                Name = "NotifyClientWatchdog"
+            };
+            _watchdogThread.Start();
+        }
+
+        private void WatchdogLoop()
+        {
+            while (!_disposed)
+            {
+                Thread.Sleep(WatchdogPollMs);
+                if (!_wantConnect || _authFailedStop || !IsConnected) continue;
+                var last = _lastRxUtc;
+                if (last == DateTime.MinValue) continue;
+                if ((DateTime.UtcNow - last).TotalMilliseconds < PingWatchdogMs) continue;
+                NoteDisconnect("Server ping timeout");
+                RaiseStatus("Server ping timeout — reconnecting…");
+                DisconnectSocket();
+                RaiseDisconnected();
+            }
+        }
+
         private void ReconnectLoop()
         {
             while (!_disposed)
             {
-                if (!_wantConnect || IsConnected)
+                if (!_wantConnect || _authFailedStop || IsConnected)
                 {
                     Thread.Sleep(200);
                     continue;
@@ -157,7 +217,7 @@ namespace KaiAosNotifyClient
                 RaiseStatus("waiting");
 
                 var waitUntil = _nextRetryUtc;
-                while (!_disposed && _wantConnect && !IsConnected)
+                while (!_disposed && _wantConnect && !_authFailedStop && !IsConnected)
                 {
                     if (Interlocked.CompareExchange(ref _forceRetry, 0, 1) == 1)
                     {
@@ -169,7 +229,7 @@ namespace KaiAosNotifyClient
                     Thread.Sleep(100);
                 }
 
-                if (!_wantConnect || _disposed || IsConnected)
+                if (!_wantConnect || _disposed || _authFailedStop || IsConnected)
                     continue;
 
                 TryConnectOnce();
@@ -184,7 +244,7 @@ namespace KaiAosNotifyClient
             Interlocked.Exchange(ref _forceRetry, 0);
             try
             {
-                if (!_wantConnect || _disposed) return;
+                if (!_wantConnect || _disposed || _authFailedStop) return;
                 if (IsConnected) return;
 
                 string host;
@@ -205,7 +265,7 @@ namespace KaiAosNotifyClient
                 var tcp = new TcpClient();
                 tcp.NoDelay = true;
                 var ar = tcp.BeginConnect(host, port, null, null);
-                if (!ar.AsyncWaitHandle.WaitOne(5000) || !tcp.Connected)
+                if (!ar.AsyncWaitHandle.WaitOne(ConnectTimeoutMs) || !tcp.Connected)
                 {
                     HardClose(tcp);
                     NoteDisconnect("Connect failed");
@@ -215,7 +275,7 @@ namespace KaiAosNotifyClient
                 tcp.EndConnect(ar);
                 lock (_gate)
                 {
-                    if (!_wantConnect || _disposed)
+                    if (!_wantConnect || _disposed || _authFailedStop)
                     {
                         HardClose(tcp);
                         return;
@@ -226,8 +286,11 @@ namespace KaiAosNotifyClient
                 _reconnectAttempt = 0;
                 _lastDisconnectReason = "";
                 _nextRetryUtc = DateTime.MinValue;
+                _lastRxUtc = DateTime.UtcNow;
+                _awaitingAuth = false;
+                Interlocked.Exchange(ref _connectedRaised, 0);
                 RaiseStatus("Connected to " + host + ":" + port);
-                RaiseConnected();
+                // RaiseConnected fires after authOk, or on first non-challenge message when pairing is off.
                 _readThread = new Thread(ReadLoop) { IsBackground = true, Name = "NotifyClientRead" };
                 _readThread.Start();
             }
@@ -253,6 +316,7 @@ namespace KaiAosNotifyClient
         {
             NetworkStream stream = null;
             string failReason = null;
+            var lineReader = new TcpUtf8LineReader();
             try
             {
                 lock (_gate)
@@ -261,8 +325,7 @@ namespace KaiAosNotifyClient
                     stream = _tcp.GetStream();
                 }
                 var buf = new byte[4096];
-                var sb = new StringBuilder();
-                while (_wantConnect && !_disposed)
+                while (_wantConnect && !_disposed && !_authFailedStop)
                 {
                     var n = stream.Read(buf, 0, buf.Length);
                     if (n <= 0)
@@ -270,22 +333,12 @@ namespace KaiAosNotifyClient
                         failReason = "Connection lost";
                         break;
                     }
-                    sb.Append(Encoding.UTF8.GetString(buf, 0, n));
-                    string chunk = sb.ToString();
-                    int nl;
-                    while ((nl = IndexOfNewline(chunk)) >= 0)
+                    _lastRxUtc = DateTime.UtcNow;
+                    if (!lineReader.Append(buf, 0, n, HandleLine))
                     {
-                        var line = chunk.Substring(0, nl).Trim('\r', '\n', ' ');
-                        chunk = chunk.Substring(nl + 1);
-                        if (line.Length > 0)
-                        {
-                            var msg = NotifyMessage.ParseLine(line);
-                            if (msg != null)
-                                RaiseMessage(msg);
-                        }
+                        failReason = "Line too long";
+                        break;
                     }
-                    sb.Length = 0;
-                    sb.Append(chunk);
                 }
             }
             catch (IOException)
@@ -304,7 +357,7 @@ namespace KaiAosNotifyClient
             finally
             {
                 DisconnectSocket();
-                if (_wantConnect)
+                if (_wantConnect && !_authFailedStop)
                 {
                     NoteDisconnect(failReason ?? "Connection lost");
                     RaiseStatus("Connection lost — reconnecting…");
@@ -313,9 +366,69 @@ namespace KaiAosNotifyClient
             }
         }
 
-        private static int IndexOfNewline(string s)
+        private void HandleLine(string line)
         {
-            return s.IndexOf('\n');
+            var msg = NotifyMessage.ParseLine(line);
+            if (msg == null) return;
+            _lastRxUtc = DateTime.UtcNow;
+            var kind = (msg.Kind ?? "").Trim().ToLowerInvariant();
+            if (kind == "authchallenge")
+            {
+                _awaitingAuth = true;
+                var code = (PairingCode ?? "").Trim();
+                if (string.IsNullOrEmpty(code))
+                {
+                    // Do not send an empty HMAC — stop before server authFailed.
+                    _authFailedStop = true;
+                    _wantConnect = false;
+                    const string reason = "PAIRING_REQUIRED";
+                    NoteDisconnect(reason);
+                    RaiseStatus(reason);
+                    RaiseAuthFailed(reason);
+                    DisconnectSocket();
+                    RaiseDisconnected();
+                    return;
+                }
+                RaiseStatus("Pairing…");
+                var response = NotifyPairing.ComputeResponse(code, msg.Text);
+                Send(new NotifyMessage
+                {
+                    Kind = "authResponse",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = response
+                });
+                return;
+            }
+            if (kind == "authok")
+            {
+                _awaitingAuth = false;
+                RaiseStatus("Paired");
+                RaiseConnectedOnce();
+                return;
+            }
+            if (kind == "authfailed")
+            {
+                _authFailedStop = true;
+                _wantConnect = false;
+                var reason = string.IsNullOrWhiteSpace(msg.Text) ? "Invalid pairing code" : msg.Text.Trim();
+                NoteDisconnect(reason);
+                RaiseStatus(reason);
+                RaiseAuthFailed(reason);
+                DisconnectSocket();
+                RaiseDisconnected();
+                return;
+            }
+            // No pairing on server: first real message means we are authenticated.
+            if (!_awaitingAuth)
+                RaiseConnectedOnce();
+            RaiseMessage(msg);
+        }
+
+        private void RaiseConnectedOnce()
+        {
+            if (Interlocked.Exchange(ref _connectedRaised, 1) != 0) return;
+            RaiseConnected();
         }
 
         private void DisconnectSocket()
@@ -371,6 +484,12 @@ namespace KaiAosNotifyClient
         {
             var h = MessageReceived;
             if (h != null) try { h(m); } catch { }
+        }
+
+        private void RaiseAuthFailed(string reason)
+        {
+            var h = AuthFailed;
+            if (h != null) try { h(reason); } catch { }
         }
     }
 }

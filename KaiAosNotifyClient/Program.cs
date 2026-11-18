@@ -19,6 +19,19 @@ namespace KaiAosNotifyClient
         private const string WindowTitle = "KAI - AOS Renew - Client";
         private static Mutex _mutex;
 
+        /// <summary>Release mutex before Velopack ApplyUpdatesAndRestart so the new process can start.</summary>
+        internal static void ReleaseSingleInstanceForRestart()
+        {
+            if (_mutex != null)
+            {
+                try { _mutex.ReleaseMutex(); }
+                catch { }
+                try { _mutex.Dispose(); }
+                catch { }
+                _mutex = null;
+            }
+        }
+
         private static void StartupLog(string line)
         {
             try

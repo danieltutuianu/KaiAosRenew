@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Xml.Serialization;
 using Microsoft.Win32;
+using KaiAosRenew;
 
 namespace KaiAosNotifyClient
 {
@@ -22,6 +23,8 @@ namespace KaiAosNotifyClient
         public bool AutoConnect { get; set; }
         public string Host { get; set; }
         public string Port { get; set; }
+        /// <summary>Optional LAN pairing code matching the server NotifyPairingCode.</summary>
+        public string PairingCode { get; set; }
         public int VinTipSeconds { get; set; }
         public bool ShowVinTips { get; set; }
         /// <summary>When ShowVinTips, show tip only after BMW upload fails (not on every VIN read).</summary>
@@ -38,6 +41,8 @@ namespace KaiAosNotifyClient
         public string Theme { get; set; }
         /// <summary>Force Update UI / debug banner until explicitly turned off.</summary>
         public bool DebugMode { get; set; }
+        /// <summary>Stable client instance id for notify ghost replace (survives reconnect).</summary>
+        public string InstanceGuid { get; set; }
         /// <summary>Newest first, max 3, semicolon-separated in registry.</summary>
         public List<string> RecentHosts { get; private set; }
 
@@ -78,6 +83,7 @@ namespace KaiAosNotifyClient
             AutoConnect = true;
             Host = "";
             Port = "17890";
+            PairingCode = "";
             VinTipSeconds = 10;
             ShowVinTips = true;
             ShowVinTipsBmwFailOnly = false;
@@ -88,14 +94,18 @@ namespace KaiAosNotifyClient
             AuthRegisterBlockAfter = 3;
             Language = "en";
             Theme = "system";
+            InstanceGuid = "";
             RecentHosts = new List<string>();
         }
 
         public void Normalize()
         {
             if (Host == null) Host = "";
+            EnsureInstanceGuid();
             Host = Host.Trim();
             if (string.IsNullOrWhiteSpace(Port)) Port = "17890";
+            if (PairingCode == null) PairingCode = "";
+            PairingCode = PairingCode.Trim();
             if (VinTipSeconds < 3) VinTipSeconds = 3;
             if (VinTipSeconds > 60) VinTipSeconds = 60;
             if (OfflineMinutes < 1) OfflineMinutes = 1;
@@ -117,6 +127,26 @@ namespace KaiAosNotifyClient
             if (RecentHosts == null) RecentHosts = new List<string>();
             while (RecentHosts.Count > 3)
                 RecentHosts.RemoveAt(RecentHosts.Count - 1);
+        }
+
+        public void EnsureInstanceGuid()
+        {
+            Guid parsed;
+            if (!string.IsNullOrWhiteSpace(InstanceGuid) && Guid.TryParse(InstanceGuid.Trim(), out parsed))
+            {
+                InstanceGuid = parsed.ToString("D");
+                return;
+            }
+            InstanceGuid = Guid.NewGuid().ToString("D");
+            try
+            {
+                using (var key = Registry.CurrentUser.CreateSubKey(RegPath))
+                {
+                    if (key != null)
+                        key.SetValue("InstanceGuid", InstanceGuid, RegistryValueKind.String);
+                }
+            }
+            catch { }
         }
 
         public void PushRecentHost(string host)
@@ -157,6 +187,10 @@ namespace KaiAosNotifyClient
                     var port = key.GetValue("Port") as string;
                     if (!string.IsNullOrWhiteSpace(host)) s.Host = host.Trim();
                     if (!string.IsNullOrWhiteSpace(port)) s.Port = port.Trim();
+                    var pairing = key.GetValue("PairingCode") as string;
+                    if (pairing != null) s.PairingCode = pairing.Trim();
+                    var instanceGuid = key.GetValue("InstanceGuid") as string;
+                    if (!string.IsNullOrWhiteSpace(instanceGuid)) s.InstanceGuid = instanceGuid.Trim();
                     s.VinTipSeconds = ReadInt(key, "VinTipSeconds", 10);
                     s.OfflineMinutes = ReadInt(key, "OfflineMinutes", 2);
                     s.AuthRegisterBlockAfter = ReadInt(key, "AuthRegisterBlockAfter", 3);
@@ -206,6 +240,8 @@ namespace KaiAosNotifyClient
                     key.SetValue("AuthRegisterBlockAfter", AuthRegisterBlockAfter, RegistryValueKind.DWord);
                     key.SetValue("Host", Host ?? "", RegistryValueKind.String);
                     key.SetValue("Port", Port ?? "17890", RegistryValueKind.String);
+                    key.SetValue("PairingCode", PairingCode ?? "", RegistryValueKind.String);
+                    key.SetValue("InstanceGuid", InstanceGuid ?? "", RegistryValueKind.String);
                     key.SetValue("Language", Language ?? "en", RegistryValueKind.String);
                     key.SetValue("Theme", Theme ?? "system", RegistryValueKind.String);
                     key.SetValue("RecentHosts", string.Join(";", RecentHosts.ToArray()), RegistryValueKind.String);
@@ -262,6 +298,7 @@ namespace KaiAosNotifyClient
                 AutoConnect = AutoConnect,
                 Host = Host ?? "",
                 Port = Port ?? "17890",
+                PairingCode = PairingCode ?? "",
                 VinTipSeconds = VinTipSeconds,
                 ShowVinTips = ShowVinTips,
                 ShowVinTipsBmwFailOnly = ShowVinTipsBmwFailOnly,
@@ -305,6 +342,7 @@ namespace KaiAosNotifyClient
             AutoConnect = imported.AutoConnect;
             if (imported.Host != null) Host = imported.Host.Trim();
             if (!string.IsNullOrWhiteSpace(imported.Port)) Port = imported.Port.Trim();
+            if (imported.PairingCode != null) PairingCode = imported.PairingCode.Trim();
             VinTipSeconds = imported.VinTipSeconds;
             ShowVinTips = imported.ShowVinTips;
             ShowVinTipsBmwFailOnly = imported.ShowVinTipsBmwFailOnly;
@@ -340,6 +378,7 @@ namespace KaiAosNotifyClient
         public bool AutoConnect { get; set; }
         public string Host { get; set; }
         public string Port { get; set; }
+        public string PairingCode { get; set; }
         public int VinTipSeconds { get; set; }
         public bool ShowVinTips { get; set; }
         public bool ShowVinTipsBmwFailOnly { get; set; }
@@ -367,7 +406,16 @@ namespace KaiAosNotifyClient
         public string Status { get; set; }
         public string Detail { get; set; }
         public bool HasBin { get; set; }
+        public int? MileageKm { get; set; }
 
+        public string KmText
+        {
+            get
+            {
+                if (!MileageKm.HasValue || MileageKm.Value <= 0) return "—";
+                return MileageKm.Value.ToString("N0", System.Globalization.CultureInfo.CurrentCulture);
+            }
+        }
         public string TimeText { get { return DetectedLocal.ToString("g"); } }
         public string VinText { get { return string.IsNullOrEmpty(Vin) ? "—" : Vin; } }
         public string PaintText { get { return string.IsNullOrEmpty(Paint) ? "—" : Paint; } }
@@ -415,7 +463,13 @@ namespace KaiAosNotifyClient
         }
         public string RowToolTip
         {
-            get { return string.IsNullOrEmpty(Vin) ? "VIN: —" : ("VIN: " + Vin); }
+            get
+            {
+                var tip = string.IsNullOrEmpty(Vin) ? "VIN: —" : ("VIN: " + Vin);
+                if (MileageKm.HasValue && MileageKm.Value > 0)
+                    tip += "\nKm: " + KmText;
+                return tip;
+            }
         }
     }
 

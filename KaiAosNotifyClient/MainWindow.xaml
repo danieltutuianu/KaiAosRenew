@@ -81,6 +81,13 @@
                        TextChanged="KeysSearchBox_TextChanged" />
             </StackPanel>
             <StackPanel Grid.Row="1">
+              <Border x:Name="KeysReaderWarnBanner" Background="{DynamicResource WarnBannerBgBrush}"
+                      BorderBrush="{DynamicResource StatusWarnBrush}"
+                      BorderThickness="1" CornerRadius="3" Padding="8,6" Margin="0,0,0,8"
+                      Visibility="Collapsed">
+                <TextBlock x:Name="KeysReaderWarnText" TextWrapping="Wrap"
+                           Foreground="{DynamicResource WarnBannerFgBrush}" FontSize="12" FontWeight="SemiBold" />
+              </Border>
               <TextBlock x:Name="KeysEventsSection" Text="Recent key activity:" Margin="0,0,0,4"
                          Style="{DynamicResource SectionText}" />
               <TextBlock x:Name="KeysEmptyHint" Text="No key activity yet"
@@ -151,6 +158,40 @@
                             </Button.ToolTip>
                           </Button>
                           <TextBlock Text="{Binding VinText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                  </GridViewColumn>
+                  <GridViewColumn x:Name="KeysColKm" Header="Km" Width="95">
+                    <GridViewColumn.CellTemplate>
+                      <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                          <Button Padding="0" Margin="0,0,4,0" Width="18" Height="18"
+                                  FontSize="11" Content="" Tag="{DynamicResource IconCopy}"
+                                  Cursor="Hand" Focusable="False"
+                                  Background="Transparent" BorderThickness="0"
+                                  Loaded="KeysKmCopyIcon_Loaded"
+                                  DataContextChanged="KeysKmCopyIcon_DataContextChanged"
+                                  PreviewMouseLeftButtonDown="KeysKmCopyIcon_PreviewMouseLeftButtonDown"
+                                  Click="KeysKmCopyIcon_Click">
+                            <Button.Style>
+                              <Style TargetType="Button">
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True">
+                                    <Setter Property="Foreground" Value="Black" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Button.Style>
+                            <Button.ToolTip>
+                              <ToolTip Foreground="Black" Background="#FFF7F7F7" BorderBrush="#FFABABAB" BorderThickness="1"
+                                       Padding="6,4">
+                                <TextBlock Text="Copy Km" Foreground="Black" />
+                              </ToolTip>
+                            </Button.ToolTip>
+                          </Button>
+                          <TextBlock Text="{Binding KmText}" VerticalAlignment="Center" />
                         </StackPanel>
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
@@ -258,6 +299,25 @@
               <CheckBox x:Name="AosShowPasswordCheck" Content="Show password" Margin="130,0,0,8"
                         Style="{DynamicResource KaiCheckBox}"
                         Checked="AosShowPassword_Changed" Unchecked="AosShowPassword_Changed" />
+              <Border x:Name="ClipboardPassBanner" Background="{DynamicResource WarnBannerBgBrush}"
+                      BorderBrush="{DynamicResource StatusWarnBrush}"
+                      BorderThickness="1" CornerRadius="3" Padding="8,6" Margin="130,0,0,8"
+                      Visibility="Collapsed">
+                <StackPanel>
+                  <TextBlock x:Name="ClipboardPassHeaderText" TextWrapping="Wrap"
+                             Foreground="{DynamicResource WarnBannerFgBrush}" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+                  <TextBlock x:Name="ClipboardPassCurrentText" TextWrapping="Wrap"
+                             Foreground="{DynamicResource WarnBannerFgBrush}" FontSize="12" Margin="0,0,0,2" />
+                  <TextBlock x:Name="ClipboardPassClipText" TextWrapping="Wrap"
+                             Foreground="{DynamicResource WarnBannerFgBrush}" FontSize="12" Margin="0,0,0,8" />
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="ClipboardPassPasteSaveBtn" Content="Paste &amp; Save" Style="{DynamicResource BeigeButton}"
+                            Click="ClipboardPassPasteSave_Click" MinWidth="100" Margin="0,0,8,0" Tag="{DynamicResource IconPaste}" />
+                    <Button x:Name="ClipboardPassDismissBtn" Content="Dismiss" Style="{DynamicResource BeigeButton}"
+                            Click="ClipboardPassDismiss_Click" MinWidth="80" Tag="{DynamicResource IconDismiss}" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
               <Grid Margin="0,4,0,0">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="130" />
@@ -915,6 +975,19 @@
                     <Button x:Name="ScanLanBtn" Grid.Column="4" Content="Scan LAN"
                             Style="{DynamicResource BeigeButton}" Click="ScanLan_Click"
                             ToolTip="Scan local network for notify server"  Tag="{DynamicResource IconScan}" />
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PairingCodeLabel" Text="Pairing code:" VerticalAlignment="Center"
+                               Margin="0,0,8,0" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" HorizontalAlignment="Left"
+                               ToolTip="Must match the server pairing code when the server requires one" />
+                    <TextBox x:Name="PairingCodeBox" Grid.Column="1" Width="160" HorizontalAlignment="Left"
+                             Style="{DynamicResource KaiTextBox}" LostFocus="HostPort_LostFocus"
+                             ToolTip="Leave empty if the server has no pairing code" />
                   </Grid>
                   <StackPanel Orientation="Horizontal" Margin="0,0,0,8" HorizontalAlignment="Left">
                     <Button x:Name="ConnectBtn" Content="Connect" Style="{DynamicResource BeigeButton}"

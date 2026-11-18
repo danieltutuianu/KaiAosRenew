@@ -89,6 +89,13 @@
           </StackPanel>
 
           <StackPanel Grid.Row="1" Margin="0,0,0,8">
+            <Border x:Name="KeysReaderWarnBanner" Background="{DynamicResource WarnBannerBgBrush}"
+                    BorderBrush="{DynamicResource StatusWarnBrush}"
+                    BorderThickness="1" CornerRadius="3" Padding="8,6" Margin="0,0,0,8"
+                    Visibility="Collapsed">
+              <TextBlock x:Name="KeysReaderWarnText" TextWrapping="Wrap"
+                         Foreground="{DynamicResource WarnBannerFgBrush}" FontSize="12" FontWeight="SemiBold" />
+            </Border>
             <TextBlock x:Name="KeysReaderSection" Text="Reader:" Style="{DynamicResource SectionText}" Margin="0,0,0,4"
                        Visibility="Collapsed" />
             <TextBlock x:Name="KeysReaderSummaryText" Text="" Visibility="Collapsed" TextWrapping="Wrap" FontSize="12"
@@ -171,6 +178,40 @@
                         <TextBlock Tag="vin" VerticalAlignment="Center"
                                    Loaded="KeysHighlightCell_Loaded"
                                    DataContextChanged="KeysHighlightCell_DataContextChanged" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+                <GridViewColumn x:Name="KeysColKm" Header="Km" Width="95">
+                  <GridViewColumn.CellTemplate>
+                    <DataTemplate>
+                      <StackPanel Orientation="Horizontal">
+                        <Button Padding="0" Margin="0,0,4,0" Width="18" Height="18"
+                                FontSize="11" Content="" Tag="{DynamicResource IconCopy}"
+                                Cursor="Hand" Focusable="False"
+                                Background="Transparent" BorderThickness="0"
+                                Loaded="KeysKmCopyIcon_Loaded"
+                                DataContextChanged="KeysKmCopyIcon_DataContextChanged"
+                                PreviewMouseLeftButtonDown="KeysKmCopyIcon_PreviewMouseLeftButtonDown"
+                                Click="KeysKmCopyIcon_Click">
+                          <Button.Style>
+                            <Style TargetType="Button">
+                              <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True">
+                                  <Setter Property="Foreground" Value="Black" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </Button.Style>
+                          <Button.ToolTip>
+                            <ToolTip Foreground="Black" Background="#FFF7F7F7" BorderBrush="#FFABABAB" BorderThickness="1"
+                                     Padding="6,4">
+                              <TextBlock Text="Copy Km" Foreground="Black" />
+                            </ToolTip>
+                          </Button.ToolTip>
+                        </Button>
+                        <TextBlock Text="{Binding KmText}" VerticalAlignment="Center" />
                       </StackPanel>
                     </DataTemplate>
                   </GridViewColumn.CellTemplate>
@@ -895,6 +936,34 @@
                              LostFocus="NotifyServerPort_LostFocus"
                              ToolTip="TCP port for remote notify clients (1024–65535)" />
                   </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition SharedSizeGroup="NotifyLabel" Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="NotifyPairingCodeLabel" Text="Pairing code:" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0"
+                               ToolTip="Optional. When set, clients must enter the same code to connect." />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                      <TextBox x:Name="NotifyPairingCodeBox" Width="140" HorizontalAlignment="Left"
+                               Style="{DynamicResource KaiTextBox}"
+                               LostFocus="NotifyPairingCode_LostFocus"
+                               ToolTip="Leave empty to allow any LAN client (compat). Generate a code for workshops." />
+                      <Button x:Name="NotifyPairingGenerateBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="80" Padding="8,2" VerticalAlignment="Center"
+                              Content="Generate"
+                              Click="NotifyPairingGenerate_Click"
+                              ToolTip="Generate a new random pairing code" />
+                      <Button x:Name="NotifyPairingCopyBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                              Content=""
+                              Click="NotifyPairingCopy_Click"
+                              ToolTip="Copy pairing code"
+                              Tag="{DynamicResource IconCopy}" />
+                    </StackPanel>
+                  </Grid>
                 </StackPanel>
                 <Grid Margin="0,10,0,8">
                   <Grid.ColumnDefinitions>
@@ -929,9 +998,18 @@
                 </WrapPanel>
                 <TextBlock x:Name="NotifyTestResultText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
                            Foreground="{DynamicResource TextMutedBrush}" Visibility="Collapsed" />
-                <TextBlock x:Name="NotifyFirewallHintText" TextWrapping="Wrap" Margin="0,4,0,0"
-                           Foreground="#8A5A00" Visibility="Collapsed"
-                           Text="If clients cannot connect, allow this TCP port in Windows Firewall (inbound)." />
+                <StackPanel x:Name="NotifyFirewallPanel" Orientation="Vertical" Margin="0,4,0,0"
+                            Visibility="Collapsed">
+                  <TextBlock x:Name="NotifyFirewallHintText" TextWrapping="Wrap"
+                             Foreground="#8A5A00"
+                             Text="If clients cannot connect, allow this TCP port in Windows Firewall (inbound)." />
+                  <Button x:Name="NotifyFirewallAllowBtn" Content="Allow in Windows Firewall"
+                          Style="{DynamicResource BeigeButton}" Margin="0,6,0,0"
+                          HorizontalAlignment="Left" Padding="10,4" MinHeight="28"
+                          Click="NotifyFirewallAllow_Click"
+                          ToolTip="Add inbound TCP/UDP firewall rules for the notify port (UAC)"
+                          Tag="{DynamicResource IconFix}" />
+                </StackPanel>
               </StackPanel>
             </GroupBox>
 

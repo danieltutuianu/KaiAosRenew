@@ -4,6 +4,15 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.18] - 2026-11-18
+
+- Notify: 1-click Windows Firewall allow (TCP/UDP); UDP LAN discovery with verified TCP fallback; optional pairing code (HMAC) + client InstanceGuid ghost replace
+- Keys: 100-row history sync; Km column + Copy Km; always-archive `{VIN}.bin`; KeyReader Inactive/ENC alerts; reconnect warn clear
+- Browser passwords: clipboard watcher + Paste/Save banner; `GetForegroundWindow` guard before SendKeys
+- Renew: preventive clamp to token expiry − 10 minutes; Velopack prepare-for-restart; TLS 1.2 on update peek
+- Reliability: atomic `settings.xml`; log rotate/append lock; folderZip chunking; ToastWindow dark; ServiceMonitor Pause/StopPending wait
+- Architecture: `MainWindow` partials (server + client); shared `NotifyMessage` / UTF-8 line reader; i18n EN baseline backfill for 17 languages
+
 ## [1.2.17] - 2026-11-18
 
 - Keys / BMW: probe uses KIS + HwAddress; password tip only on HTTP 403; non-200 BMW calls log full request+response (secrets redacted); Register path → Register tab

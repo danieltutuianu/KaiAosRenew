@@ -24,12 +24,23 @@ namespace KaiAosRenew
     public static class RenewEngine
     {
         private static readonly int[] BackoffSeconds = new int[] { 5, 15, 45 };
+        private static readonly object LogGate = new object();
 
         public static RenewResult Run(
             AppSettings settings,
             bool forceRegister = false,
             string passwordOverride = null,
             bool allowRegister = true)
+        {
+            return Run(settings, forceRegister, passwordOverride, allowRegister, CancellationToken.None);
+        }
+
+        public static RenewResult Run(
+            AppSettings settings,
+            bool forceRegister,
+            string passwordOverride,
+            bool allowRegister,
+            CancellationToken ct)
         {
             if (!allowRegister)
             {
@@ -40,6 +51,8 @@ namespace KaiAosRenew
             RenewResult last = Fail("Unknown");
             for (var attempt = 1; attempt <= 3; attempt++)
             {
+                if (ct.IsCancellationRequested)
+                    return Fail("Cancelled");
                 Log("Attempt " + attempt + "/3...");
                 last = RunOnce(settings, forceRegister, passwordOverride, true);
                 if (last.Ok)
@@ -55,7 +68,8 @@ namespace KaiAosRenew
                 {
                     var wait = BackoffSeconds[attempt - 1];
                     Log("Waiting " + wait + "s before retry...");
-                    Thread.Sleep(wait * 1000);
+                    if (ct.WaitHandle.WaitOne(wait * 1000))
+                        return Fail("Cancelled");
                 }
             }
             return last;
@@ -516,16 +530,19 @@ namespace KaiAosRenew
 
         public static void Log(string line)
         {
-            try
+            lock (LogGate)
             {
-                RotateLogIfNeeded();
-                var msg = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + line + Environment.NewLine;
-                File.AppendAllText(AppSettings.LogPath, msg, Encoding.UTF8);
+                try
+                {
+                    RotateLogIfNeededUnlocked();
+                    var msg = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + line + Environment.NewLine;
+                    File.AppendAllText(AppSettings.LogPath, msg, Encoding.UTF8);
+                }
+                catch { }
             }
-            catch { }
         }
 
-        private static void RotateLogIfNeeded()
+        private static void RotateLogIfNeededUnlocked()
         {
             try
             {

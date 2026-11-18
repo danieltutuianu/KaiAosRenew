@@ -206,8 +206,38 @@ namespace KaiAosRenew
                 using (var sc = new ServiceController(serviceName))
                 {
                     sc.Refresh();
-                    if (sc.Status != ServiceControllerStatus.Running
-                        && sc.Status != ServiceControllerStatus.StartPending)
+                    if (sc.Status == ServiceControllerStatus.Running
+                        || sc.Status == ServiceControllerStatus.StartPending)
+                    {
+                        // Already up or starting.
+                    }
+                    else if (sc.Status == ServiceControllerStatus.PausePending)
+                    {
+                        sc.WaitForStatus(ServiceControllerStatus.Paused, TimeSpan.FromSeconds(45));
+                        sc.Refresh();
+                        if (sc.Status == ServiceControllerStatus.Paused)
+                        {
+                            sc.Continue();
+                            sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(45));
+                        }
+                    }
+                    else if (sc.Status == ServiceControllerStatus.Paused)
+                    {
+                        sc.Continue();
+                        sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(45));
+                    }
+                    else if (sc.Status == ServiceControllerStatus.StopPending)
+                    {
+                        sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(45));
+                        sc.Refresh();
+                        if (sc.Status != ServiceControllerStatus.Running
+                            && sc.Status != ServiceControllerStatus.StartPending)
+                        {
+                            sc.Start();
+                            sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(45));
+                        }
+                    }
+                    else
                     {
                         sc.Start();
                         sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(45));

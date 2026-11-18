@@ -352,20 +352,24 @@ namespace KaiAosRenew
                 ShowWindow(hwnd, SwMaximize);
                 SetForegroundWindow(hwnd);
                 Thread.Sleep(350);
-                WinForms.SendKeys.SendWait("^l");
-                Thread.Sleep(200);
-                WinForms.SendKeys.SendWait(EscapeForSendKeys(url));
-                Thread.Sleep(80);
-                WinForms.SendKeys.SendWait("{ENTER}");
+                if (EnsureForegroundForSendKeys(hwnd))
+                {
+                    WinForms.SendKeys.SendWait("^l");
+                    Thread.Sleep(200);
+                    WinForms.SendKeys.SendWait(EscapeForSendKeys(url));
+                    Thread.Sleep(80);
+                    WinForms.SendKeys.SendWait("{ENTER}");
+                }
                 // Best-effort: focus page search and paste site (already on clipboard).
                 Thread.Sleep(1500);
                 try
                 {
-                    SetForegroundWindow(hwnd);
-                    Thread.Sleep(150);
-                    WinForms.SendKeys.SendWait("^f");
-                    Thread.Sleep(350);
-                    WinForms.SendKeys.SendWait("^v");
+                    if (EnsureForegroundForSendKeys(hwnd))
+                    {
+                        WinForms.SendKeys.SendWait("^f");
+                        Thread.Sleep(350);
+                        WinForms.SendKeys.SendWait("^v");
+                    }
                 }
                 catch { }
                 return true;
@@ -454,6 +458,15 @@ namespace KaiAosRenew
 
         private const int SwMaximize = 3;
 
+        private static bool EnsureForegroundForSendKeys(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return false;
+            if (GetForegroundWindow() == hwnd) return true;
+            SetForegroundWindow(hwnd);
+            Thread.Sleep(120);
+            return GetForegroundWindow() == hwnd;
+        }
+
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
         [DllImport("user32.dll")]
@@ -470,6 +483,9 @@ namespace KaiAosRenew
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);

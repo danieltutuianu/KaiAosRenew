@@ -93,6 +93,21 @@
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="MainWindow.Aos.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.Keys.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.Notify.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.Updates.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.Settings.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Program.cs" />
     <Compile Include="AppSettings.cs" />
     <Compile Include="RenewEngine.cs" />
@@ -111,6 +126,11 @@
     <Compile Include="BmwHttpLog.cs" />
     <Compile Include="SaveLogDialog.cs" />
     <Compile Include="NotifyServer.cs" />
+    <Compile Include="NotifyFirewallHelper.cs" />
+    <Compile Include="Shared\NotifyMessage.cs" />
+    <Compile Include="Shared\NotifyMessage.ServerKeys.cs" />
+    <Compile Include="Shared\TcpUtf8LineReader.cs" />
+    <Compile Include="Shared\NotifyPairing.cs" />
     <Compile Include="DesktopKeyReaderReg.cs" />
     <Compile Include="ServiceMonitor.cs" />
     <Compile Include="BrowserPasswordReader.cs" />

@@ -1,54 +1,124 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
-namespace KaiAosNotifyClient
+namespace KaiAosRenew
 {
-    internal sealed class NotifyMessage
+    /// <summary>TCP notify JSON line (one object per \n). Shared by server and client.</summary>
+    public sealed class NotifyMessage
     {
+        /// <summary>Max Keys rows synced to clients / kept in history.</summary>
+        public const int MaxKeySyncRows = 100;
+
+        [JsonProperty("v")]
         public int V = 1;
+
+        [JsonProperty("kind")]
         public string Kind;
+
+        [JsonProperty("level")]
         public string Level;
+
+        [JsonProperty("title")]
         public string Title;
+
+        [JsonProperty("text")]
         public string Text;
+
+        [JsonProperty("vin")]
         public string Vin;
+
+        [JsonProperty("action")]
         public string Action;
+
+        [JsonProperty("seconds")]
         public int Seconds;
+
+        [JsonProperty("at")]
         public string At;
+
+        [JsonProperty("paint")]
         public string Paint;
+
+        [JsonProperty("uph")]
         public string Uph;
+
+        [JsonProperty("ilevel")]
         public string ILevel;
+
+        [JsonProperty("reader")]
         public string Reader;
+
+        [JsonProperty("detail")]
         public string Detail;
+
+        [JsonProperty("status")]
         public string Status;
+
+        /// <summary>-1 unset, 0/1 when set.</summary>
+        [JsonProperty("local")]
         public int Local = -1;
+
+        [JsonProperty("bmw")]
         public int Bmw = -1;
+
+        [JsonProperty("failed")]
         public int Failed = -1;
+
+        /// <summary>Mileage km; -1 unset.</summary>
+        [JsonProperty("km")]
+        public int Km = -1;
 
         public string ToJsonLine()
         {
-            var sb = new StringBuilder(256);
-            sb.Append("{\"v\":").Append(V);
-            sb.Append(",\"kind\":\"").Append(Esc(Kind)).Append("\"");
-            sb.Append(",\"level\":\"").Append(Esc(Level)).Append("\"");
-            sb.Append(",\"title\":\"").Append(Esc(Title)).Append("\"");
-            sb.Append(",\"text\":\"").Append(Esc(Text)).Append("\"");
-            if (!string.IsNullOrEmpty(Vin))
-                sb.Append(",\"vin\":\"").Append(Esc(Vin)).Append("\"");
-            if (!string.IsNullOrEmpty(Action))
-                sb.Append(",\"action\":\"").Append(Esc(Action)).Append("\"");
-            if (Seconds > 0)
-                sb.Append(",\"seconds\":").Append(Seconds);
-            if (!string.IsNullOrEmpty(At))
-                sb.Append(",\"at\":\"").Append(Esc(At)).Append("\"");
-            sb.Append("}");
-            return sb.ToString();
+            var o = new JObject();
+            o["v"] = V <= 0 ? 1 : V;
+            o["kind"] = Kind ?? "";
+            o["level"] = Level ?? "";
+            o["title"] = Title ?? "";
+            o["text"] = Text ?? "";
+            if (!string.IsNullOrEmpty(Vin)) o["vin"] = Vin;
+            if (!string.IsNullOrEmpty(Action)) o["action"] = Action;
+            if (Seconds > 0) o["seconds"] = Seconds;
+            if (!string.IsNullOrEmpty(At)) o["at"] = At;
+            if (!string.IsNullOrEmpty(Paint)) o["paint"] = Paint;
+            if (!string.IsNullOrEmpty(Uph)) o["uph"] = Uph;
+            if (!string.IsNullOrEmpty(ILevel)) o["ilevel"] = ILevel;
+            if (!string.IsNullOrEmpty(Reader)) o["reader"] = Reader;
+            if (!string.IsNullOrEmpty(Detail)) o["detail"] = Detail;
+            if (!string.IsNullOrEmpty(Status)) o["status"] = Status;
+            if (Local >= 0) o["local"] = Local;
+            if (Bmw >= 0) o["bmw"] = Bmw;
+            if (Failed >= 0) o["failed"] = Failed;
+            if (Km >= 0) o["km"] = Km;
+            return o.ToString(Formatting.None);
         }
 
-        private static string Esc(string s)
+        public static NotifyMessage ParseLine(string line)
         {
-            if (string.IsNullOrEmpty(s)) return "";
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n");
+            if (string.IsNullOrWhiteSpace(line)) return null;
+            line = line.Trim();
+            try
+            {
+                var m = JsonConvert.DeserializeObject<NotifyMessage>(line);
+                if (m == null) return null;
+                if (string.IsNullOrEmpty(m.Kind)) m.Kind = "info";
+                if (string.IsNullOrEmpty(m.Level)) m.Level = "info";
+                if (string.IsNullOrEmpty(m.Title)) m.Title = "KAI - AOS Renew";
+                if (m.Text == null) m.Text = "";
+                if (m.Local < -1) m.Local = -1;
+                if (m.Bmw < -1) m.Bmw = -1;
+                if (m.Failed < -1) m.Failed = -1;
+                if (m.Km < -1) m.Km = -1;
+                if (m.V <= 0) m.V = 1;
+                return m;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         public static string EncodeUpdateFeed(string serverVer, string clientVer)
@@ -169,97 +239,19 @@ namespace KaiAosNotifyClient
             return true;
         }
 
-        private static string EscPipe(string s)
+        public static string EncodeActivitySync(IList<ActivityWireRow> rows)
         {
-            if (string.IsNullOrEmpty(s)) return "";
-            return s.Replace("\\", "\\\\").Replace("|", "\\p").Replace("\r", "").Replace("\n", "\\n");
-        }
-
-        public static NotifyMessage ParseLine(string line)
-        {
-            if (string.IsNullOrWhiteSpace(line)) return null;
-            line = line.Trim();
-            var m = new NotifyMessage();
-            m.Kind = JsonStr(line, "kind") ?? "info";
-            m.Level = JsonStr(line, "level") ?? "info";
-            m.Title = JsonStr(line, "title") ?? "KAI - AOS Renew";
-            m.Text = JsonStr(line, "text") ?? "";
-            m.Vin = JsonStr(line, "vin");
-            m.Action = JsonStr(line, "action");
-            m.Seconds = JsonInt(line, "seconds");
-            m.At = JsonStr(line, "at");
-            m.Paint = JsonStr(line, "paint");
-            m.Uph = JsonStr(line, "uph");
-            m.ILevel = JsonStr(line, "ilevel");
-            m.Reader = JsonStr(line, "reader");
-            m.Detail = JsonStr(line, "detail");
-            m.Status = JsonStr(line, "status");
-            m.Local = JsonIntOpt(line, "local");
-            m.Bmw = JsonIntOpt(line, "bmw");
-            m.Failed = JsonIntOpt(line, "failed");
-            return m;
-        }
-
-        public static List<ClientKeyRow> ParseKeySync(string text)
-        {
-            var list = new List<ClientKeyRow>();
-            if (string.IsNullOrWhiteSpace(text)) return list;
-            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-            foreach (var raw in lines)
+            if (rows == null || rows.Count == 0) return "";
+            var sb = new StringBuilder();
+            foreach (var row in rows)
             {
-                if (string.IsNullOrWhiteSpace(raw)) continue;
-                var row = ParseKeySyncLine(raw);
-                if (row != null && !string.IsNullOrEmpty(row.Vin))
-                    list.Add(row);
-                if (list.Count >= 10) break;
+                if (row == null) continue;
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append(row.At.ToString("yyyy-MM-ddTHH:mm:ss"));
+                sb.Append('|').Append(EscPipe(row.Level ?? "info"));
+                sb.Append('|').Append(EscPipe(row.Text ?? ""));
             }
-            return list;
-        }
-
-        public static ClientKeyRow ParseKeySyncLine(string line)
-        {
-            var parts = SplitPipe(line);
-            if (parts.Count < 2) return null;
-            var row = new ClientKeyRow();
-            DateTime at;
-            if (DateTime.TryParse(parts[0], out at))
-                row.DetectedLocal = DateTime.SpecifyKind(at, DateTimeKind.Local);
-            else
-                row.DetectedLocal = DateTime.Now;
-            row.Vin = parts.Count > 1 ? parts[1] : "";
-            row.Paint = parts.Count > 2 ? parts[2] : "";
-            row.Upholstery = parts.Count > 3 ? parts[3] : "";
-            row.ILevelCurrent = parts.Count > 4 ? parts[4] : "";
-            row.ReaderId = parts.Count > 5 ? parts[5] : "";
-            row.LocalSent = parts.Count > 6 && parts[6] == "1";
-            row.BmwUploaded = parts.Count > 7 && parts[7] == "1";
-            row.Failed = parts.Count > 8 && parts[8] == "1";
-            row.Status = parts.Count > 9 ? parts[9] : "Waiting";
-            row.Detail = parts.Count > 10 ? parts[10] : "";
-            row.HasBin = parts.Count > 11 && parts[11] == "1";
-            return row;
-        }
-
-        public static ClientKeyRow FromNotifyMessage(NotifyMessage m)
-        {
-            if (m == null) return null;
-            var row = new ClientKeyRow();
-            DateTime at;
-            if (!string.IsNullOrEmpty(m.At) && DateTime.TryParse(m.At, out at))
-                row.DetectedLocal = DateTime.SpecifyKind(at, DateTimeKind.Local);
-            else
-                row.DetectedLocal = DateTime.Now;
-            row.Vin = m.Vin ?? "";
-            row.Paint = m.Paint ?? "";
-            row.Upholstery = m.Uph ?? "";
-            row.ILevelCurrent = m.ILevel ?? "";
-            row.ReaderId = m.Reader ?? "";
-            row.Detail = m.Detail ?? "";
-            row.Status = string.IsNullOrEmpty(m.Status) ? "Waiting" : m.Status;
-            row.LocalSent = m.Local == 1;
-            row.BmwUploaded = m.Bmw == 1;
-            row.Failed = m.Failed == 1;
-            return row;
+            return sb.ToString();
         }
 
         public static List<ActivityWireRow> ParseActivitySync(string text)
@@ -283,6 +275,24 @@ namespace KaiAosNotifyClient
                 });
             }
             return list;
+        }
+
+        public static string EncodeRegisterSync(IList<RegisterWireRow> rows)
+        {
+            if (rows == null || rows.Count == 0) return "";
+            var sb = new StringBuilder();
+            foreach (var row in rows)
+            {
+                if (row == null) continue;
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append(row.At.ToString("yyyy-MM-ddTHH:mm:ss"));
+                var kind = row.Kind;
+                if (kind < 0 || kind > 2)
+                    kind = row.Ok ? 1 : 0;
+                sb.Append('|').Append(kind.ToString());
+                sb.Append('|').Append(EscPipe(row.Text ?? ""));
+            }
+            return sb.ToString();
         }
 
         public static List<RegisterWireRow> ParseRegisterSync(string text)
@@ -388,9 +398,16 @@ namespace KaiAosNotifyClient
             return data;
         }
 
-        private static List<string> SplitPipe(string line)
+        public static string EscPipe(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Replace("\\", "\\\\").Replace("|", "\\p").Replace("\r", "").Replace("\n", "\\n");
+        }
+
+        public static List<string> SplitPipe(string line)
         {
             var parts = new List<string>();
+            if (line == null) return parts;
             var sb = new StringBuilder();
             for (var i = 0; i < line.Length; i++)
             {
@@ -416,73 +433,9 @@ namespace KaiAosNotifyClient
             parts.Add(sb.ToString());
             return parts;
         }
-
-        private static int IndexOfKeyColon(string json, string key)
-        {
-            var needle = "\"" + key + "\"";
-            var start = 0;
-            while (start < json.Length)
-            {
-                var i = json.IndexOf(needle, start, StringComparison.OrdinalIgnoreCase);
-                if (i < 0) return -1;
-                var j = i + needle.Length;
-                while (j < json.Length && (json[j] == ' ' || json[j] == '\t')) j++;
-                if (j < json.Length && json[j] == ':')
-                    return j;
-                start = i + needle.Length;
-            }
-            return -1;
-        }
-
-        private static string JsonStr(string json, string key)
-        {
-            var i = IndexOfKeyColon(json, key);
-            if (i < 0) return null;
-            i = json.IndexOf('"', i + 1);
-            if (i < 0) return null;
-            var j = i + 1;
-            var sb = new StringBuilder();
-            while (j < json.Length)
-            {
-                var c = json[j];
-                if (c == '\\' && j + 1 < json.Length)
-                {
-                    var n = json[j + 1];
-                    if (n == 'n') sb.Append('\n');
-                    else if (n == 'r') sb.Append('\r');
-                    else if (n == 't') sb.Append('\t');
-                    else sb.Append(n);
-                    j += 2;
-                    continue;
-                }
-                if (c == '"') break;
-                sb.Append(c);
-                j++;
-            }
-            return sb.ToString();
-        }
-
-        private static int JsonInt(string json, string key)
-        {
-            var v = JsonIntOpt(json, key);
-            return v < 0 ? 0 : v;
-        }
-
-        private static int JsonIntOpt(string json, string key)
-        {
-            var i = IndexOfKeyColon(json, key);
-            if (i < 0) return -1;
-            i++;
-            while (i < json.Length && (json[i] == ' ' || json[i] == '\t')) i++;
-            var start = i;
-            while (i < json.Length && (char.IsDigit(json[i]) || json[i] == '-')) i++;
-            if (i == start) return -1;
-            int v;
-            return int.TryParse(json.Substring(start, i - start), out v) ? v : -1;
-        }
     }
 
-    internal sealed class KaiSvcWireRow
+    public sealed class KaiSvcWireRow
     {
         public string Name { get; set; }
         public string StatusText { get; set; }
@@ -490,7 +443,7 @@ namespace KaiAosNotifyClient
         public bool Ok { get; set; }
     }
 
-    internal sealed class KaiSyncData
+    public sealed class KaiSyncData
     {
         public string Install = "";
         public string RegisterUrl = "";
@@ -504,14 +457,14 @@ namespace KaiAosNotifyClient
         public readonly List<KaiSvcWireRow> Services = new List<KaiSvcWireRow>();
     }
 
-    internal sealed class ActivityWireRow
+    public sealed class ActivityWireRow
     {
         public DateTime At { get; set; }
         public string Level { get; set; }
         public string Text { get; set; }
     }
 
-    internal sealed class RegisterWireRow
+    public sealed class RegisterWireRow
     {
         public DateTime At { get; set; }
         /// <summary>0=fail, 1=ok, 2=info.</summary>

@@ -247,16 +247,11 @@ namespace KaiAosRenew
 
             if (!string.Equals(_currentFile, newest, StringComparison.OrdinalIgnoreCase))
             {
-                // Log rolled — finish old file if any, then follow new from start of new bytes only at EOF of new? Plan: seed EOF on start only; on rotate follow new file from beginning of new content after switch is wrong — better start new file at 0 to catch lines written during rotate, OR at EOF to avoid dump.
-                // Prefer: old file drain remaining, then new file from 0 only if small/fresh; safest for Activity spam: new file from EOF if length already large and we never saw it, else 0.
+                // Log rolled — drain remaining of old file, then read the new file from the start
+                // so lines written between create and this poll are not skipped.
                 DrainFileUnlocked(_currentFile);
                 _currentFile = newest;
-                try
-                {
-                    using (var fs = OpenShare(newest))
-                        _offset = fs.Length; // new file: start at EOF (avoid historical dump on rotate to old archive rename)
-                }
-                catch { _offset = 0; }
+                _offset = 0;
                 _partial = "";
             }
 
@@ -344,6 +339,8 @@ namespace KaiAosRenew
         {
             if (string.IsNullOrEmpty(body))
                 return KeyReaderActivityKind.Info;
+            if (ContainsAny(body, "enc file does not exist"))
+                return KeyReaderActivityKind.Warning;
             if (ContainsAny(body, "error", "fail", "exception", "denied", "fatal",
                     "fehler", "fehlgeschlagen", "eșuat"))
                 return KeyReaderActivityKind.Error;
