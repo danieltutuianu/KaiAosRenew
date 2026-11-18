@@ -621,6 +621,8 @@ namespace KaiAosRenew
                 sb.Append('|').Append(ev.Failed ? "1" : "0");
                 sb.Append('|').Append(EscPipe(StatusName(ev.Status)));
                 sb.Append('|').Append(EscPipe(ev.DetailText ?? ""));
+                var hasBin = !string.IsNullOrEmpty(ev.DebugBinPath) && File.Exists(ev.DebugBinPath);
+                sb.Append('|').Append(hasBin ? "1" : "0");
             }
             return sb.ToString();
         }

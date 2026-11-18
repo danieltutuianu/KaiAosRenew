@@ -173,17 +173,27 @@ namespace KaiAosRenew
                     File.Copy(propsPath, propsPath + ".bak_before_renew", true);
 
                 KaiCentralCredentials creds;
+                var registerUrl = string.IsNullOrWhiteSpace(settings.RegisterUrl)
+                    ? urls.RegisterAddress
+                    : settings.RegisterUrl;
                 try
                 {
-                    var registerUrl = string.IsNullOrWhiteSpace(settings.RegisterUrl)
-                        ? urls.RegisterAddress
-                        : settings.RegisterUrl;
                     var uri = new Uri(registerUrl);
                     creds = KaiZentralUserRegProc.RegisterWithKaiZentral(uri, email, password, ResolveWebProxy(settings.UseSystemProxy));
                 }
                 catch (Exception ex)
                 {
-                    var regFail = "Register failed: " + Unwrap(ex);
+                    int regStatus;
+                    string regBody;
+                    ParseHttpFromException(ex, out regStatus, out regBody);
+                    var regFail = regStatus != 0
+                        ? "Register failed: HTTP " + regStatus + " " + regBody
+                        : "Register failed: " + Unwrap(ex);
+                    if (regStatus != 0 && regStatus != 200)
+                    {
+                        BmwHttpLog.LogNon200("Register", regStatus, registerUrl,
+                            BmwHttpLog.FormatRegisterRequest(registerUrl, email), regBody, true);
+                    }
                     if (forceRegister && LooksLikeAuthFailure(regFail))
                     {
                         Log(regFail);
@@ -325,6 +335,7 @@ namespace KaiAosRenew
                 if (string.IsNullOrWhiteSpace(tokenUrl))
                     tokenUrl = "https://auth.bmwgroup.com/auth/oauth2/realms/root/realms/machine2machine/access_token";
 
+                var requestDump = BmwHttpLog.FormatWebEamRequest(tokenUrl, clientId);
                 // Same as KaiZentralProxyUserRegistration.GetM2mAccessToken
                 const string body = "grant_type=client_credentials&scope=machine2machine";
                 var req = (HttpWebRequest)WebRequest.Create(tokenUrl);
@@ -343,8 +354,9 @@ namespace KaiAosRenew
                 using (var resp = (HttpWebResponse)req.GetResponse())
                 using (var sr = new StreamReader(resp.GetResponseStream()))
                 {
-                    var json = sr.ReadToEnd();
-                    if ((int)resp.StatusCode >= 200 && (int)resp.StatusCode < 300
+                    var json = sr.ReadToEnd() ?? "";
+                    var status = (int)resp.StatusCode;
+                    if (status >= 200 && status < 300
                         && json.IndexOf("access_token", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         expiresInSeconds = ParseExpiresIn(json);
@@ -353,9 +365,46 @@ namespace KaiAosRenew
                             message += " expires_in=" + expiresInSeconds + "s";
                         return true;
                     }
-                    message = "Token response without access_token HTTP " + (int)resp.StatusCode;
+                    message = "Token response without access_token HTTP " + status;
+                    if (status != 200)
+                        BmwHttpLog.LogNon200("WebEAM", status, tokenUrl, requestDump, json);
                     return false;
                 }
+            }
+            catch (WebException we)
+            {
+                int status = 0;
+                string respBody = "";
+                string url = tokenUrl;
+                string clientIdForDump = null;
+                try
+                {
+                    if (File.Exists(propsPath))
+                    {
+                        var lines = File.ReadAllLines(propsPath);
+                        if (lines.Length >= 3)
+                            clientIdForDump = BmwDecrypt(lines[2].Trim());
+                    }
+                }
+                catch { }
+                try
+                {
+                    var resp = we.Response as HttpWebResponse;
+                    if (resp != null)
+                    {
+                        status = (int)resp.StatusCode;
+                        using (var sr = new StreamReader(resp.GetResponseStream() ?? Stream.Null))
+                            respBody = sr.ReadToEnd() ?? "";
+                    }
+                }
+                catch { }
+                message = Unwrap(we);
+                if (status != 0 && status != 200)
+                {
+                    BmwHttpLog.LogNon200("WebEAM", status, url,
+                        BmwHttpLog.FormatWebEamRequest(url, clientIdForDump), respBody);
+                }
+                return false;
             }
             catch (Exception ex)
             {
@@ -418,6 +467,29 @@ namespace KaiAosRenew
             r.Ok = false;
             r.Message = message;
             return r;
+        }
+
+        private static void ParseHttpFromException(Exception ex, out int status, out string body)
+        {
+            status = 0;
+            body = "";
+            while (ex != null)
+            {
+                var we = ex as WebException;
+                if (we != null && we.Response != null)
+                {
+                    try
+                    {
+                        var resp = we.Response as HttpWebResponse;
+                        if (resp != null) status = (int)resp.StatusCode;
+                        using (var sr = new StreamReader(we.Response.GetResponseStream() ?? Stream.Null))
+                            body = sr.ReadToEnd() ?? "";
+                        return;
+                    }
+                    catch { }
+                }
+                ex = ex.InnerException;
+            }
         }
 
         private static string Unwrap(Exception ex)

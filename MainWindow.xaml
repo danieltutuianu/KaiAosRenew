@@ -96,6 +96,9 @@
             <TextBlock x:Name="KeysServicesText" Text="" Visibility="Collapsed" TextWrapping="Wrap" FontSize="12"
                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,6" />
             <TextBlock x:Name="KeysEventsSection" Text="Recent key activity:" Style="{DynamicResource SectionText}" Margin="0,0,0,4" />
+            <TextBlock x:Name="KeysEmptyHint" Text="No key activity yet"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                       Margin="0,0,0,0" Visibility="Collapsed" />
             <TextBlock x:Name="KeysNoMatchesHint" Text="No matches — clear filter"
                        Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
                        Margin="0,0,0,0" Visibility="Collapsed" />
@@ -195,6 +198,35 @@
                                 DisplayMemberBinding="{Binding StatusText}" />
                 <GridViewColumn x:Name="KeysColDetail" Header="Detail" Width="220"
                                 DisplayMemberBinding="{Binding DetailText}" />
+                <GridViewColumn x:Name="KeysColBin" Header="Bin" Width="0">
+                  <GridViewColumn.CellTemplate>
+                    <DataTemplate>
+                      <Button x:Name="KeysOpenBinBtn"
+                              Width="20" Height="20" Padding="3" Margin="0"
+                              MinWidth="20" MinHeight="20"
+                              Background="#FFEDE4D4" BorderBrush="#FF9A8F7C" BorderThickness="1"
+                              HorizontalAlignment="Center"
+                              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                              VerticalAlignment="Center" Cursor="Hand" Focusable="False"
+                              Loaded="KeysOpenBinBtn_Loaded"
+                              DataContextChanged="KeysOpenBinBtn_DataContextChanged"
+                              Click="KeysOpenBinBtn_Click"
+                              ToolTip="Open archived keyreader.bin">
+                        <Viewbox Width="12" Height="12">
+                          <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                Data="{DynamicResource IconOpen}" Stretch="Uniform" />
+                        </Viewbox>
+                      </Button>
+                    </DataTemplate>
+                  </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+                <GridViewColumn x:Name="KeysColBinPad" Header="" Width="0">
+                  <GridViewColumn.CellTemplate>
+                    <DataTemplate>
+                      <Border />
+                    </DataTemplate>
+                  </GridViewColumn.CellTemplate>
+                </GridViewColumn>
               </GridView>
             </ListView.View>
           </ListView>
@@ -384,9 +416,14 @@
                       Click="ClearLog_Click" Margin="0" MinWidth="72" Padding="10,2,12,2"  Tag="{DynamicResource IconClear}" />
             </StackPanel>
           </DockPanel>
-          <TextBlock x:Name="ActivityNoMatchesHint" Grid.Row="1" Text="No matches — clear filter"
-                     Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
-                     Margin="0,0,0,4" Visibility="Collapsed" />
+          <StackPanel Grid.Row="1">
+            <TextBlock x:Name="ActivityEmptyHint" Text="No activity yet"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                       Margin="0,0,0,4" Visibility="Collapsed" />
+            <TextBlock x:Name="ActivityNoMatchesHint" Text="No matches — clear filter"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                       Margin="0,0,0,4" Visibility="Collapsed" />
+          </StackPanel>
           <ListView x:Name="ActivityList" Grid.Row="2"
                     BorderBrush="{DynamicResource FieldBorderBrush}" BorderThickness="1"
                     Background="{DynamicResource FieldBgBrush}"
@@ -709,6 +746,11 @@
                         HorizontalAlignment="Left" MinWidth="140" Margin="0,4,0,0"
                         Click="TestBalloonTipsBtn_Click"
                         ToolTip="Show sample info/warning/error balloon tips"  Tag="{DynamicResource IconInfo}" />
+                <Button x:Name="KeysOpenDebugFolderBtn" Content="Open key debug folder" Style="{DynamicResource BeigeButton}"
+                        HorizontalAlignment="Left" MinWidth="160" Margin="0,8,0,0"
+                        Click="KeysOpenDebugFolder_Click"
+                        ToolTip="Open %AppData%\\KaiAosRenew (key-bins and key-reader-parse.log)"
+                        Tag="{DynamicResource IconFolder}" />
               </StackPanel>
             </GroupBox>
 

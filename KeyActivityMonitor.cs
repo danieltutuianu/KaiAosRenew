@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -106,6 +107,10 @@ namespace KaiAosRenew
                 }
             }
         }
+        /// <summary>Local archived keyreader.bin path (debug mode only; not synced).</summary>
+        [XmlIgnore]
+        public string DebugBinPath { get; set; }
+
         [XmlIgnore]
         public string DetailText
         {
@@ -177,10 +182,39 @@ namespace KaiAosRenew
         private string _kaiLogDir = DefaultKaiLogDir;
         private string _sqlitePath = DefaultSqlitePath;
         private double _stallMinutes = 2.0;
+        private readonly Dictionary<string, string> _lastDebugBinByVin =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>When true, archive keyreader.bin + parse log under AppData (Debug Mode).</summary>
+        public bool KeyDebugEnabled { get; set; }
 
         public string ActivePickupFolder
         {
             get { return _pickupFolder; }
+        }
+
+        public static string KeyDebugStoreDirectory
+        {
+            get { return KeyDebugStoreDir; }
+        }
+
+        /// <summary>Resolve archived debug .bin for a VIN (single {VIN}.bin, else legacy timestamped).</summary>
+        public static string ResolveDebugBinForVin(string vin)
+        {
+            if (string.IsNullOrWhiteSpace(vin)) return null;
+            try
+            {
+                var bins = Path.Combine(KeyDebugStoreDir, "key-bins");
+                if (!Directory.Exists(bins)) return null;
+                var token = SanitizeVinForFile(vin);
+                var single = Path.Combine(bins, token + ".bin");
+                if (File.Exists(single)) return single;
+                var hits = Directory.GetFiles(bins, "*_" + token + ".bin");
+                Array.Sort(hits, StringComparer.OrdinalIgnoreCase);
+                if (hits.Length > 0) return hits[hits.Length - 1];
+            }
+            catch { }
+            return null;
         }
 
         public double StallMinutes
@@ -250,6 +284,13 @@ namespace KaiAosRenew
         private static readonly Regex RxILevelAscii = new Regex(
             @"\b([A-Z][0-9A-F]{3}-\d{2}-\d{2}-\d+)\b",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private const int KeyBinArchiveMax = 40;
+        private const int KeyDebugDedupSeconds = 5;
+        private static readonly object KeyDebugGate = new object();
+        private static string _lastKeyDebugVin = "";
+        private static string _lastKeyDebugHash = "";
+        private static DateTime _lastKeyDebugUtc = DateTime.MinValue;
 
         private FileSystemWatcher _watcher;
         private readonly object _gate = new object();
@@ -500,6 +541,11 @@ namespace KaiAosRenew
                 AttachBinFields(merged);
                 InheritUploadStatusByVin(merged);
                 merged = DeduplicateVinRows(merged);
+                if (KeyDebugEnabled)
+                {
+                    foreach (var ev in merged)
+                        TryAssignDebugBinPath(ev);
+                }
                 snap.Events = merged;
                 snap.KeysToday = CountKeysToday(merged);
                 snap.NewEvents = DetectNewEvents(merged);
@@ -771,18 +817,6 @@ namespace KaiAosRenew
             catch { }
         }
 
-        private void RememberBinFromPath(string path)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
-                KeyBinFields fields;
-                if (!TryParseKeyReaderBin(path, out fields)) return;
-                RememberBin(File.GetLastWriteTime(path), fields);
-            }
-            catch { }
-        }
-
         private void RememberBin(DateTime when, KeyBinFields fields)
         {
             if (fields == null || string.IsNullOrEmpty(fields.Vin)) return;
@@ -914,7 +948,51 @@ namespace KaiAosRenew
                 if (string.IsNullOrEmpty(ev.ILevelCurrent)) ev.ILevelCurrent = best.ILevelCurrent;
                 if (string.IsNullOrEmpty(ev.ILevelBackup)) ev.ILevelBackup = best.ILevelBackup;
                 if (string.IsNullOrEmpty(ev.ILevelPlant)) ev.ILevelPlant = best.ILevelPlant;
+                TryAssignDebugBinPath(ev);
             }
+        }
+
+        private void TryAssignDebugBinPath(KeyActivityEvent ev)
+        {
+            if (ev == null || string.IsNullOrEmpty(ev.Vin)) return;
+            string path;
+            lock (_gate)
+            {
+                if (!_lastDebugBinByVin.TryGetValue(ev.Vin, out path))
+                    return;
+            }
+            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                ev.DebugBinPath = path;
+        }
+
+        private void RememberBinFromPath(string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+                byte[] bytes;
+                DateTime mtimeUtc;
+                if (!TryReadKeyReaderBytes(path, out bytes, out mtimeUtc)) return;
+                KeyBinFields fields;
+                if (!TryParseKeyReaderBytes(bytes, out fields)) return;
+                if (KeyDebugEnabled)
+                {
+                    try
+                    {
+                        var archived = WriteKeyReadDebug(path, bytes, mtimeUtc, fields);
+                        if (!string.IsNullOrEmpty(archived) && fields != null && !string.IsNullOrEmpty(fields.Vin))
+                        {
+                            lock (_gate)
+                            {
+                                _lastDebugBinByVin[fields.Vin] = archived;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+                RememberBin(File.GetLastWriteTime(path), fields);
+            }
+            catch { }
         }
 
         internal static bool TryParseKeyReaderBin(string path, out KeyBinFields fields)
@@ -923,30 +1001,260 @@ namespace KaiAosRenew
             try
             {
                 byte[] bytes;
-                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-                {
-                    var len = (int)Math.Min(fs.Length, 8192);
-                    bytes = new byte[len];
-                    var read = 0;
-                    while (read < len)
-                    {
-                        var n = fs.Read(bytes, read, len - read);
-                        if (n <= 0) break;
-                        read += n;
-                    }
-                    if (read <= 0) return false;
-                    if (read != bytes.Length)
-                    {
-                        var trimmed = new byte[read];
-                        Buffer.BlockCopy(bytes, 0, trimmed, 0, read);
-                        bytes = trimmed;
-                    }
-                }
+                DateTime unused;
+                if (!TryReadKeyReaderBytes(path, out bytes, out unused)) return false;
                 return TryParseKeyReaderBytes(bytes, out fields);
             }
             catch
             {
                 return false;
+            }
+        }
+
+        private static bool TryReadKeyReaderBytes(string path, out byte[] bytes, out DateTime mtimeUtc)
+        {
+            bytes = null;
+            mtimeUtc = DateTime.UtcNow;
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                try { mtimeUtc = File.GetLastWriteTimeUtc(path); }
+                catch { mtimeUtc = DateTime.UtcNow; }
+                var len = (int)Math.Min(fs.Length, 8192);
+                bytes = new byte[len];
+                var read = 0;
+                while (read < len)
+                {
+                    var n = fs.Read(bytes, read, len - read);
+                    if (n <= 0) break;
+                    read += n;
+                }
+                if (read <= 0)
+                {
+                    bytes = null;
+                    return false;
+                }
+                if (read != bytes.Length)
+                {
+                    var trimmed = new byte[read];
+                    Buffer.BlockCopy(bytes, 0, trimmed, 0, read);
+                    bytes = trimmed;
+                }
+            }
+            return true;
+        }
+
+        private static string KeyDebugStoreDir
+        {
+            get
+            {
+                var dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "KaiAosRenew");
+                Directory.CreateDirectory(dir);
+                return dir;
+            }
+        }
+
+        private static string Sha256Hex(byte[] bytes)
+        {
+            using (var sha = SHA256.Create())
+            {
+                var hash = sha.ComputeHash(bytes ?? new byte[0]);
+                var sb = new StringBuilder(hash.Length * 2);
+                for (var i = 0; i < hash.Length; i++)
+                    sb.Append(hash[i].ToString("x2"));
+                return sb.ToString();
+            }
+        }
+
+        private static string SanitizeVinForFile(string vin)
+        {
+            if (string.IsNullOrWhiteSpace(vin)) return "NOVIN";
+            var sb = new StringBuilder(vin.Length);
+            foreach (var ch in vin.Trim().ToUpperInvariant())
+            {
+                if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))
+                    sb.Append(ch);
+            }
+            return sb.Length > 0 ? sb.ToString() : "NOVIN";
+        }
+
+        /// <summary>
+        /// Append parse diagnostics and archive a copy of the raw .bin under %AppData%\KaiAosRenew.
+        /// Quiet (no UI); used so workshop PCs can share key-reader-parse.log / key-bins for analysis.
+        /// Returns the archived .bin path (existing or newly written), or null.
+        /// </summary>
+        private static string WriteKeyReadDebug(string path, byte[] bytes, DateTime mtimeUtc, KeyBinFields fields)
+        {
+            if (bytes == null || bytes.Length == 0) return null;
+            var vin = fields != null ? (fields.Vin ?? "") : "";
+            var hash = Sha256Hex(bytes);
+            lock (KeyDebugGate)
+            {
+                var now = DateTime.UtcNow;
+                if (!string.IsNullOrEmpty(vin)
+                    && string.Equals(vin, _lastKeyDebugVin, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(hash, _lastKeyDebugHash, StringComparison.Ordinal)
+                    && (now - _lastKeyDebugUtc).TotalSeconds < KeyDebugDedupSeconds)
+                {
+                    try
+                    {
+                        var bins = Path.Combine(KeyDebugStoreDir, "key-bins");
+                        var single = Path.Combine(bins, SanitizeVinForFile(vin) + ".bin");
+                        if (File.Exists(single)) return single;
+                        var hits = Directory.GetFiles(bins, "*_" + SanitizeVinForFile(vin) + ".bin");
+                        Array.Sort(hits, StringComparer.OrdinalIgnoreCase);
+                        if (hits.Length > 0) return hits[hits.Length - 1];
+                    }
+                    catch { }
+                    return null;
+                }
+
+                var store = KeyDebugStoreDir;
+                var binsDir = Path.Combine(store, "key-bins");
+                Directory.CreateDirectory(binsDir);
+
+                // Skip archive rewrite if current per-VIN file has same size+hash.
+                var vinToken = SanitizeVinForFile(vin);
+                var skipArchive = false;
+                var archivedPath = (string)null;
+                try
+                {
+                    var single = Path.Combine(binsDir, vinToken + ".bin");
+                    var newest = File.Exists(single) ? single : null;
+                    if (newest == null)
+                    {
+                        var existing = Directory.GetFiles(binsDir, "*_" + vinToken + ".bin");
+                        Array.Sort(existing, StringComparer.OrdinalIgnoreCase);
+                        if (existing.Length > 0)
+                            newest = existing[existing.Length - 1];
+                    }
+                    if (newest != null)
+                    {
+                        var fi = new FileInfo(newest);
+                        if (fi.Length == bytes.Length
+                            && (now - fi.LastWriteTimeUtc).TotalSeconds < KeyDebugDedupSeconds)
+                        {
+                            var prev = File.ReadAllBytes(newest);
+                            if (string.Equals(Sha256Hex(prev), hash, StringComparison.Ordinal))
+                            {
+                                skipArchive = true;
+                                archivedPath = newest;
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                if (!skipArchive)
+                {
+                    // One archive file per VIN (overwrite). Remove legacy timestamped siblings.
+                    var dest = Path.Combine(binsDir, vinToken + ".bin");
+                    File.WriteAllBytes(dest, bytes);
+                    archivedPath = dest;
+                    try
+                    {
+                        var siblings = Directory.GetFiles(binsDir, "*_" + vinToken + ".bin");
+                        for (var si = 0; si < siblings.Length; si++)
+                        {
+                            try
+                            {
+                                if (!string.Equals(siblings[si], dest, StringComparison.OrdinalIgnoreCase))
+                                    File.Delete(siblings[si]);
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+                    try
+                    {
+                        var all = Directory.GetFiles(binsDir, "*.bin");
+                        if (all.Length > KeyBinArchiveMax)
+                        {
+                            Array.Sort(all, (a, b) => File.GetLastWriteTimeUtc(a).CompareTo(File.GetLastWriteTimeUtc(b)));
+                            var drop = all.Length - KeyBinArchiveMax;
+                            for (var i = 0; i < drop; i++)
+                            {
+                                try { File.Delete(all[i]); }
+                                catch { }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                var ascii = Encoding.ASCII.GetString(bytes);
+                var paintHits = new List<string>();
+                for (var pu = RxPaintUph.Match(ascii); pu.Success; pu = pu.NextMatch())
+                    paintHits.Add(pu.Value + "@0x" + pu.Index.ToString("X"));
+
+                var ilevelHits = new List<string>();
+                for (var i = 0; i + 3 < bytes.Length; i++)
+                {
+                    var c0 = bytes[i];
+                    if (!((c0 >= (byte)'A' && c0 <= (byte)'Z') || (c0 >= (byte)'a' && c0 <= (byte)'z')))
+                        continue;
+                    var fam = Encoding.ASCII.GetString(bytes, i, 4).ToUpperInvariant();
+                    if (!RxILevelFamily.IsMatch(fam)) continue;
+                    ilevelHits.Add(fam + "@0x" + i.ToString("X"));
+                }
+
+                var sb = new StringBuilder(bytes.Length * 4 + 512);
+                sb.Append("==== ").Append(now.ToString("o")).Append(" path=").Append(path ?? "")
+                    .Append(" size=").Append(bytes.Length)
+                    .Append(" mtime=").Append(mtimeUtc.ToString("o"))
+                    .Append(" sha256=").Append(hash)
+                    .AppendLine();
+                sb.Append("VIN=").Append(string.IsNullOrEmpty(vin) ? "(none)" : vin).AppendLine();
+                sb.Append("Paint=").Append(fields != null && !string.IsNullOrEmpty(fields.Paint) ? fields.Paint : "(none)")
+                    .Append(" Upholstery=")
+                    .Append(fields != null && !string.IsNullOrEmpty(fields.Upholstery) ? fields.Upholstery : "(none)")
+                    .AppendLine();
+                sb.Append("ILevelCurrent=")
+                    .Append(fields != null && !string.IsNullOrEmpty(fields.ILevelCurrent) ? fields.ILevelCurrent : "(none)")
+                    .Append(" Backup=")
+                    .Append(fields != null && !string.IsNullOrEmpty(fields.ILevelBackup) ? fields.ILevelBackup : "(none)")
+                    .Append(" Plant=")
+                    .Append(fields != null && !string.IsNullOrEmpty(fields.ILevelPlant) ? fields.ILevelPlant : "(none)")
+                    .AppendLine();
+                sb.Append("PaintUphRegexHits= ");
+                if (paintHits.Count == 0) sb.Append("(none)");
+                else sb.Append(string.Join(" | ", paintHits.ToArray()));
+                sb.AppendLine();
+                sb.Append("ILevelFamilyHits= ");
+                if (ilevelHits.Count == 0) sb.Append("(none)");
+                else sb.Append(string.Join(" ", ilevelHits.ToArray()));
+                sb.AppendLine();
+                sb.AppendLine("--- hex+ascii (full file) ---");
+                for (var off = 0; off < bytes.Length; off += 16)
+                {
+                    sb.Append(off.ToString("X4")).Append(':');
+                    var lineAscii = new StringBuilder(16);
+                    var n = Math.Min(16, bytes.Length - off);
+                    for (var j = 0; j < 16; j++)
+                    {
+                        sb.Append(' ');
+                        if (j < n)
+                        {
+                            var b = bytes[off + j];
+                            sb.Append(b.ToString("x2"));
+                            lineAscii.Append(b >= 32 && b <= 126 ? (char)b : '.');
+                        }
+                        else
+                            sb.Append("  ");
+                    }
+                    sb.Append("  | ").Append(lineAscii).AppendLine();
+                }
+                sb.AppendLine("====");
+                sb.AppendLine();
+
+                var logPath = Path.Combine(store, "key-reader-parse.log");
+                File.AppendAllText(logPath, sb.ToString(), Encoding.UTF8);
+
+                _lastKeyDebugVin = vin ?? "";
+                _lastKeyDebugHash = hash;
+                _lastKeyDebugUtc = now;
+                return archivedPath;
             }
         }
 

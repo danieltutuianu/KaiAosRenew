@@ -16,6 +16,7 @@ namespace KaiAosRenew
         private const string ImplDllName = "BMW.ISPI.KAI.Decentral.KaiServices.Impl.dll";
         private const string ProxyTypeName =
             "BMW.ISPI.KAI.Decentral.KaiServices.KaiZentral.KaiZentralProxyUserRegistration";
+        private const int MaxBodyRetain = 262144;
 
         public sealed class ProbeResult
         {
@@ -23,11 +24,23 @@ namespace KaiAosRenew
             public string Summary { get; set; }
             public int HttpStatus { get; set; }
             public string Body { get; set; }
+            public string UploadUrl { get; set; }
+            public string RequestDump { get; set; }
+            public string Operation { get; set; }
         }
 
         public static ProbeResult ProbeTransferredBin(AppSettings settings, string readerIdHint)
         {
+            return ProbeTransferredBin(settings, readerIdHint, null);
+        }
+
+        public static ProbeResult ProbeTransferredBin(
+            AppSettings settings, string readerIdHint, string hardwareIdHint)
+        {
             var result = new ProbeResult();
+            result.Operation = "KeyUpload";
+            string uploadUrl = null;
+            string requestDump = null;
             try
             {
                 ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
@@ -49,7 +62,8 @@ namespace KaiAosRenew
                 }
 
                 var urls = KaiZentralUserRegProc.GetKaiZentralURLs(configPath);
-                var uploadUrl = urls != null ? urls.KeyDataUploadAddress : null;
+                uploadUrl = urls != null ? urls.KeyDataUploadAddress : null;
+                result.UploadUrl = uploadUrl;
                 if (string.IsNullOrWhiteSpace(uploadUrl))
                 {
                     result.Summary = "Key upload URL missing from KAI config.";
@@ -59,22 +73,41 @@ namespace KaiAosRenew
                 string token;
                 KaiCentralCredentials creds;
                 string tokenErr;
-                if (!TryGetM2mTokenAndCreds(settings, propsPath,
-                    ResolveWebEamUrl(settings, urls.WenAccessManagerAddress),
-                    out token, out creds, out tokenErr))
+                int tokenStatus;
+                string tokenBody;
+                string tokenReq;
+                var tokenUrl = ResolveWebEamUrl(settings, urls != null ? urls.WenAccessManagerAddress : null);
+                if (!TryGetM2mTokenAndCreds(settings, propsPath, tokenUrl,
+                    out token, out creds, out tokenErr, out tokenStatus, out tokenBody, out tokenReq))
                 {
                     result.Summary = "M2M token failed: " + tokenErr;
+                    result.Operation = "WebEAM";
+                    result.UploadUrl = tokenUrl;
+                    result.RequestDump = tokenReq;
+                    result.HttpStatus = tokenStatus;
+                    result.Body = CapBody(tokenBody);
+                    if (tokenStatus != 0 && tokenStatus != 200)
+                    {
+                        BmwHttpLog.LogNon200("WebEAM", tokenStatus, tokenUrl, tokenReq, result.Body);
+                    }
                     return result;
                 }
 
                 var bin = File.ReadAllBytes(KeyActivityMonitor.TransferredBin);
+                var readerId = string.IsNullOrWhiteSpace(readerIdHint) ? "unknown" : readerIdHint.Trim();
+                var hwId = ResolveHardwareId(hardwareIdHint, readerId, settings);
                 var kd = new KaiZentralKeyData();
                 kd.Language = "en";
                 kd.KeyDataFile = "K " + Convert.ToBase64String(bin);
                 kd.KeyReadDate = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-                kd.KeyReaderId = string.IsNullOrWhiteSpace(readerIdHint) ? "unknown" : readerIdHint.Trim();
-                kd.KeyReaderHardwareId = "";
-                kd.OriginCodeType = "KeyReaderPlus";
+                kd.KeyReaderId = readerId;
+                kd.KeyReaderHardwareId = hwId;
+                kd.OriginCodeType = "KIS";
+
+                requestDump = BmwHttpLog.FormatKeyUploadRequest(
+                    "POST", uploadUrl, kd.OriginCodeType, kd.KeyReaderId, kd.KeyReaderHardwareId,
+                    kd.KeyReadDate, kd.Language, bin.Length);
+                result.RequestDump = requestDump;
 
                 AppDomain.CurrentDomain.AssemblyResolve -= ResolveKaiAsm;
                 AppDomain.CurrentDomain.AssemblyResolve += ResolveKaiAsm;
@@ -113,17 +146,50 @@ namespace KaiAosRenew
             }
             catch (TargetInvocationException tie)
             {
-                return FromException(tie.InnerException ?? tie);
+                return FromException(tie.InnerException ?? tie, uploadUrl, requestDump);
             }
             catch (Exception ex)
             {
-                return FromException(ex);
+                return FromException(ex, uploadUrl, requestDump);
             }
         }
 
-        private static ProbeResult FromException(Exception ex)
+        private static string ResolveHardwareId(string hardwareIdHint, string readerId, AppSettings settings)
+        {
+            if (!string.IsNullOrWhiteSpace(hardwareIdHint))
+                return hardwareIdHint.Trim();
+            try
+            {
+                var sqlite = settings != null && !string.IsNullOrWhiteSpace(settings.KeysSqlitePath)
+                    ? settings.KeysSqlitePath.Trim()
+                    : KeyActivityMonitor.DefaultSqlitePath;
+                if (File.Exists(sqlite))
+                {
+                    var cs = "Data Source=" + sqlite + ";Version=3;Read Only=True;FailIfMissing=True";
+                    using (var conn = new System.Data.SQLite.SQLiteConnection(cs))
+                    {
+                        conn.Open();
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText =
+                                "SELECT HwAddress FROM KeyReaderEntity ORDER BY KeyReaderPk LIMIT 1";
+                            var v = cmd.ExecuteScalar() as string;
+                            if (!string.IsNullOrWhiteSpace(v))
+                                return v.Trim();
+                        }
+                    }
+                }
+            }
+            catch { }
+            return string.IsNullOrWhiteSpace(readerId) ? "unknown" : readerId.Trim();
+        }
+
+        private static ProbeResult FromException(Exception ex, string uploadUrl, string requestDump)
         {
             var result = new ProbeResult();
+            result.Operation = "KeyUpload";
+            result.UploadUrl = uploadUrl;
+            result.RequestDump = requestDump;
             while (ex is TargetInvocationException && ex.InnerException != null)
                 ex = ex.InnerException;
             while (ex.InnerException != null
@@ -142,10 +208,13 @@ namespace KaiAosRenew
                     var resp = we.Response as HttpWebResponse;
                     result.HttpStatus = resp != null ? (int)resp.StatusCode : 0;
                     using (var sr = new StreamReader(we.Response.GetResponseStream() ?? Stream.Null, Encoding.UTF8))
-                        result.Body = sr.ReadToEnd() ?? "";
-                    if (result.Body.Length > 2048)
-                        result.Body = result.Body.Substring(0, 2048) + "...";
+                        result.Body = CapBody(sr.ReadToEnd() ?? "");
                     result.Summary = "HTTP " + result.HttpStatus + " " + TruncateOneLine(result.Body, 400);
+                    if (result.HttpStatus != 200)
+                    {
+                        BmwHttpLog.LogNon200("KeyUpload", result.HttpStatus, uploadUrl,
+                            requestDump, result.Body);
+                    }
                     return result;
                 }
                 catch
@@ -156,6 +225,13 @@ namespace KaiAosRenew
 
             result.Summary = UnwrapMessage(ex);
             return result;
+        }
+
+        private static string CapBody(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s ?? "";
+            if (s.Length <= MaxBodyRetain) return s;
+            return s.Substring(0, MaxBodyRetain);
         }
 
         private static string TruncateOneLine(string s, int max)
@@ -298,11 +374,18 @@ namespace KaiAosRenew
             string tokenUrl,
             out string accessToken,
             out KaiCentralCredentials creds,
-            out string error)
+            out string error,
+            out int httpStatus,
+            out string responseBody,
+            out string requestDump)
         {
             accessToken = null;
             creds = null;
             error = null;
+            httpStatus = 0;
+            responseBody = null;
+            requestDump = null;
+            string clientId = null;
             try
             {
                 var lines = File.ReadAllLines(propsPath);
@@ -312,7 +395,7 @@ namespace KaiAosRenew
                     return false;
                 }
 
-                var clientId = BmwDecrypt(lines[2].Trim());
+                clientId = BmwDecrypt(lines[2].Trim());
                 var clientSecret = BmwDecrypt(lines[3].Trim());
                 var hash = lines.Length > 1 ? BmwDecrypt(lines[1].Trim()) : null;
                 if (string.IsNullOrEmpty(hash))
@@ -326,6 +409,7 @@ namespace KaiAosRenew
                 if (string.IsNullOrWhiteSpace(tokenUrl))
                     tokenUrl = "https://auth.bmwgroup.com/auth/oauth2/realms/root/realms/machine2machine/access_token";
 
+                requestDump = BmwHttpLog.FormatWebEamRequest(tokenUrl, clientId);
                 const string body = "grant_type=client_credentials&scope=machine2machine";
                 var req = (HttpWebRequest)WebRequest.Create(tokenUrl);
                 req.Method = "POST";
@@ -343,11 +427,17 @@ namespace KaiAosRenew
                 using (var resp = (HttpWebResponse)req.GetResponse())
                 using (var sr = new StreamReader(resp.GetResponseStream() ?? Stream.Null))
                 {
-                    var json = sr.ReadToEnd();
-                    accessToken = ParseJsonString(json, "access_token");
+                    httpStatus = (int)resp.StatusCode;
+                    responseBody = CapBody(sr.ReadToEnd() ?? "");
+                    accessToken = ParseJsonString(responseBody, "access_token");
                     if (string.IsNullOrEmpty(accessToken))
                     {
-                        error = "Token response without access_token HTTP " + (int)resp.StatusCode;
+                        error = "Token response without access_token HTTP " + httpStatus;
+                        return false;
+                    }
+                    if (httpStatus != 200)
+                    {
+                        error = "Token HTTP " + httpStatus;
                         return false;
                     }
                 }
@@ -358,8 +448,28 @@ namespace KaiAosRenew
                 creds.IdentificationHash = hash ?? "";
                 return true;
             }
+            catch (WebException we)
+            {
+                try
+                {
+                    var resp = we.Response as HttpWebResponse;
+                    if (resp != null)
+                    {
+                        httpStatus = (int)resp.StatusCode;
+                        using (var sr = new StreamReader(resp.GetResponseStream() ?? Stream.Null, Encoding.UTF8))
+                            responseBody = CapBody(sr.ReadToEnd() ?? "");
+                    }
+                }
+                catch { }
+                if (string.IsNullOrEmpty(requestDump))
+                    requestDump = BmwHttpLog.FormatWebEamRequest(tokenUrl, clientId);
+                error = UnwrapMessage(we);
+                return false;
+            }
             catch (Exception ex)
             {
+                if (string.IsNullOrEmpty(requestDump))
+                    requestDump = BmwHttpLog.FormatWebEamRequest(tokenUrl, clientId);
                 error = UnwrapMessage(ex);
                 return false;
             }

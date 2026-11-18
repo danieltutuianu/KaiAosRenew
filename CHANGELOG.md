@@ -4,6 +4,13 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.17] - 2026-11-18
+
+- Keys / BMW: probe uses KIS + HwAddress; password tip only on HTTP 403; non-200 BMW calls log full request+response (secrets redacted); Register path → Register tab
+- Activity / Register: copy full log text (no truncation)
+- Keys: one archived `{VIN}.bin` per VIN; Debug Bin Open (server) / Download (client); hide button when no bin; scrollbar gutter so icons are not clipped
+- Settings: Download settings / logs / key-debug as zip (server + client)
+
 ## [1.2.16] - 2026-11-18
 
 - Keys: I-level parse for all series families (`[A-Z][0-9A-F]{3}`), ASCII fallback; paint/upholstery prefer match near VIN

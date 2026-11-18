@@ -279,6 +279,17 @@ namespace KaiAosRenew
             NotifyServer.Instance.ClientDisconnected += OnNotifyClientDisconnected;
             NotifyServer.Instance.MessageFromClient += OnNotifyMessageFromClient;
             ApplyNotifyServerFromSettings();
+            BmwHttpLog.UiAppend = text =>
+            {
+                try
+                {
+                    if (Dispatcher.CheckAccess())
+                        AppendLog(text, LogLevel.Warning);
+                    else
+                        Dispatcher.BeginInvoke(new Action(() => AppendLog(text, LogLevel.Warning)));
+                }
+                catch { }
+            };
             _keyMonitor.Start(OnKeyActivityChanged);
             StartKeyReaderLogTailer();
             StartUiHangWatchdog();
@@ -1016,7 +1027,9 @@ namespace KaiAosRenew
             if (KeysOpenUploaderLogBtn != null) KeysOpenUploaderLogBtn.Content = UiStrings.T("KeysOpenUploaderLog");
             if (KeysOpenKaiLogBtn != null) KeysOpenKaiLogBtn.Content = UiStrings.T("KeysOpenKaiLog");
             if (KeysFilterLabel != null) KeysFilterLabel.Text = UiStrings.T("KeysFilter");
+            if (KeysEmptyHint != null) KeysEmptyHint.Text = UiStrings.T("KeysEmptyHint");
             if (KeysNoMatchesHint != null) KeysNoMatchesHint.Text = UiStrings.T("NoMatchesHint");
+            if (ActivityEmptyHint != null) ActivityEmptyHint.Text = UiStrings.T("ActivityEmptyHint");
             if (ActivityNoMatchesHint != null) ActivityNoMatchesHint.Text = UiStrings.T("NoMatchesHint");
             if (RegisterNoMatchesHint != null) RegisterNoMatchesHint.Text = UiStrings.T("NoMatchesHint");
             if (KeysSearchLabel != null) KeysSearchLabel.Text = UiStrings.T("KeysSearch");
@@ -1030,6 +1043,11 @@ namespace KaiAosRenew
             if (KeysStallAlertCheck != null) KeysStallAlertCheck.Content = UiStrings.T("KeysStallAlertOption");
             SyncKeysVinBmwFailOnlyUi();
             if (TestBalloonTipsBtn != null) TestBalloonTipsBtn.Content = UiStrings.T("TrayTestBalloon");
+            if (KeysOpenDebugFolderBtn != null)
+            {
+                KeysOpenDebugFolderBtn.Content = UiStrings.T("KeysOpenDebugFolder");
+                KeysOpenDebugFolderBtn.ToolTip = UiStrings.T("KeysOpenDebugFolderTip");
+            }
             if (KeysAutoCopyVinCheck != null) KeysAutoCopyVinCheck.Content = UiStrings.T("KeysAutoCopyVin");
             if (KeysColVin != null) KeysColVin.Header = UiStrings.T("KeysColVin");
             if (KeysColPaint != null) KeysColPaint.Header = UiStrings.T("KeysColPaint");
@@ -1039,6 +1057,7 @@ namespace KaiAosRenew
             if (KeysColLocal != null) KeysColLocal.Header = UiStrings.T("KeysColLocal");
             if (KeysColBmw != null) KeysColBmw.Header = UiStrings.T("KeysColBmw");
             if (KeysColDetail != null) KeysColDetail.Header = UiStrings.T("KeysColDetail");
+            if (KeysColBin != null) KeysColBin.Header = UiStrings.T("KeysColBin");
             ApplyKeysSortHeaders();
             InitKeysFilterCombo();
             _trayVinMenuSignature = null; // force rebuild for new language strings
@@ -1349,7 +1368,8 @@ namespace KaiAosRenew
                     try { File.SetLastWriteTimeUtc(dest, DateTime.UtcNow); }
                     catch { }
 
-                    return KeyUploadProbe.ProbeTransferredBin(_settings, readerId);
+                    // HwAddress resolved inside probe from hint/Sqlite when empty.
+                    return KeyUploadProbe.ProbeTransferredBin(_settings, readerId, null);
                 });
 
                 if (probe != null && probe.Ok)
@@ -1359,11 +1379,7 @@ namespace KaiAosRenew
                 else if (probe != null && probe.HttpStatus > 0)
                 {
                     AppendLog(string.Format(UiStrings.T("KeysRetryBmwProbe"), probe.Summary), LogLevel.Warning);
-                    if (!string.IsNullOrEmpty(probe.Body))
-                    {
-                        RenewEngine.Log("BMW upload probe body: " + probe.Body);
-                        AppendLog("BMW response body: " + TruncateForLog(probe.Body, 500), LogLevel.Info);
-                    }
+                    // Full REQUEST/RESPONSE already emitted by KeyUploadProbe via BmwHttpLog when status != 200.
                 }
                 else
                 {
@@ -1373,8 +1389,8 @@ namespace KaiAosRenew
                 }
 
                 AppendLog(UiStrings.T("KeysRetryBmwOk"), LogLevel.Success);
-                // After 403 auto-retry: if probe still shows real upload failure, tip immediately.
-                if (from403Auto && probe != null && !probe.Ok && probe.HttpStatus > 0)
+                // Password tip only for real HTTP 403 (not INVALID_INPUT / 400).
+                if (from403Auto && probe != null && !probe.Ok && probe.HttpStatus == 403)
                     ShowBmw403StillFailTip(vin);
                 RefreshKeysTab(true);
             }
@@ -2330,10 +2346,16 @@ namespace KaiAosRenew
                 KeysEventsList.SelectedItem = restore;
             ReapplyKeysRowHighlightIfNeeded();
             UpdateKeysRetryButton();
-            UpdateNoMatchesHint(KeysNoMatchesHint,
-                _keysAllEvents != null && _keysAllEvents.Count > 0,
-                list.Count);
+            var hasKeys = _keysAllEvents != null && _keysAllEvents.Count > 0;
+            UpdateEmptyHint(KeysEmptyHint, !hasKeys);
+            UpdateNoMatchesHint(KeysNoMatchesHint, hasKeys, list.Count);
             UpdateClearButtonsEnabled();
+        }
+
+        private static void UpdateEmptyHint(TextBlock hint, bool show)
+        {
+            if (hint == null) return;
+            hint.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void UpdateClearButtonsEnabled()
@@ -3302,10 +3324,68 @@ namespace KaiAosRenew
                 DebugModeText.Text = UiStrings.T("DebugModeOn");
                 DebugModeText.Visibility = _debugMode ? Visibility.Visible : Visibility.Collapsed;
             }
+            if (_keyMonitor != null)
+                _keyMonitor.KeyDebugEnabled = _debugMode;
+            if (KeysColBin != null)
+                KeysColBin.Width = _debugMode ? 36 : 0;
+            if (KeysColBinPad != null)
+                KeysColBinPad.Width = _debugMode ? 18 : 0;
             if (_debugMode)
                 ShowForcedDebugUpdateUi();
             else
                 ShowPendingUpdate(_pendingUpdate);
+        }
+
+        private void KeysOpenDebugFolder_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                OpenFolder(KeyActivityMonitor.KeyDebugStoreDirectory);
+            }
+            catch { }
+        }
+
+        private void KeysOpenBinBtn_Loaded(object sender, RoutedEventArgs e)
+        {
+            SyncKeysOpenBinBtn(sender as Button);
+        }
+
+        private void KeysOpenBinBtn_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            SyncKeysOpenBinBtn(sender as Button);
+        }
+
+        private void SyncKeysOpenBinBtn(Button btn)
+        {
+            if (btn == null) return;
+            var ev = btn.DataContext as KeyActivityEvent;
+            var path = ev != null ? ev.DebugBinPath : null;
+            var ok = _debugMode && !string.IsNullOrEmpty(path) && File.Exists(path);
+            btn.IsEnabled = ok;
+            btn.Visibility = ok ? Visibility.Visible : Visibility.Collapsed;
+            // Content is the icon Viewbox from XAML — do not replace with text.
+            btn.ToolTip = UiStrings.T("KeysOpenBinTip");
+        }
+
+        private void KeysOpenBinBtn_Click(object sender, RoutedEventArgs e)
+        {
+            var btn = sender as Button;
+            var ev = btn != null ? btn.DataContext as KeyActivityEvent : null;
+            var path = ev != null ? ev.DebugBinPath : null;
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            try
+            {
+                DiagProcess.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = "/select,\"" + path + "\"",
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                OpenPathInExplorer(path);
+            }
         }
 
         private async void FooterUpdate_Click(object sender, RoutedEventArgs e)
@@ -4774,9 +4854,26 @@ namespace KaiAosRenew
 
         private void RunAosCmdFromClient(int clientId, string cmd)
         {
-            var c = (cmd ?? "").Trim().ToLowerInvariant();
+            var rawCmd = (cmd ?? "").Trim();
+            var c = rawCmd.ToLowerInvariant();
             try
             {
+                if (c.StartsWith("getkeybin|", StringComparison.Ordinal))
+                {
+                    var vin = rawCmd.IndexOf('|') >= 0
+                        ? rawCmd.Substring(rawCmd.IndexOf('|') + 1).Trim()
+                        : "";
+                    SendKeyBinToClient(clientId, vin);
+                    return;
+                }
+                if (c.StartsWith("getzip|", StringComparison.Ordinal))
+                {
+                    var kind = rawCmd.IndexOf('|') >= 0
+                        ? rawCmd.Substring(rawCmd.IndexOf('|') + 1).Trim()
+                        : "";
+                    SendFolderZipToClient(clientId, kind);
+                    return;
+                }
                 if (c == "checktoken")
                 {
                     RunHealthOnlyAsync();
@@ -4891,6 +4988,124 @@ namespace KaiAosRenew
             catch (Exception ex)
             {
                 SendAosAck(clientId, false, ex.Message);
+            }
+        }
+
+        private const long MaxFolderZipBytes = 25L * 1024 * 1024;
+
+        private void SendKeyBinToClient(int clientId, string vin)
+        {
+            try
+            {
+                var path = KeyActivityMonitor.ResolveDebugBinForVin(vin);
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                {
+                    // Fallback: match in-memory event DebugBinPath
+                    if (_keysAllEvents != null)
+                    {
+                        for (var i = _keysAllEvents.Count - 1; i >= 0; i--)
+                        {
+                            var ev = _keysAllEvents[i];
+                            if (ev == null || string.IsNullOrEmpty(ev.Vin)) continue;
+                            if (!string.Equals(ev.Vin, vin, StringComparison.OrdinalIgnoreCase)) continue;
+                            if (!string.IsNullOrEmpty(ev.DebugBinPath) && File.Exists(ev.DebugBinPath))
+                            {
+                                path = ev.DebugBinPath;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                {
+                    SendAosAck(clientId, false, "Bin not found for VIN");
+                    return;
+                }
+                var bytes = File.ReadAllBytes(path);
+                var name = Path.GetFileName(path);
+                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                {
+                    Kind = "keyBin",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Vin = vin ?? "",
+                    Text = name + "|" + Convert.ToBase64String(bytes)
+                });
+                SendAosAck(clientId, true, "getKeyBin");
+            }
+            catch (Exception ex)
+            {
+                SendAosAck(clientId, false, ex.Message);
+            }
+        }
+
+        private void SendFolderZipToClient(int clientId, string kind)
+        {
+            string dir = null;
+            var k = (kind ?? "").Trim().ToLowerInvariant();
+            if (k == "settings")
+                dir = Path.GetDirectoryName(AppSettings.SettingsPath);
+            else if (k == "logs")
+            {
+                dir = Path.GetDirectoryName(AppSettings.LogPath);
+                if (string.IsNullOrEmpty(dir))
+                    dir = Path.GetDirectoryName(AppSettings.SettingsPath);
+            }
+            else if (k == "keydebug")
+                dir = KeyActivityMonitor.KeyDebugStoreDirectory;
+            else
+            {
+                SendAosAck(clientId, false, "Unknown zip kind");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+            {
+                SendAosAck(clientId, false, "Folder missing");
+                return;
+            }
+
+            string tempZip = null;
+            try
+            {
+                Directory.CreateDirectory(dir);
+                tempZip = Path.Combine(Path.GetTempPath(),
+                    "kai-aos-" + k + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N") + ".zip");
+                if (File.Exists(tempZip)) File.Delete(tempZip);
+                System.IO.Compression.ZipFile.CreateFromDirectory(dir, tempZip, System.IO.Compression.CompressionLevel.Optimal, false);
+                var fi = new FileInfo(tempZip);
+                if (!fi.Exists || fi.Length == 0)
+                {
+                    SendAosAck(clientId, false, "Folder empty");
+                    return;
+                }
+                if (fi.Length > MaxFolderZipBytes)
+                {
+                    SendAosAck(clientId, false, "Zip too large (>" + (MaxFolderZipBytes / (1024 * 1024)) + " MB)");
+                    return;
+                }
+                var bytes = File.ReadAllBytes(tempZip);
+                var name = "kai-aos-" + k + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".zip";
+                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                {
+                    Kind = "folderZip",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = name + "|" + Convert.ToBase64String(bytes)
+                });
+                SendAosAck(clientId, true, "getZip|" + k);
+            }
+            catch (Exception ex)
+            {
+                SendAosAck(clientId, false, ex.Message);
+            }
+            finally
+            {
+                if (!string.IsNullOrEmpty(tempZip))
+                {
+                    try { File.Delete(tempZip); }
+                    catch { }
+                }
             }
         }
 
@@ -9231,7 +9446,8 @@ namespace KaiAosRenew
             }
             while (_activityRows.Count > MaxLogBlocks)
                 _activityRows.RemoveAt(0);
-            UpdateNoMatchesHint(ActivityNoMatchesHint, _logEntries.Count > 0, _activityRows.Count);
+            UpdateEmptyHint(ActivityEmptyHint, _logEntries == null || _logEntries.Count == 0);
+            UpdateNoMatchesHint(ActivityNoMatchesHint, _logEntries != null && _logEntries.Count > 0, _activityRows.Count);
             UpdateClearButtonsEnabled();
             if (TabActivity != null && TabActivity.IsSelected)
                 ScrollActivityLogToEnd();

@@ -303,7 +303,9 @@ namespace KaiAosNotifyClient
             if (ScanLanBtn != null) ScanLanBtn.Content = ClientUiStrings.T("ScanLan");
             UpdateConnectButtonLabel();
             if (DisconnectBtn != null) DisconnectBtn.Content = ClientUiStrings.T("Disconnect");
+            if (KeysEmptyHint != null) KeysEmptyHint.Text = ClientUiStrings.T("KeysEmptyHint");
             if (KeysNoMatchesHint != null) KeysNoMatchesHint.Text = ClientUiStrings.T("NoMatchesHint");
+            if (ActivityEmptyHint != null) ActivityEmptyHint.Text = ClientUiStrings.T("ActivityEmptyHint");
             if (ActivityNoMatchesHint != null) ActivityNoMatchesHint.Text = ClientUiStrings.T("NoMatchesHint");
             if (RegisterNoMatchesHint != null) RegisterNoMatchesHint.Text = ClientUiStrings.T("NoMatchesHint");
             if (AutoConnectCheck != null) AutoConnectCheck.Content = ClientUiStrings.T("AutoConnect");
@@ -413,6 +415,7 @@ namespace KaiAosNotifyClient
             if (KeysColBmw != null) KeysColBmw.Header = ClientUiStrings.T("KeysColBmw");
             if (KeysColStatus != null) KeysColStatus.Header = ClientUiStrings.T("KeysColStatus");
             if (KeysColDetail != null) KeysColDetail.Header = ClientUiStrings.T("KeysColDetail");
+            if (KeysColBin != null) KeysColBin.Header = ClientUiStrings.T("KeysColBin");
             if (ConnectionGroup != null) ConnectionGroup.Header = ClientUiStrings.T("Connection");
             if (OfflineAfterLabel != null) OfflineAfterLabel.Text = ClientUiStrings.T("OfflineAfter");
             if (GeneralGroup != null) GeneralGroup.Header = ClientUiStrings.T("SettingsGeneral");
@@ -759,6 +762,12 @@ namespace KaiAosNotifyClient
                 DebugModeText.Text = ClientUiStrings.T("DebugModeOn");
                 DebugModeText.Visibility = _debugMode ? Visibility.Visible : Visibility.Collapsed;
             }
+            if (KeysColBin != null)
+                KeysColBin.Width = _debugMode ? 36 : 0;
+            if (KeysColBinPad != null)
+                KeysColBinPad.Width = _debugMode ? 18 : 0;
+            if (SrvDownloadKeyDebugFolderBtn != null)
+                SrvDownloadKeyDebugFolderBtn.Visibility = _debugMode ? Visibility.Visible : Visibility.Collapsed;
             if (_debugMode)
             {
                 ShowForcedDebugClientUpdateUi();
@@ -1991,8 +2000,16 @@ namespace KaiAosNotifyClient
             UpdateKeysTodayBadge();
             UpdateKeysRetryButton();
             ReapplyKeysRowHighlightIfNeeded();
-            UpdateNoMatchesHint(KeysNoMatchesHint, _keyAllRows.Count > 0, _keyRows.Count);
+            var hasKeys = _keyAllRows != null && _keyAllRows.Count > 0;
+            UpdateEmptyHint(KeysEmptyHint, !hasKeys);
+            UpdateNoMatchesHint(KeysNoMatchesHint, hasKeys, _keyRows.Count);
             UpdateClearButtonsEnabled();
+        }
+
+        private static void UpdateEmptyHint(TextBlock hint, bool show)
+        {
+            if (hint == null) return;
+            hint.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void UpdateClearButtonsEnabled()
@@ -2268,6 +2285,23 @@ namespace KaiAosNotifyClient
             if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = true;
             var level = (msg.Level ?? "").Trim().ToLowerInvariant();
             var text = msg.Text ?? "";
+            // Download commands: status only, do not treat as AOS credential sync.
+            if (!string.IsNullOrEmpty(text)
+                && (text.StartsWith("getKeyBin", StringComparison.OrdinalIgnoreCase)
+                    || text.StartsWith("getZip", StringComparison.OrdinalIgnoreCase)
+                    || text.IndexOf("Bin not found", StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("Zip too large", StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("Folder missing", StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("Folder empty", StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("Unknown zip", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                if (level == "error")
+                {
+                    SetSrvSettingsStatus(string.Format(ClientUiStrings.T("SrvDownloadFail"), text), false);
+                    AppendActivityRow(null, "error", string.Format(ClientUiStrings.T("SrvDownloadFail"), text));
+                }
+                return;
+            }
             if (wasSettingsApply || wasSettingsImport
                 || string.Equals(text, "settingsApply", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(text, "settingsImport", StringComparison.OrdinalIgnoreCase))
@@ -2654,6 +2688,121 @@ namespace KaiAosNotifyClient
             }
             _awaitingAosIntervalOnly = false;
             BeginAosAckWait();
+        }
+
+        private void SendDownloadCmd(string cmd)
+        {
+            if (_client == null || !_client.IsConnected)
+            {
+                SetSrvSettingsStatus(string.Format(ClientUiStrings.T("SrvDownloadFail"), "not connected"), false);
+                return;
+            }
+            SetSrvSettingsStatus(ClientUiStrings.T("SrvDownloadBusy"), false);
+            var ok = _client.Send(new NotifyMessage
+            {
+                Kind = "aosCmd",
+                Level = "info",
+                Title = "KAI - AOS Renew - Client",
+                Text = cmd ?? ""
+            });
+            if (!ok)
+            {
+                SetSrvSettingsStatus(string.Format(ClientUiStrings.T("SrvDownloadFail"), ClientUiStrings.T("AosSyncSendFail")), false);
+                AppendActivityRow(null, "error", ClientUiStrings.T("AosSyncSendFail"));
+            }
+        }
+
+        private void KeysDownloadBinBtn_Loaded(object sender, RoutedEventArgs e)
+        {
+            SyncKeysDownloadBinBtn(sender as Button);
+        }
+
+        private void KeysDownloadBinBtn_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            SyncKeysDownloadBinBtn(sender as Button);
+        }
+
+        private void SyncKeysDownloadBinBtn(Button btn)
+        {
+            if (btn == null) return;
+            var row = btn.DataContext as ClientKeyRow;
+            var ok = _debugMode && row != null && row.HasBin && !string.IsNullOrEmpty(row.Vin);
+            btn.IsEnabled = ok && _client != null && _client.IsConnected;
+            btn.Visibility = ok ? Visibility.Visible : Visibility.Collapsed;
+            // Content is the icon Viewbox from XAML — do not replace with text.
+            btn.ToolTip = ClientUiStrings.T("KeysDownloadBinTip");
+        }
+
+        private void KeysDownloadBinBtn_Click(object sender, RoutedEventArgs e)
+        {
+            var btn = sender as Button;
+            var row = btn != null ? btn.DataContext as ClientKeyRow : null;
+            if (row == null || string.IsNullOrEmpty(row.Vin) || !row.HasBin) return;
+            SendDownloadCmd("getKeyBin|" + row.Vin);
+        }
+
+        private void SrvDownloadSettingsFolder_Click(object sender, RoutedEventArgs e)
+        {
+            SendDownloadCmd("getZip|settings");
+        }
+
+        private void SrvDownloadLogsFolder_Click(object sender, RoutedEventArgs e)
+        {
+            SendDownloadCmd("getZip|logs");
+        }
+
+        private void SrvDownloadKeyDebugFolder_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            SendDownloadCmd("getZip|keyDebug");
+        }
+
+        private void HandleBinaryDownloadPayload(string text, string subFolder)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(text))
+                {
+                    SetSrvSettingsStatus(string.Format(ClientUiStrings.T("SrvDownloadFail"), "empty"), false);
+                    return;
+                }
+                var pipe = text.IndexOf('|');
+                if (pipe <= 0 || pipe >= text.Length - 1)
+                {
+                    SetSrvSettingsStatus(string.Format(ClientUiStrings.T("SrvDownloadFail"), "bad payload"), false);
+                    return;
+                }
+                var name = text.Substring(0, pipe).Trim();
+                var b64 = text.Substring(pipe + 1).Trim();
+                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(b64))
+                {
+                    SetSrvSettingsStatus(string.Format(ClientUiStrings.T("SrvDownloadFail"), "bad payload"), false);
+                    return;
+                }
+                foreach (var c in Path.GetInvalidFileNameChars())
+                    name = name.Replace(c, '_');
+                var dir = Path.Combine(ClientSettings.StoreDir, subFolder ?? "downloads");
+                Directory.CreateDirectory(dir);
+                var path = Path.Combine(dir, name);
+                File.WriteAllBytes(path, Convert.FromBase64String(b64));
+                SetSrvSettingsStatus(string.Format(ClientUiStrings.T("SrvDownloadOk"), path), true);
+                AppendActivityRow(null, "success", string.Format(ClientUiStrings.T("SrvDownloadOk"), path));
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = "/select,\"" + path + "\"",
+                        UseShellExecute = true
+                    });
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                SetSrvSettingsStatus(string.Format(ClientUiStrings.T("SrvDownloadFail"), ex.Message), false);
+                AppendActivityRow(null, "error", string.Format(ClientUiStrings.T("SrvDownloadFail"), ex.Message));
+            }
         }
 
         private void RecomputeAosDirtyFromUi()
@@ -3333,6 +3482,18 @@ namespace KaiAosNotifyClient
                 RefreshTrayStatus();
                 return;
             }
+            if (kind == "keybin")
+            {
+                HandleBinaryDownloadPayload(msg.Text, "key-bins");
+                RefreshTrayStatus();
+                return;
+            }
+            if (kind == "folderzip")
+            {
+                HandleBinaryDownloadPayload(msg.Text, "downloads");
+                RefreshTrayStatus();
+                return;
+            }
             if (kind == "aosack")
             {
                 HandleAosAck(msg);
@@ -3926,7 +4087,8 @@ namespace KaiAosNotifyClient
                 foreach (var _ in _activityView)
                     visible++;
             }
-            UpdateNoMatchesHint(ActivityNoMatchesHint, _activityRows.Count > 0, visible);
+            UpdateEmptyHint(ActivityEmptyHint, _activityRows == null || _activityRows.Count == 0);
+            UpdateNoMatchesHint(ActivityNoMatchesHint, _activityRows != null && _activityRows.Count > 0, visible);
             UpdateClearButtonsEnabled();
         }
 
@@ -5110,6 +5272,12 @@ namespace KaiAosNotifyClient
             if (SrvImportBtn != null) SrvImportBtn.Content = ClientUiStrings.T("ImportSettings");
             if (SrvSettingsSaveBtn != null) SrvSettingsSaveBtn.Content = ClientUiStrings.T("ServerSettingsSave");
             if (SrvSettingsResetBtn != null) SrvSettingsResetBtn.Content = ClientUiStrings.T("ServerSettingsReset");
+            if (SrvDownloadSettingsFolderBtn != null)
+                SrvDownloadSettingsFolderBtn.Content = ClientUiStrings.T("SrvDownloadSettingsFolder");
+            if (SrvDownloadLogsFolderBtn != null)
+                SrvDownloadLogsFolderBtn.Content = ClientUiStrings.T("SrvDownloadLogsFolder");
+            if (SrvDownloadKeyDebugFolderBtn != null)
+                SrvDownloadKeyDebugFolderBtn.Content = ClientUiStrings.T("SrvDownloadKeyDebugFolder");
             if (SrvNotifySendToLabel != null) SrvNotifySendToLabel.Text = ClientUiStrings.T("NotifySendTo");
             if (SrvNotifyRefreshBtn != null) SrvNotifyRefreshBtn.Content = ClientUiStrings.T("NotifyRefreshClients");
             if (SrvNotifyTestVinBtn != null) SrvNotifyTestVinBtn.Content = ClientUiStrings.T("NotifyTestVin");

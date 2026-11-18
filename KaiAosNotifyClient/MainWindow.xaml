@@ -83,6 +83,9 @@
             <StackPanel Grid.Row="1">
               <TextBlock x:Name="KeysEventsSection" Text="Recent key activity:" Margin="0,0,0,4"
                          Style="{DynamicResource SectionText}" />
+              <TextBlock x:Name="KeysEmptyHint" Text="No key activity yet"
+                         Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                         Margin="0,0,0,4" Visibility="Collapsed" />
               <TextBlock x:Name="KeysNoMatchesHint" Text="No matches — clear filter"
                          Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
                          Margin="0,0,0,4" Visibility="Collapsed" />
@@ -168,6 +171,34 @@
                                   DisplayMemberBinding="{Binding StatusText}" />
                   <GridViewColumn x:Name="KeysColDetail" Header="Detail" Width="220"
                                   DisplayMemberBinding="{Binding DetailText}" />
+                  <GridViewColumn x:Name="KeysColBin" Header="Bin" Width="0">
+                    <GridViewColumn.CellTemplate>
+                      <DataTemplate>
+                        <Button Width="20" Height="20" Padding="3" Margin="0"
+                                MinWidth="20" MinHeight="20"
+                                Background="#FFEDE4D4" BorderBrush="#FF9A8F7C" BorderThickness="1"
+                                HorizontalAlignment="Center"
+                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                VerticalAlignment="Center" Cursor="Hand" Focusable="False"
+                                Loaded="KeysDownloadBinBtn_Loaded"
+                                DataContextChanged="KeysDownloadBinBtn_DataContextChanged"
+                                Click="KeysDownloadBinBtn_Click"
+                                ToolTip="Download keyreader.bin from server">
+                          <Viewbox Width="12" Height="12">
+                            <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Data="{DynamicResource IconExport}" Stretch="Uniform" />
+                          </Viewbox>
+                        </Button>
+                      </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                  </GridViewColumn>
+                  <GridViewColumn x:Name="KeysColBinPad" Header="" Width="0">
+                    <GridViewColumn.CellTemplate>
+                      <DataTemplate>
+                        <Border />
+                      </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                  </GridViewColumn>
                 </GridView>
               </ListView.View>
             </ListView>
@@ -320,9 +351,14 @@
                         Click="ActivityClear_Click"  Tag="{DynamicResource IconClear}" />
               </StackPanel>
             </DockPanel>
-            <TextBlock x:Name="ActivityNoMatchesHint" Grid.Row="1" Text="No matches — clear filter"
-                       Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
-                       Margin="0,0,0,4" Visibility="Collapsed" />
+            <StackPanel Grid.Row="1">
+              <TextBlock x:Name="ActivityEmptyHint" Text="No activity yet"
+                         Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                         Margin="0,0,0,4" Visibility="Collapsed" />
+              <TextBlock x:Name="ActivityNoMatchesHint" Text="No matches — clear filter"
+                         Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                         Margin="0,0,0,4" Visibility="Collapsed" />
+            </StackPanel>
             <ListView x:Name="ActivityList" Grid.Row="2"
                       BorderBrush="{DynamicResource FieldBorderBrush}" BorderThickness="1"
                       Background="{DynamicResource FieldBgBrush}" FontFamily="Consolas" FontSize="11"
@@ -534,6 +570,12 @@
                               Style="{DynamicResource KaiComboBox}" DisplayMemberPath="Name" SelectedValuePath="Code"
                               SelectionChanged="SrvSettings_Changed" />
                   </Grid>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button x:Name="SrvDownloadSettingsFolderBtn" Content="Download settings folder" Style="{DynamicResource BeigeButton}"
+                            MinWidth="160" Margin="0,0,8,0" Click="SrvDownloadSettingsFolder_Click" Tag="{DynamicResource IconFolder}" />
+                    <Button x:Name="SrvDownloadLogsFolderBtn" Content="Download logs folder" Style="{DynamicResource BeigeButton}"
+                            MinWidth="150" Margin="0,0,8,0" Click="SrvDownloadLogsFolder_Click" Tag="{DynamicResource IconFolder}" />
+                  </StackPanel>
                   <StackPanel Orientation="Horizontal">
                     <Button x:Name="SrvExportBtn" Content="Export settings" Style="{DynamicResource BeigeButton}"
                             Click="SrvExport_Click" Margin="0,0,8,0" MinWidth="120"  Tag="{DynamicResource IconExport}" />
@@ -595,6 +637,10 @@
                             Margin="0,0,0,6" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
                   <CheckBox x:Name="SrvKeysStallAlertCheck" Content="Alert if Local OK but BMW Server not uploaded" Style="{DynamicResource KaiCheckBox}"
                             Margin="0,0,0,8" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <Button x:Name="SrvDownloadKeyDebugFolderBtn" Content="Download key debug folder" Style="{DynamicResource BeigeButton}"
+                          HorizontalAlignment="Left" MinWidth="180" Margin="0,4,0,0"
+                          Click="SrvDownloadKeyDebugFolder_Click" Tag="{DynamicResource IconFolder}"
+                          Visibility="Collapsed" />
                 </StackPanel>
               </GroupBox>
               <GroupBox x:Name="SrvAuthGroup" Header="Auth" Style="{DynamicResource KaiGroupBox}">

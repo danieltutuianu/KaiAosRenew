@@ -366,6 +366,7 @@ namespace KaiAosNotifyClient
         public bool Failed { get; set; }
         public string Status { get; set; }
         public string Detail { get; set; }
+        public bool HasBin { get; set; }
 
         public string TimeText { get { return DetectedLocal.ToString("g"); } }
         public string VinText { get { return string.IsNullOrEmpty(Vin) ? "—" : Vin; } }

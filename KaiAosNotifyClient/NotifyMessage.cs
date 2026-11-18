@@ -236,6 +236,7 @@ namespace KaiAosNotifyClient
             row.Failed = parts.Count > 8 && parts[8] == "1";
             row.Status = parts.Count > 9 ? parts[9] : "Waiting";
             row.Detail = parts.Count > 10 ? parts[10] : "";
+            row.HasBin = parts.Count > 11 && parts[11] == "1";
             return row;
         }
 
