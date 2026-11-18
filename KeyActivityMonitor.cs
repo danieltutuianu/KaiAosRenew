@@ -252,10 +252,10 @@ namespace KaiAosRenew
                 if (stall < 1) stall = 1;
                 if (stall > 60) stall = 60;
                 _stallMinutes = stall;
-                _uploaderLogDir = string.IsNullOrWhiteSpace(uploaderLogDir)
+                var nextUploader = string.IsNullOrWhiteSpace(uploaderLogDir)
                     ? DefaultUploaderLogDir
                     : uploaderLogDir.Trim();
-                _kaiLogDir = string.IsNullOrWhiteSpace(kaiLogDir)
+                var nextKai = string.IsNullOrWhiteSpace(kaiLogDir)
                     ? DefaultKaiLogDir
                     : kaiLogDir.Trim();
                 _sqlitePath = string.IsNullOrWhiteSpace(sqlitePath)
@@ -263,8 +263,15 @@ namespace KaiAosRenew
                     : sqlitePath.Trim();
 
                 var folderChanged = !string.Equals(_pickupFolder, folder, StringComparison.OrdinalIgnoreCase);
+                var uploaderChanged = !string.Equals(_uploaderLogDir, nextUploader, StringComparison.OrdinalIgnoreCase);
+                var kaiChanged = !string.Equals(_kaiLogDir, nextKai, StringComparison.OrdinalIgnoreCase);
                 _pickupFolder = folder;
-                if (folderChanged && _onChanged != null)
+                _uploaderLogDir = nextUploader;
+                _kaiLogDir = nextKai;
+                // Always (re)start watchers after Start() so log-dir watchers attach even when
+                // Configure is called before Start, or when only paths change.
+                if (_onChanged != null && (folderChanged || uploaderChanged || kaiChanged
+                    || _watcher == null || _uploaderLogWatcher == null || _kaiLogWatcher == null))
                 {
                     StopWatcher();
                     StartWatcher();
@@ -307,6 +314,8 @@ namespace KaiAosRenew
         private static DateTime _lastKeyDebugUtc = DateTime.MinValue;
 
         private FileSystemWatcher _watcher;
+        private FileSystemWatcher _uploaderLogWatcher;
+        private FileSystemWatcher _kaiLogWatcher;
         private readonly object _gate = new object();
         private int _notifyQueued;
         private Action _onChanged;
@@ -370,7 +379,44 @@ namespace KaiAosRenew
             }
             catch
             {
-                StopWatcher();
+                try
+                {
+                    if (_watcher != null)
+                    {
+                        _watcher.EnableRaisingEvents = false;
+                        _watcher.Dispose();
+                    }
+                }
+                catch { }
+                _watcher = null;
+            }
+
+            _uploaderLogWatcher = StartLogDirWatcher(_uploaderLogDir);
+            _kaiLogWatcher = StartLogDirWatcher(_kaiLogDir);
+        }
+
+        private FileSystemWatcher StartLogDirWatcher(string dir)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+                    return null;
+                var w = new FileSystemWatcher(dir);
+                w.Filter = "*.log";
+                w.NotifyFilter = NotifyFilters.FileName
+                    | NotifyFilters.LastWrite
+                    | NotifyFilters.Size
+                    | NotifyFilters.CreationTime;
+                w.Created += Watcher_Changed;
+                w.Changed += Watcher_Changed;
+                w.Renamed += Watcher_Changed;
+                w.Deleted += Watcher_Changed;
+                w.EnableRaisingEvents = true;
+                return w;
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -492,18 +538,25 @@ namespace KaiAosRenew
 
         private void StopWatcher()
         {
-            if (_watcher == null) return;
+            DisposeWatcher(ref _watcher);
+            DisposeWatcher(ref _uploaderLogWatcher);
+            DisposeWatcher(ref _kaiLogWatcher);
+        }
+
+        private void DisposeWatcher(ref FileSystemWatcher watcher)
+        {
+            if (watcher == null) return;
             try
             {
-                _watcher.EnableRaisingEvents = false;
-                _watcher.Created -= Watcher_Changed;
-                _watcher.Changed -= Watcher_Changed;
-                _watcher.Renamed -= Watcher_Changed;
-                _watcher.Deleted -= Watcher_Changed;
-                _watcher.Dispose();
+                watcher.EnableRaisingEvents = false;
+                watcher.Created -= Watcher_Changed;
+                watcher.Changed -= Watcher_Changed;
+                watcher.Renamed -= Watcher_Changed;
+                watcher.Deleted -= Watcher_Changed;
+                watcher.Dispose();
             }
             catch { }
-            _watcher = null;
+            watcher = null;
         }
 
         private void Watcher_Changed(object sender, FileSystemEventArgs e)
@@ -851,6 +904,9 @@ namespace KaiAosRenew
             {
                 if (ev == null) continue;
                 if (!ev.LocalSent || ev.BmwUploaded || ev.Failed) continue;
+                // Another read of the same VIN already reached KAI Central — not a stall.
+                if (!string.IsNullOrEmpty(ev.Vin) && VinHasBmwUploaded(merged, ev.Vin))
+                    continue;
                 if ((now - ev.DetectedLocal).TotalMinutes < _stallMinutes) continue;
                 if ((now - ev.DetectedLocal).TotalHours > 24) continue;
                 if (ev.StallNotified) continue;
@@ -858,6 +914,38 @@ namespace KaiAosRenew
                 list.Add(ev);
             }
             return list;
+        }
+
+        /// <summary>True when any event for this VIN is marked BmwUploaded.</summary>
+        public static bool VinHasBmwUploaded(IEnumerable<KeyActivityEvent> events, string vin)
+        {
+            if (events == null || string.IsNullOrEmpty(vin)) return false;
+            foreach (var other in events)
+            {
+                if (other == null || !other.BmwUploaded) continue;
+                if (string.Equals(other.Vin, vin, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>Latest event for VIN (by DetectedLocal), or null.</summary>
+        public KeyActivityEvent FindLatestEventForVin(string vin)
+        {
+            if (string.IsNullOrEmpty(vin)) return null;
+            lock (_gate)
+            {
+                EnsureHistoryLoaded();
+                KeyActivityEvent best = null;
+                foreach (var ev in _persisted)
+                {
+                    if (ev == null || string.IsNullOrEmpty(ev.Vin)) continue;
+                    if (!string.Equals(ev.Vin, vin, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (best == null || ev.DetectedLocal > best.DetectedLocal)
+                        best = ev;
+                }
+                return best;
+            }
         }
 
         private static int CountKeysToday(List<KeyActivityEvent> events)

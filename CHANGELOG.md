@@ -4,6 +4,15 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.26] - 2026-11-19
+
+- Balloon tips: remove circular icon glyphs (server + client); accent bar only
+- Activity / Register: Refresh buttons (server + client); client requests `activitySyncReq` / `registerSyncReq`
+- Activity: live KeyUploader / KAI log tailing; KeyActivityMonitor watches uploader/KAI logs off the Keys tab
+- BMW HTTP: log request/response for 200 OK as well as errors (secrets redacted); keep multi-line dumps on reload; expand KeyReader filter
+- Keys: suppress premature 403/stall/fail balloons during remediation; final fail tip only if BMW upload still failed
+- Firebase: when AOS email/password are empty on sync enable, offer pull → confirm → force BMW Register → save to AOS Access
+
 ## [1.2.25] - 2026-11-18
 
 - Firebase push: Sync mode ComboBox — On-demand (default, zero idle traffic), Poll, or SSE

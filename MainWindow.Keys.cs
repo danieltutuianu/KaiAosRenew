@@ -363,7 +363,8 @@ namespace KaiAosRenew
                     return KeyUploadProbe.ProbeTransferredBin(_settings, readerId, null);
                 });
 
-                if (probe != null && probe.Ok)
+                var bmwOk = probe != null && probe.Ok;
+                if (bmwOk)
                 {
                     AppendLog(string.Format(UiStrings.T("KeysRetryBmwProbe"), probe.Summary), LogLevel.Success);
                 }
@@ -379,10 +380,38 @@ namespace KaiAosRenew
                     RenewEngine.Log("BMW upload probe: " + summary);
                 }
 
-                AppendLog(UiStrings.T("KeysRetryBmwOk"), LogLevel.Success);
-                // Password tip only for real HTTP 403 (not INVALID_INPUT / 400).
-                if (from403Auto && probe != null && !probe.Ok && probe.HttpStatus == 403)
-                    ShowBmw403StillFailTip(vin);
+                // Give KeyUploader / KAI a short window to confirm upload after re-drop.
+                if (!bmwOk)
+                {
+                    try
+                    {
+                        await System.Threading.Tasks.Task.Delay(2500).ConfigureAwait(true);
+                        var confirm = _keyMonitor.Refresh();
+                        if (confirm != null && KeyActivityMonitor.VinHasBmwUploaded(confirm.Events, vin))
+                            bmwOk = true;
+                        else
+                        {
+                            var latest = _keyMonitor.FindLatestEventForVin(vin);
+                            if (latest != null && latest.BmwUploaded)
+                                bmwOk = true;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (bmwOk)
+                {
+                    AppendLog(UiStrings.T("KeysRetryBmwOk"), LogLevel.Success);
+                    try { TrayBalloonWindow.CloseCurrent(); }
+                    catch { }
+                }
+                else
+                {
+                    AppendLog(UiStrings.T("KeysRetryBmwOk"), LogLevel.Warning);
+                    // Final fail tip only after Register/Firebase + probe + short KAI verify window.
+                    if (from403Auto)
+                        ShowBmw403StillFailTip(vin);
+                }
                 RefreshKeysTab(true);
             }
             catch (Exception ex)
@@ -571,6 +600,40 @@ namespace KaiAosRenew
                 _settings.KeysKaiLogDir,
                 _settings.KeysSqlitePath);
             ApplyKeysRefreshInterval();
+            StartBmwServiceLogTailers();
+        }
+
+        private void StartBmwServiceLogTailers()
+        {
+            if (_settings == null) return;
+            var uploaderDir = string.IsNullOrWhiteSpace(_settings.KeysUploaderLogDir)
+                ? KeyActivityMonitor.DefaultUploaderLogDir
+                : _settings.KeysUploaderLogDir.Trim();
+            var kaiDir = string.IsNullOrWhiteSpace(_settings.KeysKaiLogDir)
+                ? KeyActivityMonitor.DefaultKaiLogDir
+                : _settings.KeysKaiLogDir.Trim();
+            try
+            {
+                _uploaderLogTailer.Start(uploaderDir, null, OnBmwServiceActivityLine, "KeyUploader: ", false);
+            }
+            catch (Exception ex)
+            {
+                AppendLog("KeyUploader: tailer start failed: " + ex.Message, LogLevel.Warning);
+            }
+            try
+            {
+                _kaiLogTailer.Start(kaiDir, null, OnBmwServiceActivityLine, "KAI: ", false);
+            }
+            catch (Exception ex)
+            {
+                AppendLog("KAI: tailer start failed: " + ex.Message, LogLevel.Warning);
+            }
+        }
+
+        private void OnBmwServiceActivityLine(string text, KeyReaderActivityKind kind)
+        {
+            // Reuse KeyReader Activity sink (classifies Verbose vs Info/Success/Warning/Error).
+            OnKeyReaderActivityLine(text, kind);
         }
 
         private void ApplyKeysRefreshInterval()
@@ -1522,15 +1585,24 @@ namespace KaiAosRenew
         private void HandleKeysNotifications(KeyActivitySnapshot snap)
         {
             if (snap == null || _settings == null) return;
+            MaybeLogKeyStatusTransitions(snap);
             // VIN tips: local balloon is optional; remote clients always get the broadcast.
             MaybeShowVinInfoBalloons(snap);
             MaybeShowVinBmwFailTips(snap);
             var balloonOn = _settings.KeysBalloonEnabled;
+            var remediating = IsKeysBmwRemediationActive();
             if (_settings.KeysStallAlertEnabled && snap.StallEvents != null)
             {
                 foreach (var ev in snap.StallEvents)
                 {
                     if (ev == null) continue;
+                    if (remediating
+                        || KeyActivityMonitor.VinHasBmwUploaded(snap.Events, ev.Vin))
+                    {
+                        // Keep pending until remediation finishes / status settles.
+                        ev.StallNotified = false;
+                        continue;
+                    }
                     var vin = string.IsNullOrEmpty(ev.Vin) ? "?" : ev.Vin;
                     var stallMin = _settings.KeysStallMinutes < 1 ? 2 : _settings.KeysStallMinutes;
                     var msg = string.Format(UiStrings.T("KeysStallBalloon"), vin, stallMin);
@@ -1540,6 +1612,64 @@ namespace KaiAosRenew
                 }
             }
             MaybeRemediateKeysBmw403(snap, balloonOn);
+        }
+
+        private bool IsKeysBmwRemediationActive()
+        {
+            return _keysRetryBusy
+                || _busy
+                || !string.IsNullOrEmpty(_pending403RetryVin);
+        }
+
+        private void MaybeLogKeyStatusTransitions(KeyActivitySnapshot snap)
+        {
+            if (snap == null || snap.Events == null) return;
+            var now = DateTime.Now;
+            foreach (var ev in snap.Events)
+            {
+                if (ev == null || string.IsNullOrEmpty(ev.Vin)) continue;
+                if ((now - ev.DetectedLocal).TotalMinutes > 30) continue;
+                var id = !string.IsNullOrEmpty(ev.FileId)
+                    ? ev.FileId
+                    : (ev.DetectedLocal.ToString("yyyyMMddHHmmss") + ":" + ev.Vin);
+                if (ev.BmwUploaded)
+                {
+                    if (_loggedKeyStatusKeys.Add("bmw:" + id))
+                        AppendLog(FormatKeyStatusSummary(ev, "Uploaded to KAI Central"), LogLevel.Success);
+                }
+                else if (ev.LocalSent)
+                {
+                    if (_loggedKeyStatusKeys.Add("local:" + id))
+                        AppendLog(FormatKeyStatusSummary(ev, "Sent to KAI Dezentral"), LogLevel.Info);
+                }
+                else if (ev.Failed)
+                {
+                    var detail = string.IsNullOrEmpty(ev.Detail) ? "upload failed" : ev.Detail.Trim();
+                    if (_loggedKeyStatusKeys.Add("fail:" + id))
+                        AppendLog(FormatKeyStatusSummary(ev, "BMW upload failed: " + detail), LogLevel.Warning);
+                }
+                if (_loggedKeyStatusKeys.Count > 400)
+                {
+                    _loggedKeyStatusKeys.Clear();
+                }
+            }
+        }
+
+        private static string FormatKeyStatusSummary(KeyActivityEvent ev, string outcome)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append("VIN ").Append(ev != null && !string.IsNullOrEmpty(ev.Vin) ? ev.Vin : "?");
+            sb.Append(" — ").Append(outcome ?? "");
+            if (ev == null) return sb.ToString();
+            if (!string.IsNullOrEmpty(ev.Paint))
+                sb.Append(" | paint=").Append(ev.Paint);
+            if (!string.IsNullOrEmpty(ev.Upholstery))
+                sb.Append(" | uph=").Append(ev.Upholstery);
+            if (ev.MileageKm > 0)
+                sb.Append(" | km=").Append(ev.MileageKm);
+            if (!string.IsNullOrEmpty(ev.ILevelCurrent))
+                sb.Append(" | I-level=").Append(ev.ILevelCurrent);
+            return sb.ToString();
         }
 
         private void MaybeRemediateKeysBmw403(KeyActivitySnapshot snap, bool balloonOn)
@@ -1573,10 +1703,8 @@ namespace KaiAosRenew
             SetTokenFooter(false);
 
             var vin = string.IsNullOrEmpty(hit.Vin) ? "?" : hit.Vin;
-            var balloon = string.Format(UiStrings.T("KeysBmw403Balloon"), vin);
-            AppendLog(balloon, LogLevel.Warning);
-            if (balloonOn)
-                ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(balloon));
+            // Activity only — no premature balloon; final tip comes after retry outcome.
+            AppendLog(string.Format(UiStrings.T("KeysBmw403Balloon"), vin), LogLevel.Warning);
 
             if (IsAuthRegisterBlocked())
             {
@@ -1621,11 +1749,16 @@ namespace KaiAosRenew
             if (_settings == null || !_settings.KeysBalloonEnabled || !_settings.KeysVinTipBmwFailOnly)
                 return;
             if (snap == null || snap.Events == null) return;
+            // Wait for Register / Firebase / BMW retry — tip only if still failed afterwards.
+            if (IsKeysBmwRemediationActive())
+                return;
             var now = DateTime.Now;
             foreach (var ev in snap.Events)
             {
                 if (ev == null || !ev.Failed || ev.BmwUploaded) continue;
                 if (string.IsNullOrEmpty(ev.Vin)) continue;
+                if (KeyActivityMonitor.VinHasBmwUploaded(snap.Events, ev.Vin))
+                    continue;
                 if ((now - ev.DetectedLocal).TotalMinutes > 15) continue;
                 var key = (!string.IsNullOrEmpty(ev.FileId) ? ("F:" + ev.FileId) : null)
                     ?? ("T:" + ev.DetectedLocal.ToString("yyyyMMddHHmmss") + ":V:" + ev.Vin);

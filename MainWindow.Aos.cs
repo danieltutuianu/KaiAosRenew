@@ -69,6 +69,7 @@ namespace KaiAosRenew
             if (RegisterFilterLabel != null) RegisterFilterLabel.Text = UiStrings.T("RegisterFilter");
             if (RegisterSearchLabel != null) RegisterSearchLabel.Text = UiStrings.T("RegisterSearch");
             if (RegisterSearchBox != null) RegisterSearchBox.ToolTip = UiStrings.T("RegisterSearchTip");
+            if (RegisterRefreshBtn != null) RegisterRefreshBtn.Content = UiStrings.T("KeysRefresh");
             if (RegisterColTime != null) RegisterColTime.Header = UiStrings.T("RegisterColTime");
             if (RegisterColResult != null) RegisterColResult.Header = UiStrings.T("RegisterColResult");
             if (RegisterColAge != null) RegisterColAge.Header = UiStrings.T("RegisterColAge");
@@ -76,6 +77,12 @@ namespace KaiAosRenew
             InitRegisterFilterCombo();
             RefreshRegisterResultTexts();
             ApplyRegisterFilter();
+        }
+
+        private void RegisterRefresh_Click(object sender, RoutedEventArgs e)
+        {
+            LoadRegisterHistoryFromLog();
+            BroadcastRegisterSync();
         }
 
         private void InitRegisterFilterCombo()
@@ -1343,33 +1350,63 @@ namespace KaiAosRenew
                 for (var p = 0; p < paths.Length; p++)
                 {
                     if (!File.Exists(paths[p])) continue;
+                    LogEntry pending = null;
                     foreach (var line in File.ReadLines(paths[p]))
                     {
-                        if (line == null || line.Length < 21) continue;
+                        if (line == null) continue;
                         DateTime local;
-                        if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
-                            CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
-                            continue;
-                        if (local < cutoff) continue;
-                        var text = line.Substring(19).TrimStart();
-                        if (string.IsNullOrEmpty(text) || IsActivityUiNoise(text)) continue;
-                        var key = local.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + text;
-                        if (!seen.Add(key)) continue;
-                        ring.Add(new LogEntry
+                        string text;
+                        if (TryParseActivityLogLine(line, out local, out text))
                         {
-                            Time = local,
-                            Level = InferLogLevel(text, false),
-                            Text = text
-                        });
-                        if (ring.Count > MaxLogBlocks)
-                            ring.RemoveAt(0);
+                            if (pending != null)
+                                AddSeededActivityEntry(ring, seen, pending, MaxLogBlocks);
+                            pending = null;
+                            if (local < cutoff) continue;
+                            if (string.IsNullOrEmpty(text) || IsActivityUiNoise(text)) continue;
+                            pending = new LogEntry
+                            {
+                                Time = local,
+                                Level = InferLogLevel(text, false),
+                                Text = text
+                            };
+                        }
+                        else if (pending != null && line.Length > 0)
+                        {
+                            // Continuation of REQUEST/RESPONSE multi-line dump.
+                            pending.Text = (pending.Text ?? "") + "\n" + line;
+                        }
                     }
+                    if (pending != null)
+                        AddSeededActivityEntry(ring, seen, pending, MaxLogBlocks);
                 }
                 _logEntries.Clear();
                 _logEntries.AddRange(ring);
                 RefreshLogView();
             }
             catch { }
+        }
+
+        private static bool TryParseActivityLogLine(string line, out DateTime local, out string text)
+        {
+            local = DateTime.MinValue;
+            text = null;
+            if (line == null || line.Length < 21) return false;
+            if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
+                return false;
+            text = line.Substring(19).TrimStart();
+            return true;
+        }
+
+        private static void AddSeededActivityEntry(
+            List<LogEntry> ring, HashSet<string> seen, LogEntry entry, int maxBlocks)
+        {
+            if (ring == null || entry == null) return;
+            var key = entry.Time.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + (entry.Text ?? "");
+            if (seen != null && !seen.Add(key)) return;
+            ring.Add(entry);
+            if (maxBlocks > 0 && ring.Count > maxBlocks)
+                ring.RemoveAt(0);
         }
 
         private void TrimLogEntriesToRetention()
@@ -1420,29 +1457,29 @@ namespace KaiAosRenew
                 for (var p = 0; p < paths.Length; p++)
                 {
                     if (!File.Exists(paths[p])) continue;
+                    string pendingText = null;
+                    DateTime pendingAt = DateTime.MinValue;
                     foreach (var line in File.ReadLines(paths[p]))
                     {
-                        if (line == null || line.Length < 21) continue;
+                        if (line == null) continue;
                         DateTime local;
-                        if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
-                            CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
-                            continue;
-                        if (!IsWithinLogRetention(local)) continue;
-                        var text = line.Substring(19).TrimStart();
-                        int kind;
-                        if (!TryClassifyRegisterHistory(text, out kind)) continue;
-                        var key = local.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + kind + "\t" + text;
-                        if (!seen.Add(key)) continue;
-                        _registerHistory.Add(new RegisterHistoryRow
+                        string text;
+                        if (TryParseActivityLogLine(line, out local, out text))
                         {
-                            At = local,
-                            Kind = kind,
-                            Ok = kind == 1,
-                            Text = text,
-                            AgeText = "",
-                            ResultText = RegisterResultTextForKind(kind)
-                        });
+                            if (pendingText != null)
+                                AddRegisterHistoryFromParsed(seen, pendingAt, pendingText);
+                            pendingText = null;
+                            if (!IsWithinLogRetention(local)) continue;
+                            pendingAt = local;
+                            pendingText = text;
+                        }
+                        else if (pendingText != null && line.Length > 0)
+                        {
+                            pendingText = pendingText + "\n" + line;
+                        }
                     }
+                    if (pendingText != null)
+                        AddRegisterHistoryFromParsed(seen, pendingAt, pendingText);
                 }
                 _registerHistory.Sort((a, b) => a.At.CompareTo(b.At));
                 TrimRegisterHistoryToRetention();
@@ -1450,6 +1487,23 @@ namespace KaiAosRenew
                 ApplyRegisterFilter();
             }
             catch { }
+        }
+
+        private void AddRegisterHistoryFromParsed(HashSet<string> seen, DateTime local, string text)
+        {
+            int kind;
+            if (!TryClassifyRegisterHistory(text, out kind)) return;
+            var key = local.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + kind + "\t" + text;
+            if (seen != null && !seen.Add(key)) return;
+            _registerHistory.Add(new RegisterHistoryRow
+            {
+                At = local,
+                Kind = kind,
+                Ok = kind == 1,
+                Text = text,
+                AgeText = "",
+                ResultText = RegisterResultTextForKind(kind)
+            });
         }
 
         private void MaybeAppendRegisterHistory(string text, DateTime at)
@@ -1745,17 +1799,22 @@ namespace KaiAosRenew
                 catch { }
             }
 
+            // Suppress intermediate Error/Warning balloons while a key 403 remediation is pending;
+            // final tip is decided after RetryBmwUploadAfter403Async.
+            var suppressAuthBalloons = !string.IsNullOrEmpty(_pending403RetryVin);
             if (result.Ok)
             {
                 if (result.RegisterAuthRejected)
                 {
                     AppendLog(result.Message, LogLevel.Error);
-                    ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(result.Message));
+                    if (!suppressAuthBalloons)
+                        ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(result.Message));
                 }
                 else
                 {
                     AppendLog("OK: " + result.Message, LogLevel.Success);
-                    ShowBalloon(WinForms.ToolTipIcon.Info, TruncateBalloon(result.Message));
+                    if (!suppressAuthBalloons)
+                        ShowBalloon(WinForms.ToolTipIcon.Info, TruncateBalloon(result.Message));
                 }
                 // Reload settings so LastTokenExpiresInSeconds / LastSuccessUtc from engine persist
                 var cooldownUntil = _settings != null ? _settings.AuthCooldownUntilUtc : null;
@@ -1797,12 +1856,14 @@ namespace KaiAosRenew
             else
             {
                 AppendLog("FAIL: " + result.Message, LogLevel.Error);
-                MaybeAppendBrowserPasswordHint(result.Message);
+                if (!suppressAuthBalloons)
+                    MaybeAppendBrowserPasswordHint(result.Message);
                 _settings.ConsecutiveFailures = _settings.ConsecutiveFailures + 1;
                 _settings.LastMessage = result.Message;
                 _settings.Save();
                 ApplyFailureAlert(result.Message);
-                ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(result.Message));
+                if (!suppressAuthBalloons)
+                    ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(result.Message));
                 var msg = result.Message ?? "";
                 var skipBlockMsg = msg.IndexOf("Auth cooldown", StringComparison.OrdinalIgnoreCase) >= 0
                     || msg.IndexOf("Auth register blocked", StringComparison.OrdinalIgnoreCase) >= 0

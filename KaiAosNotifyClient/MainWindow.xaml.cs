@@ -1569,6 +1569,27 @@ namespace KaiAosNotifyClient
             UpdateClearButtonsEnabled();
         }
 
+        private void ActivityRefresh_Click(object sender, RoutedEventArgs e)
+        {
+            if (_client == null || !_client.IsConnected) return;
+            if (_activityHistoryMode)
+            {
+                RequestActivityHistory();
+                return;
+            }
+            try
+            {
+                _client.Send(new NotifyMessage
+                {
+                    Kind = "activitySyncReq",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = ""
+                });
+            }
+            catch { }
+        }
+
         private void ActivityList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             if (IsGridViewHeaderClick(e.OriginalSource as DependencyObject)) return;
@@ -1979,10 +2000,7 @@ namespace KaiAosNotifyClient
         {
             if (row == null) return false;
             if (string.Equals(_activityFilter, "keyreader", StringComparison.OrdinalIgnoreCase))
-            {
-                var t = row.Text ?? "";
-                return t.StartsWith("KeyReader:", StringComparison.OrdinalIgnoreCase);
-            }
+                return ActivityRegisterLogic.IsKeyReaderFilterMatch(row.Text);
             if (string.Equals(_activityFilter, "registration", StringComparison.OrdinalIgnoreCase))
             {
                 var t = row.Text ?? "";

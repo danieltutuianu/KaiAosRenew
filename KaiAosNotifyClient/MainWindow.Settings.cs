@@ -114,6 +114,8 @@ namespace KaiAosNotifyClient
             if (RegisterSearchLabel != null) RegisterSearchLabel.Text = ClientUiStrings.T("RegisterSearch");
             if (RegisterSearchBox != null) RegisterSearchBox.ToolTip = ClientUiStrings.T("RegisterSearchTip");
             if (RegisterLoadingHint != null) RegisterLoadingHint.Text = ClientUiStrings.T("LogsLoading");
+            if (ActivityRefreshBtn != null) ActivityRefreshBtn.Content = ClientUiStrings.T("KeysRefresh");
+            if (RegisterRefreshBtn != null) RegisterRefreshBtn.Content = ClientUiStrings.T("KeysRefresh");
             if (ActivityClearBtn != null) ActivityClearBtn.Content = ClientUiStrings.T("ClearLog");
             if (SaveActivityLogBtn != null) SaveActivityLogBtn.Content = ClientUiStrings.T("SaveLog");
             if (SaveRegisterLogBtn != null) SaveRegisterLogBtn.Content = ClientUiStrings.T("SaveLog");

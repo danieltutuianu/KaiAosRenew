@@ -201,6 +201,25 @@ namespace KaiAosRenew
                 BroadcastNotifyClientsList();
                 return;
             }
+            if (kind == "activitysyncreq")
+            {
+                try { _keyReaderLogTailer.PollNow(); }
+                catch { }
+                try { if (_uploaderLogTailer != null) _uploaderLogTailer.PollNow(); }
+                catch { }
+                try { if (_kaiLogTailer != null) _kaiLogTailer.PollNow(); }
+                catch { }
+                SeedActivityHistoryFromLog();
+                RefreshKeysTab(false);
+                SendActivitySyncTo(clientId);
+                return;
+            }
+            if (kind == "registersyncreq")
+            {
+                LoadRegisterHistoryFromLog();
+                SendRegisterSyncTo(clientId);
+                return;
+            }
             if (kind == "activityhistoryreq")
             {
                 HandleActivityHistoryReq(clientId, msg);

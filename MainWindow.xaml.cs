@@ -174,6 +174,8 @@ namespace KaiAosRenew
         private bool _pendingStartTimerOnSuccess;
         private readonly KeyActivityMonitor _keyMonitor = new KeyActivityMonitor();
         private readonly KeyReaderLogTailer _keyReaderLogTailer = new KeyReaderLogTailer();
+        private readonly KeyReaderLogTailer _uploaderLogTailer = new KeyReaderLogTailer();
+        private readonly KeyReaderLogTailer _kaiLogTailer = new KeyReaderLogTailer();
         private readonly DispatcherTimer _keysRefreshTimer = new DispatcherTimer();
         private readonly DispatcherTimer _keysHighlightTimer = new DispatcherTimer();
         private bool _keysAlert;
@@ -218,6 +220,7 @@ namespace KaiAosRenew
         private string _lastKeys403RemediateKey;
         private bool _aosBmw403Fail;
         private readonly HashSet<string> _bmwFailVinTipKeys = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _loggedKeyStatusKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private string _pending403RetryVin;
         private string _pending403RetryReaderId;
         private bool _keysRetryBusy;
@@ -302,10 +305,25 @@ namespace KaiAosRenew
             {
                 try
                 {
+                    // Infer level so 200 OK exchanges show as Success/Info, failures as Warning/Error.
+                    Action write = () =>
+                    {
+                        var t = text ?? "";
+                        LogLevel level;
+                        if (t.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0
+                            || Regex.IsMatch(t, @"BMW HTTP (4|5)\d\d"))
+                            level = LogLevel.Warning;
+                        else if (t.IndexOf("BMW HTTP 200", StringComparison.OrdinalIgnoreCase) >= 0
+                            || t.IndexOf("Register OK:", StringComparison.OrdinalIgnoreCase) >= 0)
+                            level = LogLevel.Success;
+                        else
+                            level = LogLevel.Info;
+                        AppendLog(t, level);
+                    };
                     if (Dispatcher.CheckAccess())
-                        AppendLog(text, LogLevel.Warning);
+                        write();
                     else
-                        Dispatcher.BeginInvoke(new Action(() => AppendLog(text, LogLevel.Warning)));
+                        Dispatcher.BeginInvoke(write);
                 }
                 catch { }
             };
@@ -1888,6 +1906,10 @@ namespace KaiAosRenew
             catch { }
             try { _keyReaderLogTailer.Dispose(); }
             catch { }
+            try { _uploaderLogTailer.Dispose(); }
+            catch { }
+            try { _kaiLogTailer.Dispose(); }
+            catch { }
             try { NotifyServer.Instance.ClientConnected -= OnNotifyClientConnected; }
             catch { }
             try { NotifyServer.Instance.ClientDisconnected -= OnNotifyClientDisconnected; }
@@ -2387,6 +2409,20 @@ namespace KaiAosRenew
             RefreshLogView();
             BroadcastActivityClear();
             UpdateClearButtonsEnabled();
+        }
+
+        private void ActivityRefresh_Click(object sender, RoutedEventArgs e)
+        {
+            try { _keyReaderLogTailer.PollNow(); }
+            catch { }
+            try { if (_kaiLogTailer != null) _kaiLogTailer.PollNow(); }
+            catch { }
+            try { if (_uploaderLogTailer != null) _uploaderLogTailer.PollNow(); }
+            catch { }
+            SeedActivityHistoryFromLog();
+            RefreshKeysTab(false);
+            RefreshLogView();
+            BroadcastActivitySync();
         }
 
         private void ActivityList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -3090,10 +3126,7 @@ namespace KaiAosRenew
             if (!MatchesLogSearch(entry.Text, search)) return false;
             filter = string.IsNullOrEmpty(filter) ? "all" : filter.Trim().ToLowerInvariant();
             if (filter == "keyreader")
-            {
-                var t = entry.Text ?? "";
-                return t.StartsWith("KeyReader:", StringComparison.OrdinalIgnoreCase);
-            }
+                return ActivityRegisterLogic.IsKeyReaderFilterMatch(entry.Text);
             if (filter == "registration")
                 return IsRegistrationFilterMatch(entry.Text);
             if (entry.Level == LogLevel.Verbose)
@@ -3194,24 +3227,38 @@ namespace KaiAosRenew
                 for (var p = 0; p < paths.Length; p++)
                 {
                     if (!File.Exists(paths[p])) continue;
+                    LogEntry pending = null;
                     foreach (var line in File.ReadLines(paths[p]))
                     {
-                        if (line == null || line.Length < 21) continue;
+                        if (line == null) continue;
                         DateTime local;
-                        if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
-                            CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
-                            continue;
-                        if (local < cutoff) continue;
-                        var text = line.Substring(19).TrimStart();
-                        if (string.IsNullOrEmpty(text) || IsActivityUiNoise(text)) continue;
-                        var entry = new LogEntry
+                        string text;
+                        if (TryParseActivityLogLine(line, out local, out text))
                         {
-                            Time = local,
-                            Level = InferLogLevel(text, false),
-                            Text = text
-                        };
-                        if (!ShouldShowLogEntry(entry, filter, search)) continue;
-                        ring.Add(entry);
+                            if (pending != null && ShouldShowLogEntry(pending, filter, search))
+                            {
+                                ring.Add(pending);
+                                if (ring.Count > maxRows)
+                                    ring.RemoveAt(0);
+                            }
+                            pending = null;
+                            if (local < cutoff) continue;
+                            if (string.IsNullOrEmpty(text) || IsActivityUiNoise(text)) continue;
+                            pending = new LogEntry
+                            {
+                                Time = local,
+                                Level = InferLogLevel(text, false),
+                                Text = text
+                            };
+                        }
+                        else if (pending != null && line.Length > 0)
+                        {
+                            pending.Text = (pending.Text ?? "") + "\n" + line;
+                        }
+                    }
+                    if (pending != null && ShouldShowLogEntry(pending, filter, search))
+                    {
+                        ring.Add(pending);
                         if (ring.Count > maxRows)
                             ring.RemoveAt(0);
                     }
@@ -3241,25 +3288,31 @@ namespace KaiAosRenew
 
 
 
+        private List<ActivityWireRow> BuildActivitySyncWireRows(int maxRows)
+        {
+            var list = new List<ActivityWireRow>();
+            for (var i = 0; i < _logEntries.Count; i++)
+            {
+                var e = _logEntries[i];
+                if (e == null) continue;
+                list.Add(new ActivityWireRow
+                {
+                    At = e.Time,
+                    Level = LogLevelWireName(e.Level),
+                    Text = e.Text ?? ""
+                });
+            }
+            if (maxRows > 0 && list.Count > maxRows)
+                list = list.GetRange(list.Count - maxRows, maxRows);
+            return list;
+        }
+
         private void SendActivitySyncTo(int clientId)
         {
             if (_settings == null || !_settings.NotifyServerEnabled) return;
             try
             {
-                var list = new List<ActivityWireRow>();
-                for (var i = 0; i < _logEntries.Count; i++)
-                {
-                    var e = _logEntries[i];
-                    if (e == null) continue;
-                    list.Add(new ActivityWireRow
-                    {
-                        At = e.Time,
-                        Level = LogLevelWireName(e.Level),
-                        Text = e.Text ?? ""
-                    });
-                }
-                if (list.Count > ActivitySyncMax)
-                    list = list.GetRange(list.Count - ActivitySyncMax, ActivitySyncMax);
+                var list = BuildActivitySyncWireRows(ActivitySyncMax);
                 var payload = NotifyMessage.EncodeActivitySync(list);
                 NotifyServer.Instance.SendTo(clientId, new NotifyMessage
                 {
@@ -3272,6 +3325,28 @@ namespace KaiAosRenew
             catch (Exception ex)
             {
                 try { RenewEngine.Log("Notify activitySync: " + ex.Message); }
+                catch { }
+            }
+        }
+
+        private void BroadcastActivitySync()
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled) return;
+            try
+            {
+                var list = BuildActivitySyncWireRows(ActivitySyncMax);
+                var payload = NotifyMessage.EncodeActivitySync(list);
+                BroadcastNotify(new NotifyMessage
+                {
+                    Kind = "activitySync",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = payload ?? ""
+                });
+            }
+            catch (Exception ex)
+            {
+                try { RenewEngine.Log("Notify activitySync broadcast: " + ex.Message); }
                 catch { }
             }
         }

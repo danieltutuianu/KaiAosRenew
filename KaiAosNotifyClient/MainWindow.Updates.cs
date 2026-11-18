@@ -675,6 +675,10 @@ namespace KaiAosNotifyClient
 
             SetActionEnabled(KeysRefreshBtn, on && !updating,
                 !on ? "TipAosOffline" : (updating ? "TipAosUpdating" : null));
+            SetActionEnabled(ActivityRefreshBtn, on && !updating,
+                !on ? "TipAosOffline" : (updating ? "TipAosUpdating" : null));
+            SetActionEnabled(RegisterRefreshBtn, on && !updating,
+                !on ? "TipAosOffline" : (updating ? "TipAosUpdating" : null));
 
             if (AosCheckBrowserPassBtn != null) AosCheckBrowserPassBtn.IsEnabled = true;
             if (AosOpenBmwBtn != null) AosOpenBmwBtn.IsEnabled = true;

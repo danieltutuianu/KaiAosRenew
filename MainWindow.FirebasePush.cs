@@ -163,9 +163,13 @@ namespace KaiAosRenew
                 return;
             ResetFirebaseEtagsIfScopeChanged(url, secret);
 
+            // Empty AOS email/password: offer to pull from Firebase, confirm, force Register, then save.
+            if (IsLocalAosCredentialsIncomplete())
+                Forget(TryBootstrapAosCredsFromFirebaseAsync(), "FirebaseBootstrapAos");
+
             if (IsFirebasePushOnDemandMode())
             {
-                // Zero idle traffic — only Sync now / Publish / auth-fail pull.
+                // Zero idle traffic — only Sync now / Publish / auth-fail pull / empty-local bootstrap.
                 return;
             }
 

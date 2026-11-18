@@ -461,6 +461,8 @@
                        TextChanged="ActivitySearchBox_TextChanged" />
               <Button x:Name="CheckTokenBtn" Content="Check token" Style="{DynamicResource BeigeButton}"
                       Click="CheckToken_Click" Margin="0,0,8,0" MinWidth="110" Padding="10,2,12,2"  Tag="{DynamicResource IconCheck}" />
+              <Button x:Name="ActivityRefreshBtn" Content="Refresh" Style="{DynamicResource BeigeButton}"
+                      Click="ActivityRefresh_Click" Margin="0,0,8,0" MinWidth="88" Padding="10,2,12,2"  Tag="{DynamicResource IconRefresh}" />
               <Button x:Name="SaveActivityLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
                       Click="SaveActivityLog_Click" Margin="0,0,8,0" MinWidth="88" Padding="10,2,12,2"  Tag="{DynamicResource IconSave}" />
               <Button x:Name="ClearLogBtn" Content="Clear" Style="{DynamicResource BeigeButton}"
@@ -544,6 +546,8 @@
                        Style="{DynamicResource KaiTextBox}"
                        ToolTip="Message text"
                        TextChanged="RegisterSearchBox_TextChanged" />
+              <Button x:Name="RegisterRefreshBtn" Content="Refresh" Style="{DynamicResource BeigeButton}"
+                      Click="RegisterRefresh_Click" Margin="0,0,8,0" MinWidth="88" Padding="10,2,12,2"  Tag="{DynamicResource IconRefresh}" />
               <Button x:Name="SaveRegisterLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
                       Click="SaveRegisterLog_Click" Margin="0,0,8,0" MinWidth="88" Padding="10,2,12,2"  Tag="{DynamicResource IconSave}" />
               <Button x:Name="ClearRegisterLogBtn" Content="Clear" Style="{DynamicResource BeigeButton}"

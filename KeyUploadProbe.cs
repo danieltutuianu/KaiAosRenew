@@ -141,7 +141,8 @@ namespace KaiAosRenew
                 result.Ok = true;
                 result.HttpStatus = 200;
                 result.Summary = "Probe UploadKeyData OK (BMW accepted).";
-                result.Body = "";
+                result.Body = "(UploadKeyData returned without exception)";
+                BmwHttpLog.LogExchange("KeyUpload", 200, uploadUrl, requestDump, result.Body);
                 return result;
             }
             catch (TargetInvocationException tie)
@@ -440,6 +441,7 @@ namespace KaiAosRenew
                         error = "Token HTTP " + httpStatus;
                         return false;
                     }
+                    BmwHttpLog.LogExchange("WebEAM", 200, tokenUrl, requestDump, responseBody);
                 }
 
                 creds = new KaiCentralCredentials();

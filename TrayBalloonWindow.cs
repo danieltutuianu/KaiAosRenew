@@ -52,20 +52,16 @@ namespace KaiAosRenew
             _hasBodyActivate = onBodyActivate != null;
 
             Color accent;
-            string iconGlyph;
             switch (icon)
             {
                 case WinForms.ToolTipIcon.Warning:
                     accent = Color.FromRgb(200, 140, 20);
-                    iconGlyph = "!";
                     break;
                 case WinForms.ToolTipIcon.Error:
                     accent = Color.FromRgb(180, 50, 40);
-                    iconGlyph = "x";
                     break;
                 default:
                     accent = Color.FromRgb(30, 120, 200);
-                    iconGlyph = "i";
                     break;
             }
 
@@ -95,7 +91,6 @@ namespace KaiAosRenew
 
             var root = new Grid();
             root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
-            root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             var accentBar = new Border
@@ -105,27 +100,7 @@ namespace KaiAosRenew
             };
             Grid.SetColumn(accentBar, 0);
 
-            var iconCircle = new Border
-            {
-                Width = 28,
-                Height = 28,
-                CornerRadius = new CornerRadius(14),
-                Background = new SolidColorBrush(accent),
-                Margin = new Thickness(12, 14, 8, 14),
-                VerticalAlignment = VerticalAlignment.Top,
-                Child = new TextBlock
-                {
-                    Text = iconGlyph,
-                    Foreground = Brushes.White,
-                    FontWeight = FontWeights.Bold,
-                    FontSize = 14,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            };
-            Grid.SetColumn(iconCircle, 1);
-
-            var textPanel = new StackPanel { Margin = new Thickness(4, 12, 14, 12) };
+            var textPanel = new StackPanel { Margin = new Thickness(12, 12, 14, 12) };
             var titleRow = new Grid();
             titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -192,10 +167,9 @@ namespace KaiAosRenew
                 textPanel.Children.Add(btn);
             }
 
-            Grid.SetColumn(textPanel, 2);
+            Grid.SetColumn(textPanel, 1);
 
             root.Children.Add(accentBar);
-            root.Children.Add(iconCircle);
             root.Children.Add(textPanel);
             border.Child = root;
             Content = border;
@@ -331,6 +305,15 @@ namespace KaiAosRenew
             Top = work.Bottom - ActualHeight - 12;
             if (Top < work.Top)
                 Top = work.Top + 12;
+        }
+
+        /// <summary>Close any visible tip (e.g. when a later BMW upload succeeds).</summary>
+        public static void CloseCurrent()
+        {
+            if (_current == null) return;
+            try { _current.Close(); }
+            catch { }
+            _current = null;
         }
 
         public static void ShowTip(string title, string text, WinForms.ToolTipIcon icon)

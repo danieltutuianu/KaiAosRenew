@@ -47,22 +47,18 @@ namespace KaiAosNotifyClient
             var hasAction = !string.IsNullOrEmpty(actionLabel) && action != null;
 
             Color accent;
-            string iconGlyph;
             var lv = (level ?? "info").ToLowerInvariant();
             if (lv == "warning")
             {
                 accent = Color.FromRgb(200, 140, 20);
-                iconGlyph = "!";
             }
             else if (lv == "error")
             {
                 accent = Color.FromRgb(180, 50, 40);
-                iconGlyph = "x";
             }
             else
             {
                 accent = Color.FromRgb(30, 120, 200);
-                iconGlyph = "i";
             }
 
             var night = ClientThemeManager.IsNight;
@@ -90,7 +86,6 @@ namespace KaiAosNotifyClient
 
             var root = new Grid();
             root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
-            root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             var accentBar = new Border
@@ -100,27 +95,7 @@ namespace KaiAosNotifyClient
             };
             Grid.SetColumn(accentBar, 0);
 
-            var iconCircle = new Border
-            {
-                Width = 28,
-                Height = 28,
-                CornerRadius = new CornerRadius(14),
-                Background = new SolidColorBrush(accent),
-                Margin = new Thickness(12, 14, 8, 14),
-                VerticalAlignment = VerticalAlignment.Top,
-                Child = new TextBlock
-                {
-                    Text = iconGlyph,
-                    Foreground = Brushes.White,
-                    FontWeight = FontWeights.Bold,
-                    FontSize = 14,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            };
-            Grid.SetColumn(iconCircle, 1);
-
-            var textPanel = new StackPanel { Margin = new Thickness(4, 12, 14, 12) };
+            var textPanel = new StackPanel { Margin = new Thickness(12, 12, 14, 12) };
             var titleRow = new Grid();
             titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -198,9 +173,8 @@ namespace KaiAosNotifyClient
                 MouseLeave += delegate { if (_closeTimer != null && !_closeTimer.IsEnabled) _closeTimer.Start(); };
             }
 
-            Grid.SetColumn(textPanel, 2);
+            Grid.SetColumn(textPanel, 1);
             root.Children.Add(accentBar);
-            root.Children.Add(iconCircle);
             root.Children.Add(textPanel);
             border.Child = root;
             Content = border;

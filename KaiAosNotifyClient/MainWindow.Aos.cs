@@ -828,6 +828,27 @@ namespace KaiAosNotifyClient
             return ClientUiStrings.T("RegisterResultFail");
         }
 
+        private void RegisterRefresh_Click(object sender, RoutedEventArgs e)
+        {
+            if (_client == null || !_client.IsConnected) return;
+            if (_registerHistoryMode)
+            {
+                RequestRegisterHistory();
+                return;
+            }
+            try
+            {
+                _client.Send(new NotifyMessage
+                {
+                    Kind = "registerSyncReq",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = ""
+                });
+            }
+            catch { }
+        }
+
         private void ApplyRegisterTabStrings()
         {
             if (RegisterHistoryLabel != null) RegisterHistoryLabel.Text = ClientUiStrings.T("RegisterHistory");

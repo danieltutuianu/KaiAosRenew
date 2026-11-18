@@ -54,6 +54,29 @@ namespace KaiAosRenew
                 || text.IndexOf("Register", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        /// <summary>
+        /// Activity filter "KeyReader" — includes KeyReader Plus, KeyUploader, KAI and BMW HTTP dumps.
+        /// </summary>
+        public static bool IsKeyReaderFilterMatch(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            if (text.StartsWith("KeyReader:", StringComparison.OrdinalIgnoreCase)) return true;
+            if (text.StartsWith("KeyUploader:", StringComparison.OrdinalIgnoreCase)) return true;
+            if (text.StartsWith("KAI:", StringComparison.OrdinalIgnoreCase)) return true;
+            if (text.StartsWith("VIN ", StringComparison.OrdinalIgnoreCase)) return true;
+            if (text.StartsWith("BMW HTTP", StringComparison.OrdinalIgnoreCase)) return true;
+            if (text.StartsWith("BMW upload probe", StringComparison.OrdinalIgnoreCase)) return true;
+            if (text.StartsWith("REQUEST:", StringComparison.OrdinalIgnoreCase)) return true;
+            if (text.StartsWith("RESPONSE:", StringComparison.OrdinalIgnoreCase)) return true;
+            if (text.StartsWith("Register REQUEST:", StringComparison.OrdinalIgnoreCase)) return true;
+            if (text.StartsWith("Register RESPONSE:", StringComparison.OrdinalIgnoreCase)) return true;
+            if (text.IndexOf("Uploaded to KAI Central", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (text.IndexOf("Sent to KAI Dezentral", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (text.IndexOf("BMW Server", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (text.IndexOf("Retry BMW", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
+        }
+
         public static bool MatchesLogSearch(string text, string needle)
         {
             if (string.IsNullOrEmpty(needle)) return true;

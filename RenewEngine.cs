@@ -194,6 +194,10 @@ namespace KaiAosRenew
                 {
                     var uri = new Uri(registerUrl);
                     creds = KaiZentralUserRegProc.RegisterWithKaiZentral(uri, email, password, ResolveWebProxy(settings.UseSystemProxy));
+                    BmwHttpLog.LogExchange("Register", 200, registerUrl,
+                        BmwHttpLog.FormatRegisterRequest(registerUrl, email),
+                        "RegisterWithKaiZentral OK (ClientId=" + (creds != null ? (creds.ClientId ?? "") : "") + ")",
+                        true);
                 }
                 catch (Exception ex)
                 {
@@ -377,11 +381,14 @@ namespace KaiAosRenew
                         message = "Health OK (WebEAM token). Register not required. ClientId=" + clientId;
                         if (expiresInSeconds > 0)
                             message += " expires_in=" + expiresInSeconds + "s";
+                        BmwHttpLog.LogExchange("WebEAM", status, tokenUrl, requestDump, json);
                         return true;
                     }
                     message = "Token response without access_token HTTP " + status;
                     if (status != 200)
                         BmwHttpLog.LogNon200("WebEAM", status, tokenUrl, requestDump, json);
+                    else
+                        BmwHttpLog.LogExchange("WebEAM", status, tokenUrl, requestDump, json);
                     return false;
                 }
             }

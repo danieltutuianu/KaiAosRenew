@@ -87,6 +87,8 @@ namespace KaiAosRenew
                 AuthCooldownMinutesLabel.Text = UiStrings.T("AuthCooldownMinutes");
             if (AuthRegisterBlockAfterLabel != null)
                 AuthRegisterBlockAfterLabel.Text = UiStrings.T("AuthRegisterBlockAfter");
+            if (ActivityRefreshBtn != null) ActivityRefreshBtn.Content = UiStrings.T("KeysRefresh");
+            if (RegisterRefreshBtn != null) RegisterRefreshBtn.Content = UiStrings.T("KeysRefresh");
             if (SaveActivityLogBtn != null) SaveActivityLogBtn.Content = UiStrings.T("SaveLog");
             if (SaveRegisterLogBtn != null) SaveRegisterLogBtn.Content = UiStrings.T("SaveLog");
             if (ClearRegisterLogBtn != null) ClearRegisterLogBtn.Content = UiStrings.T("ClearLog");

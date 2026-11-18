@@ -413,6 +413,9 @@
                 <Button x:Name="AosCheckTokenBtn" Content="Check token" Style="{DynamicResource BeigeButton}"
                         MinWidth="110" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="AosCheckToken_Click"  Tag="{DynamicResource IconCheck}" />
+                <Button x:Name="ActivityRefreshBtn" Content="Refresh" Style="{DynamicResource BeigeButton}"
+                        MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        Click="ActivityRefresh_Click"  Tag="{DynamicResource IconRefresh}" />
                 <Button x:Name="SaveActivityLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
                         MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="SaveActivityLog_Click"  Tag="{DynamicResource IconSave}" />
@@ -497,6 +500,9 @@
                          Style="{DynamicResource KaiTextBox}"
                          ToolTip="Message text"
                          TextChanged="RegisterSearchBox_TextChanged" />
+                <Button x:Name="RegisterRefreshBtn" Content="Refresh" Style="{DynamicResource BeigeButton}"
+                        MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        Click="RegisterRefresh_Click"  Tag="{DynamicResource IconRefresh}" />
                 <Button x:Name="SaveRegisterLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
                         MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="SaveRegisterLog_Click"  Tag="{DynamicResource IconSave}" />

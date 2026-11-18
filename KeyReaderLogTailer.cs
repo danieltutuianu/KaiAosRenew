@@ -25,6 +25,8 @@ namespace KaiAosRenew
         private Action<string, KeyReaderActivityKind> _onLine;
         private string _logDir;
         private string _dataBinPath;
+        private string _linePrefix = "KeyReader: ";
+        private bool _watchBin;
         private FileSystemWatcher _logWatcher;
         private FileSystemWatcher _binWatcher;
         private Timer _debounce;
@@ -38,6 +40,20 @@ namespace KaiAosRenew
 
         public void Start(string logDir, string dataBinPath, Action<string, KeyReaderActivityKind> onLine)
         {
+            Start(logDir, dataBinPath, onLine, "KeyReader: ", true);
+        }
+
+        /// <summary>
+        /// Tail a log folder into Activity. When <paramref name="watchBin"/> is false, only *.log is watched
+        /// (used for KeyUploader / KAI service logs).
+        /// </summary>
+        public void Start(
+            string logDir,
+            string dataBinPath,
+            Action<string, KeyReaderActivityKind> onLine,
+            string linePrefix,
+            bool watchBin)
+        {
             lock (_gate)
             {
                 StopUnlocked();
@@ -45,6 +61,8 @@ namespace KaiAosRenew
                 _onLine = onLine;
                 _logDir = string.IsNullOrWhiteSpace(logDir) ? null : logDir.Trim();
                 _dataBinPath = string.IsNullOrWhiteSpace(dataBinPath) ? null : dataBinPath.Trim();
+                _linePrefix = string.IsNullOrEmpty(linePrefix) ? "KeyReader: " : linePrefix;
+                _watchBin = watchBin;
                 _currentFile = null;
                 _offset = 0;
                 _partial = "";
@@ -52,14 +70,15 @@ namespace KaiAosRenew
                 _lastBinWriteUtc = DateTime.MinValue;
 
                 SeedLogAtEofUnlocked();
-                SeedBinStampUnlocked();
+                if (_watchBin)
+                    SeedBinStampUnlocked();
                 StartWatchersUnlocked();
                 _debounce = new Timer(_ => PollUnlocked(false), null, Timeout.Infinite, Timeout.Infinite);
                 _poll = new Timer(_ => PollUnlocked(false), null, 2000, 2000);
 
                 if (string.IsNullOrEmpty(_logDir) || !Directory.Exists(_logDir))
                 {
-                    if (!_missingFolderNotified)
+                    if (!_missingFolderNotified && _watchBin)
                     {
                         _missingFolderNotified = true;
                         EmitUnlocked(
@@ -68,6 +87,12 @@ namespace KaiAosRenew
                     }
                 }
             }
+        }
+
+        /// <summary>Force an immediate drain of new log bytes (Refresh button).</summary>
+        public void PollNow()
+        {
+            PollUnlocked(true);
         }
 
         public void Stop()
@@ -133,7 +158,7 @@ namespace KaiAosRenew
                 }
             }
 
-            if (string.IsNullOrEmpty(_dataBinPath)) return;
+            if (!_watchBin || string.IsNullOrEmpty(_dataBinPath)) return;
             var binDir = Path.GetDirectoryName(_dataBinPath);
             if (string.IsNullOrEmpty(binDir) || !Directory.Exists(binDir)) return;
             try
@@ -182,7 +207,8 @@ namespace KaiAosRenew
             {
                 if (_disposed) return;
                 ReadNewLogLinesUnlocked();
-                CheckBinUpdatedUnlocked();
+                if (_watchBin)
+                    CheckBinUpdatedUnlocked();
             }
         }
 
@@ -318,15 +344,6 @@ namespace KaiAosRenew
             EmitUnlocked(UiStrings.T("KeyReaderBinUpdated"), KeyReaderActivityKind.Success);
         }
 
-        private void EmitLineUnlocked(string line)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-                return;
-            var body = KeyReaderLogLocalize.LocalizeBody(line.Trim());
-            var kind = Classify(body);
-            EmitUnlocked("KeyReader: " + body, kind);
-        }
-
         private void EmitUnlocked(string text, KeyReaderActivityKind kind)
         {
             var cb = _onLine;
@@ -339,19 +356,57 @@ namespace KaiAosRenew
         {
             if (string.IsNullOrEmpty(body))
                 return KeyReaderActivityKind.Info;
+            if (ContainsAny(body, "MAINTENANCE : Info", "LoadStringFromEncryptedFile"))
+                return KeyReaderActivityKind.Verbose;
             if (ContainsAny(body, "enc file does not exist"))
                 return KeyReaderActivityKind.Warning;
+            if (ContainsAny(body, "403", "Forbidden", "could not upload", "failed to upload",
+                    "upload key data failed", "failed to send", "could not send", "upload failed"))
+                return KeyReaderActivityKind.Error;
             if (ContainsAny(body, "error", "fail", "exception", "denied", "fatal",
                     "fehler", "fehlgeschlagen", "eșuat"))
                 return KeyReaderActivityKind.Error;
             if (ContainsAny(body, "cannot", "unable", "warn", "warning", "warnung", "avertisment"))
                 return KeyReaderActivityKind.Warning;
-            if (ContainsAny(body, "success", "written", "keyreader.bin", "read key", "key read",
-                    "erfolgreich", "geschrieben", "scris cu succes", "date cheie disponibile"))
+            if (ContainsAny(body, "Successfully uploaded key data to KAI Central",
+                    "successfully sent to KAI Dezentral", "success", "written", "keyreader.bin",
+                    "read key", "key read", "erfolgreich", "geschrieben", "scris cu succes",
+                    "date cheie disponibile"))
                 return KeyReaderActivityKind.Success;
+            if (ContainsAny(body, "Picked up binary file", "New KeyReader folder", "Upload Url:",
+                    "keyreaderids/", "PutKeyDataV1", "Enter method"))
+                return KeyReaderActivityKind.Info;
             if (ContainsAny(body, "debug", "verbose", "trace"))
                 return KeyReaderActivityKind.Verbose;
             return KeyReaderActivityKind.Info;
+        }
+
+        private void EmitLineUnlocked(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                return;
+            // Skip known BMW service noise before it hits Activity.
+            if (ContainsAny(line, "MAINTENANCE : Info", "LoadStringFromEncryptedFile"))
+                return;
+            // Redact long base64 payloads from KeyUploader / KAI dumps.
+            var cleaned = RedactBase64(line.Trim());
+            var body = KeyReaderLogLocalize.LocalizeBody(cleaned);
+            var kind = Classify(body);
+            EmitUnlocked(_linePrefix + body, kind);
+        }
+
+        private static string RedactBase64(string body)
+        {
+            if (string.IsNullOrEmpty(body)) return body;
+            try
+            {
+                return System.Text.RegularExpressions.Regex.Replace(
+                    body, @"[A-Za-z0-9+/]{80,}={0,2}", "[redacted]");
+            }
+            catch
+            {
+                return body;
+            }
         }
 
         private static bool ContainsAny(string hay, params string[] needles)

@@ -10,10 +10,134 @@ namespace KaiAosRenew
     {
         private int _peerSyncBusy;
         private int _peerSyncPending;
+        private int _firebaseBootstrapBusy;
 
         private void InitPeerSync()
         {
             InitFirebasePush();
+        }
+
+        /// <summary>True when AOS Access email and/or password are missing (UI or settings).</summary>
+        private bool IsLocalAosCredentialsIncomplete()
+        {
+            var email = "";
+            if (EmailBox != null && !string.IsNullOrWhiteSpace(EmailBox.Text))
+                email = EmailBox.Text.Trim();
+            else if (_settings != null)
+                email = (_settings.Email ?? "").Trim();
+
+            var pass = "";
+            try
+            {
+                pass = (GetPasswordUi() ?? "").Trim();
+                if (string.IsNullOrEmpty(pass) && _settings != null)
+                    pass = (_settings.GetPassword() ?? "").Trim();
+            }
+            catch
+            {
+                try { pass = _settings != null ? (_settings.GetPassword() ?? "").Trim() : ""; }
+                catch { pass = ""; }
+            }
+
+            return string.IsNullOrEmpty(email) || string.IsNullOrEmpty(pass);
+        }
+
+        /// <summary>
+        /// When local AOS email/password are empty and Firebase has creds: confirm, then force Register and save.
+        /// Bypasses seq/own filters so bootstrap works even if the event was already acknowledged.
+        /// </summary>
+        private async Task TryBootstrapAosCredsFromFirebaseAsync()
+        {
+            if (_settings == null || !IsFirebasePushActive()) return;
+            if (!IsLocalAosCredentialsIncomplete()) return;
+            if (Interlocked.CompareExchange(ref _firebaseBootstrapBusy, 1, 0) != 0)
+                return;
+
+            try
+            {
+                string url, secret, serverName;
+                if (!TryGetActivePeerRelay(out url, out secret, out serverName))
+                    return;
+
+                AppendLog(UiStrings.T("PeerSyncBootstrapStart"), LogLevel.Info);
+                ResetFirebaseEtagsIfScopeChanged(url, secret);
+
+                PeerRelayPollResult poll;
+                try
+                {
+                    poll = await PeerSyncFirebaseClient.SnapshotAsync(
+                        url, secret, null, true, CancellationToken.None).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    AppendLog(string.Format(UiStrings.T("PeerSyncBootstrapNoCreds"), ex.Message ?? "snapshot"),
+                        LogLevel.Warning);
+                    return;
+                }
+
+                if (poll == null || !poll.Ok)
+                {
+                    AppendLog(string.Format(UiStrings.T("PeerSyncBootstrapNoCreds"),
+                        poll != null ? (poll.Error ?? "poll") : "poll"), LogLevel.Warning);
+                    return;
+                }
+                PersistFirebaseCredsEtag(poll.ETag);
+
+                var ev = poll.LatestCreds;
+                if (ev == null || string.IsNullOrWhiteSpace(ev.PayloadEnc))
+                {
+                    AppendLog(string.Format(UiStrings.T("PeerSyncBootstrapNoCreds"), "no latestCreds"),
+                        LogLevel.Info);
+                    return;
+                }
+
+                PeerCredsPayload payload;
+                if (!PeerSyncCrypto.TryDecryptCreds(secret, ev.PayloadEnc, out payload) || payload == null)
+                {
+                    AppendLog(string.Format(UiStrings.T("PeerSyncBootstrapNoCreds"), "decrypt"),
+                        LogLevel.Warning);
+                    return;
+                }
+
+                var remoteEmail = (payload.Email ?? "").Trim();
+                var remotePass = payload.Password ?? "";
+                if (string.IsNullOrEmpty(remoteEmail) || string.IsNullOrEmpty(remotePass))
+                {
+                    AppendLog(string.Format(UiStrings.T("PeerSyncBootstrapNoCreds"), "empty payload"),
+                        LogLevel.Info);
+                    return;
+                }
+
+                // Still incomplete? (user may have typed meanwhile)
+                if (!IsLocalAosCredentialsIncomplete()) return;
+
+                var confirmText = string.Format(UiStrings.T("PeerSyncBootstrapConfirm"), remoteEmail);
+                var answer = MessageBoxResult.No;
+                if (!Dispatcher.CheckAccess())
+                {
+                    answer = (MessageBoxResult)Dispatcher.Invoke(new Func<MessageBoxResult>(() =>
+                        MessageBox.Show(this, confirmText, "KAI - AOS Renew",
+                            MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No)));
+                }
+                else
+                {
+                    answer = MessageBox.Show(this, confirmText, "KAI - AOS Renew",
+                        MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+                }
+
+                if (answer != MessageBoxResult.Yes)
+                {
+                    AppendLog(UiStrings.T("PeerSyncBootstrapCancelled"), LogLevel.Info);
+                    return;
+                }
+
+                // Direct apply — skip ShouldProcessInboundCreds (seq/own) for empty-local bootstrap.
+                await HandleInboundPeerCredsAsync(ev, secret).ConfigureAwait(true);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _firebaseBootstrapBusy, 0);
+            }
         }
 
         private void BeginPeerSyncPoll(bool manual)
