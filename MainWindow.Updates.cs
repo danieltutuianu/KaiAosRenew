@@ -379,6 +379,7 @@ namespace KaiAosRenew
             }
             _remoteServerUpdateBusy = true;
             RefreshAosActionButtons();
+            UpdateUpdateAllClientsButtonEnabled();
             var ver = UpdateService.FormatUpdateVersion(update);
             try
             {
@@ -424,6 +425,7 @@ namespace KaiAosRenew
             {
                 _remoteServerUpdateBusy = false;
                 RefreshAosActionButtons();
+                UpdateUpdateAllClientsButtonEnabled();
             }
         }
 

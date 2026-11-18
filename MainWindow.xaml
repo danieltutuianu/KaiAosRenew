@@ -1007,6 +1007,10 @@
                   <Button x:Name="NotifyTestErrorBtn" Content="Test Error" Style="{DynamicResource BeigeButton}"
                           Margin="0,0,8,6" Padding="10,4" Click="NotifyTestError_Click"
                           ToolTip="Send an error tip to selected clients (TCP only)"  Tag="{DynamicResource IconError}" />
+                  <Button x:Name="UpdateAllClientsBtn" Content="Update all clients" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" Click="UpdateAllClients_Click"
+                          ToolTip="Tell all connected clients to install the latest client version"
+                          Tag="{DynamicResource IconUpdate}" />
                 </WrapPanel>
                 <TextBlock x:Name="NotifyTestResultText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
                            Foreground="{DynamicResource TextMutedBrush}" Visibility="Collapsed" />

@@ -289,6 +289,9 @@ namespace KaiAosNotifyClient
                 { "NotifyTestSent", "Notify test {0} → {1}" },
                 { "NotifyTestNoClients", "No notify clients connected" },
                 { "NotifyTestServerOff", "Notify server is not enabled" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
                 { "SettingsStartup", "Startup" },
                 { "SettingsKeys", "Keys" },
                 { "SettingsNotifyGroup", "Notify server" },
@@ -657,6 +660,9 @@ namespace KaiAosNotifyClient
                 { "NotifyTestSent", "Notify test {0} → {1}" },
                 { "NotifyTestNoClients", "Niciun client notify conectat" },
                 { "NotifyTestServerOff", "Serverul notify nu e activ" },
+                { "UpdateAllClients", "Actualizează toți clienții" },
+                { "UpdateAllClientsConfirm", "Cer serverului să trimită ultimul build de client către toți clienții conectați?\n\nClienții învechiți vor descărca, instala și reporni. Cei deja pe ultima versiune sunt omisi." },
+                { "TipUpdateAllClients", "Cere serverului să trimită update de client către toți peeri conectați (Velopack)" },
                 { "SettingsStartup", "Pornire" },
                 { "SettingsKeys", "Keys" },
                 { "SettingsNotifyGroup", "Server notificări" },
@@ -783,6 +789,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "Info" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -1141,7 +1148,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -1149,6 +1161,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "À propos" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -1507,7 +1520,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -1515,6 +1533,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "Acerca de" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -1873,7 +1892,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -1881,6 +1905,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "Informazioni" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -2239,7 +2264,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -2247,6 +2277,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -2605,7 +2636,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -2613,6 +2649,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -2971,7 +3008,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -2979,6 +3021,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -3337,7 +3380,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -3345,6 +3393,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -3703,7 +3752,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -3711,6 +3765,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -4069,7 +4124,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -4077,6 +4137,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -4435,7 +4496,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -4443,6 +4509,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -4801,7 +4868,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -4809,6 +4881,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -5167,7 +5240,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -5175,6 +5253,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -5533,7 +5612,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -5541,6 +5625,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -5899,7 +5984,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -5907,6 +5997,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -6265,7 +6356,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -6273,6 +6369,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -6631,7 +6728,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 
@@ -6639,6 +6741,7 @@ namespace KaiAosNotifyClient
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
+
                 { "About", "About" },
                 { "AboutChangelogLabel", "CHANGELOG.md" },
                 { "AboutChangelogMissing", "CHANGELOG.md not found next to the app." },
@@ -6997,7 +7100,12 @@ namespace KaiAosNotifyClient
                 { "PairingAuthFailed", "Invalid pairing code — connection stopped. Fix the code and Connect again." },
                 { "PairingCode", "Pairing code:" },
                 { "PairingCodeTip", "Must match the server pairing code when the server requires one" },
-                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." }
+                { "PairingRequiredHint", "This server requires a pairing code. Enter the code from the server, then Connect." },
+
+                // EN baseline backfill
+                { "TipUpdateAllClients", "Ask the server to broadcast a client update to all connected peers (Velopack)" },
+                { "UpdateAllClients", "Update all clients" },
+                { "UpdateAllClientsConfirm", "Ask the server to push the latest client build to all connected clients?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped." },
             };
         }
 

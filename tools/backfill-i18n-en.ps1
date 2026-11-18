@@ -68,7 +68,19 @@ function Read-CSharpString([string]$s, [ref]$i) {
 
 function Escape-CSharp([string]$s) {
     if ($null -eq $s) { return "" }
-    return ($s -replace "\\", "\\" -replace '"', '\"' -replace "`r`n", "\n" -replace "`n", "\n" -replace "`r", "\n" -replace "`t", "\t")
+    # Manual escape: do not use -replace for "\\" (PowerShell/.NET replacement quirks double slashes).
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $s.ToCharArray()) {
+        switch ($ch) {
+            '\' { [void]$sb.Append('\\'); break }
+            '"' { [void]$sb.Append('\"'); break }
+            "`n" { [void]$sb.Append('\n'); break }
+            "`r" { [void]$sb.Append('\n'); break }
+            "`t" { [void]$sb.Append('\t'); break }
+            default { [void]$sb.Append($ch); break }
+        }
+    }
+    return $sb.ToString()
 }
 
 function Backfill-File([string]$path, [string]$style, [string[]]$skipLangs) {
@@ -190,10 +202,11 @@ function Backfill-File([string]$path, [string]$style, [string[]]$skipLangs) {
         if ($missing.Count -eq 0) { continue }
 
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.Append($inner.TrimEnd())
-        if (-not $inner.TrimEnd().EndsWith(",")) {
-            # ensure trailing comma on last existing entry for d-style continuity
+        $trimmedInner = $inner.TrimEnd()
+        if (-not $trimmedInner.EndsWith(",")) {
+            $trimmedInner = $trimmedInner + ","
         }
+        [void]$sb.Append($trimmedInner)
         [void]$sb.AppendLine()
         [void]$sb.AppendLine()
         [void]$sb.AppendLine("                // EN baseline backfill")

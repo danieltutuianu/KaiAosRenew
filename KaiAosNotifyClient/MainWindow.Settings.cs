@@ -784,6 +784,11 @@ namespace KaiAosNotifyClient
             if (SrvNotifyTestInfoBtn != null) SrvNotifyTestInfoBtn.Content = ClientUiStrings.T("NotifyTestInfo");
             if (SrvNotifyTestWarningBtn != null) SrvNotifyTestWarningBtn.Content = ClientUiStrings.T("NotifyTestWarning");
             if (SrvNotifyTestErrorBtn != null) SrvNotifyTestErrorBtn.Content = ClientUiStrings.T("NotifyTestError");
+            if (SrvUpdateAllClientsBtn != null)
+            {
+                SrvUpdateAllClientsBtn.Content = ClientUiStrings.T("UpdateAllClients");
+                SrvUpdateAllClientsBtn.ToolTip = ClientUiStrings.T("TipUpdateAllClients");
+            }
             InitSrvKrLogLevelCombo();
             InitSrvThemeCombo();
         }
@@ -967,6 +972,46 @@ namespace KaiAosNotifyClient
         private void SrvNotifyTestError_Click(object sender, RoutedEventArgs e)
         {
             SendSrvNotifyTest("error");
+        }
+
+        private void SrvUpdateAllClients_Click(object sender, RoutedEventArgs e)
+        {
+            if (_client == null || !_client.IsConnected)
+            {
+                var offline = ClientUiStrings.T("TipAosOffline");
+                SetNotifyTestResult(offline, true);
+                AppendActivityRow(null, "warning", offline);
+                return;
+            }
+            var ask = ClientUiStrings.T("UpdateAllClientsConfirm");
+            var result = MessageBox.Show(this, ask, ClientUiStrings.T("UpdateAllClients"),
+                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+            if (result != MessageBoxResult.Yes) return;
+            try
+            {
+                var ok = _client.Send(new NotifyMessage
+                {
+                    Kind = "clientUpdateAllReq",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = ""
+                });
+                if (!ok)
+                {
+                    var fail = ClientUiStrings.T("AosSyncSendFail");
+                    SetNotifyTestResult(fail, true);
+                    AppendActivityRow(null, "error", fail);
+                }
+                else
+                {
+                    AppendActivityRow(null, "info", ClientUiStrings.T("UpdateAllClients"));
+                }
+            }
+            catch (Exception ex)
+            {
+                SetNotifyTestResult(ex.Message ?? "clientUpdateAllReq", true);
+                AppendActivityRow(null, "error", ex.Message ?? "clientUpdateAllReq");
+            }
         }
 
         private void SendSrvNotifyTest(string kind)

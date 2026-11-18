@@ -4,6 +4,11 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.22] - 2026-11-18
+
+- Settings: “Update all clients” broadcasts `clientUpdate` (server + client Server Settings via `clientUpdateAllReq`); outdated clients silent-apply Velopack, already-current clients ignore
+- Activity/Register: double-click copy no longer logs “Copied to clipboard.”
+
 ## [1.2.21] - 2026-11-18
 
 - Activity/Register: All capped at 500; filtered views show last 3 days (server disk scan; client history requests)

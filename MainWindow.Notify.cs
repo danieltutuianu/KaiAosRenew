@@ -129,6 +129,11 @@ namespace KaiAosRenew
                 BeginServerUpdateFromClient(clientId);
                 return;
             }
+            if (kind == "clientupdateallreq")
+            {
+                var ignore = RequestUpdateAllClientsAsync(false, "client");
+                return;
+            }
             if (kind == "updatefeed")
             {
                 var ignore = HandleInboundUpdateFeedAsync(msg.Text);
@@ -1121,6 +1126,66 @@ namespace KaiAosRenew
             NotifySendToCombo.SelectedItem = select;
             SizeComboToLongestLabel(NotifySendToCombo, items.ConvertAll(it => it.Label));
             UpdateNotifyFirewallHint();
+            UpdateUpdateAllClientsButtonEnabled();
+        }
+
+        private void UpdateUpdateAllClientsButtonEnabled()
+        {
+            if (UpdateAllClientsBtn == null) return;
+            var on = _settings != null && _settings.NotifyServerEnabled
+                && NotifyServer.Instance.IsRunning
+                && NotifyServer.Instance.ClientCount > 0
+                && !_remoteServerUpdateBusy;
+            UpdateAllClientsBtn.IsEnabled = on;
+        }
+
+        private async void UpdateAllClients_Click(object sender, RoutedEventArgs e)
+        {
+            await RequestUpdateAllClientsAsync(true, "settings");
+        }
+
+        /// <summary>
+        /// Broadcast clientUpdate to all connected clients.
+        /// <paramref name="confirm"/> true = show Yes/No (local Settings button).
+        /// </summary>
+        private async Task RequestUpdateAllClientsAsync(bool confirm, string source)
+        {
+            if (_settings == null || !_settings.NotifyServerEnabled || !NotifyServer.Instance.IsRunning)
+                return;
+            var count = NotifyServer.Instance.ClientCount;
+            if (count <= 0)
+            {
+                AppendLog(UiStrings.T("UpdateAllClientsNone"), LogLevel.Warning);
+                return;
+            }
+            if (confirm)
+            {
+                var ask = string.Format(UiStrings.T("UpdateAllClientsConfirm"), count);
+                var result = MessageBox.Show(this, ask, UiStrings.T("UpdateAllClients"),
+                    MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+                if (result != MessageBoxResult.Yes) return;
+            }
+            try { await RefreshUpdateFeedAsync(); }
+            catch { }
+            var ver = (_feedClientVer ?? "").Trim();
+            try
+            {
+                BroadcastNotify(new NotifyMessage
+                {
+                    Kind = "clientUpdate",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = ver
+                });
+            }
+            catch (Exception ex)
+            {
+                AppendLog(ex.Message ?? "clientUpdate", LogLevel.Error);
+                return;
+            }
+            var src = string.IsNullOrEmpty(source) ? "settings" : source;
+            AppendLog(string.Format(UiStrings.T("UpdateAllClientsSent"), count,
+                string.IsNullOrEmpty(ver) ? "?" : ver, src), LogLevel.Info);
         }
 
         private void SendNotifyTest(NotifyMessage msg, string kindLabel)

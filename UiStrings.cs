@@ -221,6 +221,11 @@ namespace KaiAosRenew
                 "NotifyFirewallAllow", "Allow in Windows Firewall",
                 "NotifyFirewallAllowOk", "Windows Firewall allows TCP/UDP port {0}.",
                 "NotifyFirewallAllowFail", "Firewall update failed: {0}",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
                 "KeysRefresh", "Refresh",
                 "ClearKeys", "Clear",
                 "ClearKeysConfirm", "Clear the Keys list on this server?\n\nConnected clients keep their own lists.",
@@ -651,6 +656,11 @@ namespace KaiAosRenew
                 "NotifyFirewallAllow", "Permite în Windows Firewall",
                 "NotifyFirewallAllowOk", "Windows Firewall permite portul TCP/UDP {0}.",
                 "NotifyFirewallAllowFail", "Actualizare Firewall eșuată: {0}",
+                "UpdateAllClients", "Actualizează toți clienții",
+                "UpdateAllClientsConfirm", "Trimiți ultimul build de client către {0} client(i) conectat(i)?\n\nClienții învechiți vor descărca, instala și reporni. Cei deja pe ultima versiune sunt omisi.",
+                "TipUpdateAllClients", "Trimite update de client către toți clienții notify conectați (Velopack)",
+                "UpdateAllClientsSent", "Update client trimis către {0} client(i) (țintă {1}, din {2})",
+                "UpdateAllClientsNone", "Niciun client notify conectat — nimic de actualizat.",
                 "KeysRefresh", "Reîncarcă",
                 "ClearKeys", "Golește",
                 "ClearKeysConfirm", "Golești lista Keys pe acest server?\n\nClienții conectați își păstrează listele.",
@@ -922,6 +932,7 @@ namespace KaiAosRenew
         private static Dictionary<string, string> De()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Erneuerungsplan:", "IntervalHours", "Intervall (Stunden):",
                 "StartWithWindows", "Mit Windows starten:", "Yes", "Ja",
@@ -1312,13 +1323,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Fr()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Planning de renouvellement :", "IntervalHours", "Intervalle (heures) :",
                 "StartWithWindows", "Démarrer avec Windows :", "Yes", "Oui",
@@ -1709,13 +1728,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Es()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Programa de renovación:", "IntervalHours", "Intervalo (horas):",
                 "StartWithWindows", "Iniciar con Windows:", "Yes", "Sí",
@@ -2106,13 +2133,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> It()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Programma di rinnovo:", "IntervalHours", "Intervallo (ore):",
                 "StartWithWindows", "Avvia con Windows:", "Yes", "Sì",
@@ -2511,13 +2546,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Da()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Fornyelsesplan:", "IntervalHours", "Interval (timer):",
                 "StartWithWindows", "Start med Windows:", "Yes", "Ja",
@@ -2916,13 +2959,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Cs()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Plán obnovení:", "IntervalHours", "Interval (hodiny):",
                 "StartWithWindows", "Spustit s Windows:", "Yes", "Ano",
@@ -3321,13 +3372,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Nl()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Vernieuwingsschema:", "IntervalHours", "Interval (uren):",
                 "StartWithWindows", "Starten met Windows:", "Yes", "Ja",
@@ -3726,13 +3785,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Pl()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Harmonogram odnawiania:", "IntervalHours", "Interwał (godziny):",
                 "StartWithWindows", "Uruchom z Windows:", "Yes", "Tak",
@@ -4131,13 +4198,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Pt()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Agenda de renovação:", "IntervalHours", "Intervalo (horas):",
                 "StartWithWindows", "Iniciar com o Windows:", "Yes", "Sim",
@@ -4528,13 +4603,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Sv()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Förnyelseschema:", "IntervalHours", "Intervall (timmar):",
                 "StartWithWindows", "Starta med Windows:", "Yes", "Ja",
@@ -4933,13 +5016,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> No()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Fornyelsesplan:", "IntervalHours", "Intervall (timer):",
                 "StartWithWindows", "Start med Windows:", "Yes", "Ja",
@@ -5338,13 +5429,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Ru()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Расписание обновления:", "IntervalHours", "Интервал (часы):",
                 "StartWithWindows", "Запуск с Windows:", "Yes", "Да",
@@ -5743,13 +5842,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Tr()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "Yenileme planı:", "IntervalHours", "Aralık (saat):",
                 "StartWithWindows", "Windows ile başlat:", "Yes", "Evet",
@@ -6148,13 +6255,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Ja()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "更新スケジュール:", "IntervalHours", "間隔（時間）:",
                 "StartWithWindows", "Windows と同時に起動:", "Yes", "はい",
@@ -6553,13 +6668,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Ko()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "갱신 일정:", "IntervalHours", "간격(시간):",
                 "StartWithWindows", "Windows와 함께 시작:", "Yes", "예",
@@ -6958,13 +7081,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Zh()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "续订计划：", "IntervalHours", "间隔（小时）：",
                 "StartWithWindows", "随 Windows 启动：", "Yes", "是",
@@ -7363,13 +7494,21 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
 
         private static Dictionary<string, string> Th()
         {
             return D(
+
                 "WindowTitle", "KAI - AOS Renew", "HeaderTitle", "KAI - AOS Renew",
                 "SectionSchedule", "กำหนดการต่ออายุ:", "IntervalHours", "ช่วงเวลา (ชั่วโมง):",
                 "StartWithWindows", "เริ่มพร้อม Windows:", "Yes", "ใช่",
@@ -7768,7 +7907,14 @@ namespace KaiAosRenew
                 "NotifyPairingGenerate", "Generate",
                 "NotifyPairingGenerateTip", "Generate a new random pairing code",
                 "SelfCheckEncMissing", "KeyReader ENC file missing: {0}",
-                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database"
+                "SelfCheckReaderInactive", "KeyReader is marked Inactive in the KAI database",
+
+                // EN baseline backfill
+                "TipUpdateAllClients", "Broadcast client update to all connected notify clients (Velopack)",
+                "UpdateAllClients", "Update all clients",
+                "UpdateAllClientsConfirm", "Push the latest client build to {0} connected client(s)?\n\nOutdated clients will download, install, and restart. Clients already on the latest version are skipped.",
+                "UpdateAllClientsNone", "No notify clients connected — nothing to update.",
+                "UpdateAllClientsSent", "Client update broadcast to {0} client(s) (target {1}, from {2})"
             );
         }
     }

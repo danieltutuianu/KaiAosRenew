@@ -125,6 +125,8 @@ namespace KaiAos.Protocol.Tests
             RoundtripKind("activityExport", "line1\nline2");
             RoundtripKind("registerExport", "line1\nline2");
             RoundtripKind("register", "Registration OK");
+            RoundtripKind("clientUpdate", "1.2.22");
+            RoundtripKind("clientUpdateAllReq", "");
 
             var withDetail = new NotifyMessage
             {

@@ -194,14 +194,19 @@ namespace KaiAosNotifyClient
             await BeginClientSelfUpdateAsync(update);
         }
 
-        private async Task BeginClientSelfUpdateAsync(UpdateInfo update)
+        private async Task BeginClientSelfUpdateAsync(UpdateInfo update, bool prompt = true)
         {
             if (update == null || _clientUpdateBusy) return;
             var ver = UpdateService.FormatUpdateVersion(update);
-            var confirm = string.Format(ClientUiStrings.T("UpdateAvailable"), ver);
-            var result = MessageBox.Show(this, confirm, ClientUiStrings.T("CheckForUpdates"),
-                MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (result != MessageBoxResult.Yes) return;
+            if (!UpdateService.IsNewerVersion(ver, VersionDisplay))
+                return;
+            if (prompt)
+            {
+                var confirm = string.Format(ClientUiStrings.T("UpdateAvailable"), ver);
+                var result = MessageBox.Show(this, confirm, ClientUiStrings.T("CheckForUpdates"),
+                    MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result != MessageBoxResult.Yes) return;
+            }
 
             _clientUpdateBusy = true;
             UpdateAosControlsEnabled();
@@ -219,8 +224,15 @@ namespace KaiAosNotifyClient
                 SendClientUpdateDone();
                 HideUpdateProgressBar();
                 ShowPendingUpdate(_pendingUpdate ?? update);
-                MessageBox.Show(this, string.Format(ClientUiStrings.T("UpdateFailed"), ex.Message),
-                    ClientUiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                if (prompt)
+                {
+                    MessageBox.Show(this, string.Format(ClientUiStrings.T("UpdateFailed"), ex.Message),
+                        ClientUiStrings.T("CheckForUpdates"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                else
+                {
+                    AppendActivityRow(null, "error", string.Format(ClientUiStrings.T("UpdateFailed"), ex.Message));
+                }
             }
             finally
             {
@@ -230,6 +242,24 @@ namespace KaiAosNotifyClient
                     FooterUpdateBtn.IsEnabled = true;
                 if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = true;
             }
+        }
+
+        /// <summary>Server pushed clientUpdate — apply only when a newer package exists.</summary>
+        private async void HandleForcedClientUpdate(NotifyMessage msg)
+        {
+            if (_clientUpdateBusy) return;
+            var hinted = msg != null ? (msg.Text ?? "").Trim() : "";
+            if (!string.IsNullOrEmpty(hinted) && !UpdateService.IsNewerVersion(hinted, VersionDisplay))
+                return;
+            UpdateInfo update = null;
+            try { update = await UpdateService.PeekAsync(); }
+            catch { return; }
+            if (update == null) return;
+            var ver = UpdateService.FormatUpdateVersion(update);
+            if (!UpdateService.IsNewerVersion(ver, VersionDisplay))
+                return;
+            ShowPendingUpdate(update);
+            await BeginClientSelfUpdateAsync(update, false);
         }
 
         private void SendClientUpdating(string version)
@@ -882,7 +912,8 @@ namespace KaiAosNotifyClient
                 SrvBrowserPassHintCheck, SrvUseSystemProxyCheck, SrvAuthCooldownBox, SrvAuthBlockAfterBox,
                 SrvKrLogLevelCombo,
                 SrvNotifySendToCombo, SrvNotifyRefreshBtn,
-                SrvNotifyTestVinBtn, SrvNotifyTestInfoBtn, SrvNotifyTestWarningBtn, SrvNotifyTestErrorBtn
+                SrvNotifyTestVinBtn, SrvNotifyTestInfoBtn, SrvNotifyTestWarningBtn, SrvNotifyTestErrorBtn,
+                SrvUpdateAllClientsBtn
             };
             for (var i = 0; i < editable.Length; i++)
             {

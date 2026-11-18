@@ -2386,7 +2386,7 @@ namespace KaiAosRenew
         {
             var entry = ActivityList != null ? ActivityList.SelectedItem as LogEntry : null;
             if (entry == null || string.IsNullOrEmpty(entry.Text)) return false;
-            TryCopyTextToClipboard(entry.Text, "Copied to clipboard.");
+            TryCopyTextToClipboard(entry.Text, null);
             return true;
         }
 

@@ -1157,7 +1157,7 @@ namespace KaiAosNotifyClient
         {
             var entry = RegisterHistoryList != null ? RegisterHistoryList.SelectedItem as RegisterHistoryRow : null;
             if (entry == null || string.IsNullOrEmpty(entry.Text)) return false;
-            TryCopyTextToClipboard(entry.Text, "Copied to clipboard.");
+            TryCopyTextToClipboard(entry.Text, null);
             return true;
         }
 

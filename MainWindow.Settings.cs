@@ -268,6 +268,11 @@ namespace KaiAosRenew
                 NotifyTestWarningBtn.Content = UiStrings.T("NotifyTestWarning");
             if (NotifyTestErrorBtn != null)
                 NotifyTestErrorBtn.Content = UiStrings.T("NotifyTestError");
+            if (UpdateAllClientsBtn != null)
+            {
+                UpdateAllClientsBtn.Content = UiStrings.T("UpdateAllClients");
+                UpdateAllClientsBtn.ToolTip = UiStrings.T("TipUpdateAllClients");
+            }
             RefreshNotifyServerIpDisplay();
             RefreshNotifyClientsCombo();
             ApplySettingsTooltips();

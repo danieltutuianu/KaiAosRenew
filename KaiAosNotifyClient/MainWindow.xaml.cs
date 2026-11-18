@@ -1238,6 +1238,12 @@ namespace KaiAosNotifyClient
                 RefreshTrayStatus();
                 return;
             }
+            if (kind == "clientupdate")
+            {
+                HandleForcedClientUpdate(msg);
+                RefreshTrayStatus();
+                return;
+            }
             if (kind == "registersync")
             {
                 ApplyRegisterSync(msg.Text);
@@ -1559,7 +1565,7 @@ namespace KaiAosNotifyClient
         {
             var entry = ActivityList != null ? ActivityList.SelectedItem as ActivityRow : null;
             if (entry == null || string.IsNullOrEmpty(entry.Text)) return false;
-            TryCopyTextToClipboard(entry.Text, "Copied to clipboard.");
+            TryCopyTextToClipboard(entry.Text, null);
             return true;
         }
 

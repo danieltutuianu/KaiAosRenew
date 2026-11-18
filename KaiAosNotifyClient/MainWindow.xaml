@@ -860,6 +860,10 @@
                             Margin="0,0,8,6" Padding="10,4" Click="SrvNotifyTestWarning_Click"  Tag="{DynamicResource IconWarning}" />
                     <Button x:Name="SrvNotifyTestErrorBtn" Content="Test Error" Style="{DynamicResource BeigeButton}"
                             Margin="0,0,8,6" Padding="10,4" Click="SrvNotifyTestError_Click"  Tag="{DynamicResource IconError}" />
+                    <Button x:Name="SrvUpdateAllClientsBtn" Content="Update all clients" Style="{DynamicResource BeigeButton}"
+                            Margin="0,0,8,6" Padding="10,4" Click="SrvUpdateAllClients_Click"
+                            ToolTip="Tell the server to push latest client update to all connected clients"
+                            Tag="{DynamicResource IconUpdate}" />
                   </WrapPanel>
                   <TextBlock x:Name="NotifyTestResultText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
                              Foreground="{DynamicResource TextMutedBrush}" Visibility="Collapsed" />
