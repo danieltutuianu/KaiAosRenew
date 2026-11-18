@@ -80,10 +80,102 @@ namespace KaiAosNotifyClient
             ApplyKeysFilter();
         }
 
+        private const int KeysSearchServerMaxRows = 200;
+
         private void KeysSearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            _keysSearchText = KeysSearchBox != null ? (KeysSearchBox.Text ?? "").Trim() : "";
+            if (KeysSearchClearBtn != null)
+            {
+                var has = KeysSearchBox != null && !string.IsNullOrEmpty(KeysSearchBox.Text);
+                KeysSearchClearBtn.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (_loadingUi) return;
+            EnsureKeysSearchDebounceTimer();
+            _keysSearchDebounceTimer.Stop();
+            _keysSearchDebounceTimer.Start();
+        }
+
+        private void KeysSearchClear_Click(object sender, RoutedEventArgs e)
+        {
+            if (_keysSearchDebounceTimer != null)
+                _keysSearchDebounceTimer.Stop();
+            _keysSearchText = "";
+            _keysSearchServerRows = new List<ClientKeyRow>();
+            if (KeysSearchBox != null)
+                KeysSearchBox.Text = "";
             ApplyKeysFilter();
+            if (KeysSearchBox != null)
+                KeysSearchBox.Focus();
+        }
+
+        private void EnsureKeysSearchDebounceTimer()
+        {
+            if (_keysSearchDebounceTimer != null) return;
+            _keysSearchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _keysSearchDebounceTimer.Tick += delegate
+            {
+                _keysSearchDebounceTimer.Stop();
+                var query = KeysSearchBox != null ? (KeysSearchBox.Text ?? "").Trim() : "";
+                var changed = !string.Equals(query, _keysSearchText, StringComparison.Ordinal);
+                _keysSearchText = query;
+                if (query.Length == 0 || changed)
+                    _keysSearchServerRows = new List<ClientKeyRow>();
+                ApplyKeysFilter();
+                if (query.Length > 0 && _client != null && _client.IsConnected)
+                    SendKeySearchReq(query);
+            };
+        }
+
+        private void SendKeySearchReq(string query)
+        {
+            try
+            {
+                _client.Send(new NotifyMessage
+                {
+                    Kind = "keySearchReq",
+                    Level = "info",
+                    Title = "KAI - AOS Renew - Client",
+                    Text = query ?? ""
+                });
+            }
+            catch { }
+        }
+
+        /// <summary>Server reply to keySearchReq: merge older matches into the display (not persisted).</summary>
+        private void ApplyKeySearchSync(string forQuery, string text)
+        {
+            // Drop stale replies (user kept typing / cleared the box).
+            if (string.IsNullOrEmpty(_keysSearchText)
+                || !string.Equals((forQuery ?? "").Trim(), _keysSearchText, StringComparison.Ordinal))
+                return;
+            var rows = ClientKeySync.ParseKeySync(text, KeysSearchServerMaxRows);
+            var list = new List<ClientKeyRow>();
+            foreach (var r in rows)
+            {
+                if (r == null || string.IsNullOrEmpty(r.Vin) || IsTestVinPlaceholder(r.Vin)) continue;
+                list.Add(r);
+            }
+            _keysSearchServerRows = list;
+            ApplyKeysFilter();
+        }
+
+        private static bool SameClientKeyIdentity(ClientKeyRow a, ClientKeyRow b)
+        {
+            if (a == null || b == null) return false;
+            if (!string.Equals(a.Vin, b.Vin, StringComparison.OrdinalIgnoreCase)) return false;
+            return Math.Abs((a.DetectedLocal - b.DetectedLocal).TotalMinutes) <= 3;
+        }
+
+        private static bool ClientKeyRowMatches(ClientKeyRow r, string q)
+        {
+            return r != null
+                && (ContainsIgnoreCase(r.Vin, q)
+                    || ContainsIgnoreCase(r.Paint, q)
+                    || ContainsIgnoreCase(r.Upholstery, q)
+                    || ContainsIgnoreCase(r.ILevelCurrent, q)
+                    || ContainsIgnoreCase(r.ReaderId, q)
+                    || ContainsIgnoreCase(r.KmText, q)
+                    || ContainsIgnoreCase(r.Detail, q));
         }
 
         private void KeysRefresh_Click(object sender, RoutedEventArgs e)
@@ -134,6 +226,31 @@ namespace KaiAosNotifyClient
         {
             if (KeysEventsList == null) return;
             IEnumerable<ClientKeyRow> src = _keyAllRows;
+            var searching = !string.IsNullOrEmpty(_keysSearchText);
+            if (searching && _keysSearchServerRows != null && _keysSearchServerRows.Count > 0)
+            {
+                // Merge older server-side matches (display only) behind the local history.
+                var merged = new List<ClientKeyRow>(_keyAllRows);
+                var localCount = merged.Count;
+                foreach (var sr in _keysSearchServerRows)
+                {
+                    if (sr == null) continue;
+                    var dup = false;
+                    for (var i = 0; i < localCount; i++)
+                    {
+                        if (SameClientKeyIdentity(merged[i], sr)) { dup = true; break; }
+                    }
+                    if (!dup) merged.Add(sr);
+                }
+                merged.Sort((a, b) =>
+                {
+                    if (a == null && b == null) return 0;
+                    if (a == null) return 1;
+                    if (b == null) return -1;
+                    return b.DetectedLocal.CompareTo(a.DetectedLocal);
+                });
+                src = merged;
+            }
             switch (_keysFilter)
             {
                 case "today":
@@ -165,22 +282,18 @@ namespace KaiAosNotifyClient
                 var list = new List<ClientKeyRow>();
                 foreach (var r in src)
                 {
-                    if (r == null) continue;
-                    if (ContainsIgnoreCase(r.Vin, q)
-                        || ContainsIgnoreCase(r.Paint, q)
-                        || ContainsIgnoreCase(r.ILevelCurrent, q)
-                        || ContainsIgnoreCase(r.KmText, q)
-                        || ContainsIgnoreCase(r.Detail, q))
+                    if (ClientKeyRowMatches(r, q))
                         list.Add(r);
                 }
                 src = list;
             }
+            var maxRows = searching ? KeysSearchServerMaxRows + ClientKeyHistory.MaxEvents : ClientKeyHistory.MaxEvents;
             _keyRows.Clear();
             foreach (var r in src)
             {
                 if (r == null) continue;
                 _keyRows.Add(r);
-                if (_keyRows.Count >= ClientKeyHistory.MaxEvents) break;
+                if (_keyRows.Count >= maxRows) break;
             }
             UpdateKeysTodayBadge();
             UpdateKeysRetryButton();

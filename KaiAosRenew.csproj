@@ -132,6 +132,12 @@
     <Compile Include="Shared\TcpUtf8LineReader.cs" />
     <Compile Include="Shared\NotifyPairing.cs" />
     <Compile Include="Shared\ActivityRegisterLogic.cs" />
+    <Compile Include="Shared\PeerSyncCrypto.cs" />
+    <Compile Include="Shared\PeerSyncLogic.cs" />
+    <Compile Include="PeerSyncClient.cs" />
+    <Compile Include="MainWindow.PeerSync.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
     <Compile Include="DesktopKeyReaderReg.cs" />
     <Compile Include="ServiceMonitor.cs" />
     <Compile Include="BrowserPasswordReader.cs" />

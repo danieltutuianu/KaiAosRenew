@@ -79,6 +79,10 @@
                        Style="{DynamicResource KaiTextBox}"
                        ToolTip="VIN / paint / I-level"
                        TextChanged="KeysSearchBox_TextChanged" />
+              <Button x:Name="KeysSearchClearBtn" Content="✕" Style="{DynamicResource BeigeButton}"
+                      Click="KeysSearchClear_Click" MinWidth="28" Padding="8,4,8,4" Margin="6,0,0,0"
+                      HorizontalContentAlignment="Center" Visibility="Collapsed"
+                      ToolTip="Clear search" />
             </StackPanel>
             <StackPanel Grid.Row="1">
               <Border x:Name="KeysReaderWarnBanner" Background="{DynamicResource WarnBannerBgBrush}"
@@ -867,6 +871,109 @@
                   </WrapPanel>
                   <TextBlock x:Name="NotifyTestResultText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
                              Foreground="{DynamicResource TextMutedBrush}" Visibility="Collapsed" />
+                </StackPanel>
+              </GroupBox>
+              <GroupBox x:Name="SrvPeerSyncGroup" Header="Peer sync (multi-site)" Style="{DynamicResource KaiGroupBox}">
+                <StackPanel>
+                  <CheckBox x:Name="SrvPeerSyncEnableCheck" Content="Enable peer sync (Google Apps Script)"
+                            Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
+                            Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <StackPanel Grid.IsSharedSizeScope="True">
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock x:Name="SrvPeerSyncUrlLabel" Text="Web App URL:" Style="{DynamicResource FieldLabel}"
+                                 Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
+                      <TextBox x:Name="SrvPeerSyncUrlBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
+                               LostFocus="SrvSettingsField_LostFocus" TextChanged="SrvSettings_Changed" />
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock x:Name="SrvPeerSyncSecretLabel" Text="Shared secret:" Style="{DynamicResource FieldLabel}"
+                                 Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBox x:Name="SrvPeerSyncSecretBox" Width="220" HorizontalAlignment="Left"
+                                 Style="{DynamicResource KaiTextBox}"
+                                 LostFocus="SrvSettingsField_LostFocus" TextChanged="SrvSettings_Changed" />
+                        <Button x:Name="SrvPeerSyncGenerateBtn"
+                                Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                                MinWidth="80" Padding="8,2" VerticalAlignment="Center"
+                                Content="Generate"
+                                Click="SrvPeerSyncGenerate_Click" />
+                        <Button x:Name="SrvPeerSyncCopyBtn"
+                                Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                                MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                                Content=""
+                                Click="SrvPeerSyncCopy_Click"
+                                Tag="{DynamicResource IconCopy}" />
+                      </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock x:Name="SrvPeerSyncServerNameLabel" Text="This server name:" Style="{DynamicResource FieldLabel}"
+                                 Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
+                      <TextBox x:Name="SrvPeerSyncServerNameBox" Grid.Column="1" Width="220" HorizontalAlignment="Left"
+                               Style="{DynamicResource KaiTextBox}"
+                               LostFocus="SrvSettingsField_LostFocus" TextChanged="SrvSettings_Changed" />
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock x:Name="SrvPeerSyncPollLabel" Text="Poll interval (minutes):" Style="{DynamicResource FieldLabel}"
+                                 Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
+                      <TextBox x:Name="SrvPeerSyncPollBox" Grid.Column="1" Width="80" HorizontalAlignment="Left"
+                               Style="{DynamicResource KaiTextBox}"
+                               LostFocus="SrvSettingsField_LostFocus" TextChanged="SrvSettings_Changed" />
+                    </Grid>
+                  </StackPanel>
+                  <WrapPanel Margin="0,4,0,4">
+                    <Button x:Name="SrvPeerSyncNowBtn" Content="Sync now" Style="{DynamicResource BeigeButton}"
+                            Margin="0,0,8,6" Padding="10,4" Click="SrvPeerSyncNow_Click"
+                            Tag="{DynamicResource IconRefresh}" />
+                    <Button x:Name="SrvPeerSyncPushBtn" Content="Push now" Style="{DynamicResource BeigeButton}"
+                            Margin="0,0,8,6" Padding="10,4" Click="SrvPeerSyncPush_Click"
+                            Tag="{DynamicResource IconUpdate}" />
+                    <Button x:Name="SrvPeerSyncUpdateAllBtn" Content="Update all peers" Style="{DynamicResource BeigeButton}"
+                            Margin="0,0,8,6" Padding="10,4" Click="SrvPeerSyncUpdateAll_Click"
+                            Tag="{DynamicResource IconUpdate}" />
+                    <Button x:Name="SrvPeerSyncTestBtn" Content="Test connection" Style="{DynamicResource BeigeButton}"
+                            Margin="0,0,8,6" Padding="10,4" Click="SrvPeerSyncTest_Click"
+                            Tag="{DynamicResource IconInfo}" />
+                  </WrapPanel>
+                  <TextBlock x:Name="SrvPeerSyncStatusText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
+                             Foreground="{DynamicResource TextMutedBrush}" Text="" />
+                  <TextBlock x:Name="SrvPeerSyncPeersLabel" Text="Peer servers:" Style="{DynamicResource SectionText}"
+                             Margin="0,8,0,6" />
+                  <ListView x:Name="SrvPeerSyncPeersList" Height="120" Margin="0,0,0,4">
+                    <ListView.View>
+                      <GridView>
+                        <GridViewColumn x:Name="SrvPeerSyncColServer" Header="Server" Width="120"
+                                        DisplayMemberBinding="{Binding ServerName}" />
+                        <GridViewColumn x:Name="SrvPeerSyncColHealth" Header="Status" Width="70"
+                                        DisplayMemberBinding="{Binding Health}" />
+                        <GridViewColumn x:Name="SrvPeerSyncColToken" Header="Token" Width="70"
+                                        DisplayMemberBinding="{Binding TokenStatus}" />
+                        <GridViewColumn x:Name="SrvPeerSyncColVersion" Header="Version" Width="70"
+                                        DisplayMemberBinding="{Binding AppVersion}" />
+                        <GridViewColumn x:Name="SrvPeerSyncColClients" Header="Clients" Width="55"
+                                        DisplayMemberBinding="{Binding ClientCount}" />
+                        <GridViewColumn x:Name="SrvPeerSyncColSeen" Header="Last seen" Width="120"
+                                        DisplayMemberBinding="{Binding LastSeen}" />
+                      </GridView>
+                    </ListView.View>
+                  </ListView>
+                  <TextBlock x:Name="SrvPeerSyncPeersEmptyHint" TextWrapping="Wrap" FontSize="12"
+                             Foreground="{DynamicResource TextMutedBrush}" Text="" Visibility="Collapsed" />
                 </StackPanel>
               </GroupBox>
               <GroupBox x:Name="SrvPathsGroup" Header="Paths" Style="{DynamicResource KaiGroupBox}">

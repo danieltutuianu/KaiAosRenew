@@ -182,6 +182,9 @@ namespace KaiAosRenew
         private string _keysFilter = "all";
         private string _keysSearchText = "";
         private string _keysLastAppliedSearch = "";
+        private DispatcherTimer _keysSearchDebounceTimer;
+        /// <summary>Older rows from key-events.xml / key-bins that match the current search text.</summary>
+        private List<KeyActivityEvent> _keysSearchHistory = new List<KeyActivityEvent>();
         private bool _keysFilterReady;
         private string _keysHighlightVin;
         private ListViewItem _keysHighlightedItem;
@@ -294,6 +297,7 @@ namespace KaiAosRenew
             NotifyServer.Instance.ClientDisconnected += OnNotifyClientDisconnected;
             NotifyServer.Instance.MessageFromClient += OnNotifyMessageFromClient;
             ApplyNotifyServerFromSettings();
+            InitPeerSync();
             BmwHttpLog.UiAppend = text =>
             {
                 try
@@ -790,8 +794,11 @@ namespace KaiAosRenew
                 if (ev == null) continue;
                 if (ContainsIgnoreCase(ev.Vin, query)
                     || ContainsIgnoreCase(ev.Paint, query)
+                    || ContainsIgnoreCase(ev.Upholstery, query)
                     || ContainsIgnoreCase(ev.ILevelCurrent, query)
-                    || ContainsIgnoreCase(ev.KmText, query))
+                    || ContainsIgnoreCase(ev.KmText, query)
+                    || ContainsIgnoreCase(ev.DetailText, query)
+                    || ContainsIgnoreCase(ev.ReaderId, query))
                     list.Add(ev);
             }
             return list;
@@ -1506,6 +1513,12 @@ namespace KaiAosRenew
             map["notifyPort"] = _settings.NotifyServerPort.ToString();
             try { map["notifyIps"] = NotifyServer.GetLocalIpv4Summary() ?? ""; }
             catch { map["notifyIps"] = ""; }
+            map["peerSyncEnabled"] = _settings.PeerSyncEnabled ? "1" : "0";
+            map["peerSyncUrl"] = _settings.PeerSyncUrl ?? "";
+            try { map["peerSyncSecret"] = _settings.GetPeerSyncSecret() ?? ""; }
+            catch { map["peerSyncSecret"] = ""; }
+            map["peerSyncServerName"] = _settings.PeerSyncServerName ?? "";
+            map["peerSyncPollMinutes"] = PeerSyncLogic.ClampPollMinutes(_settings.PeerSyncPollMinutes).ToString();
             try
             {
                 var paths = DesktopKeyReaderReg.ReadAbsolute();

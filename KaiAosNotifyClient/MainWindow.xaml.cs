@@ -69,6 +69,9 @@ namespace KaiAosNotifyClient
         private int _tabIndexBeforeAbout = -1;
         private string _keysFilter = "all";
         private string _keysSearchText = "";
+        private DispatcherTimer _keysSearchDebounceTimer;
+        /// <summary>Older server-side matches for the current search (display only; not persisted).</summary>
+        private List<ClientKeyRow> _keysSearchServerRows = new List<ClientKeyRow>();
         private bool _keysFilterReady;
         private string _registerFilter = "all";
         private bool _registerFilterReady;
@@ -1215,6 +1218,12 @@ namespace KaiAosNotifyClient
                 RefreshTrayStatus();
                 return;
             }
+            if (kind == "peerstatussync")
+            {
+                ApplyPeerStatusSync(msg.Text);
+                RefreshTrayStatus();
+                return;
+            }
             if (kind == "serverupdating")
             {
                 BeginAwaitServerUpdate(msg.Text);
@@ -1373,6 +1382,12 @@ namespace KaiAosNotifyClient
             {
                 ApplyKeysReaderWarn(msg.Text);
                 RefreshTrayStatus();
+                return;
+            }
+
+            if (kind == "keysearchsync")
+            {
+                ApplyKeySearchSync(msg.Title, msg.Text);
                 return;
             }
 
@@ -2772,7 +2787,78 @@ namespace KaiAosNotifyClient
             map["authCooldownMinutes"] = SrvAuthCooldownBox != null ? (SrvAuthCooldownBox.Text ?? "60").Trim() : "60";
             map["authRegisterBlockAfter"] = SrvAuthBlockAfterBox != null ? (SrvAuthBlockAfterBox.Text ?? "3").Trim() : "3";
             map["keyReaderLogLevel"] = (SrvKrLogLevelCombo != null ? SrvKrLogLevelCombo.SelectedValue as string : null) ?? "4";
+            map["peerSyncEnabled"] = SrvPeerSyncEnableCheck != null && SrvPeerSyncEnableCheck.IsChecked == true ? "1" : "0";
+            map["peerSyncUrl"] = SrvPeerSyncUrlBox != null ? (SrvPeerSyncUrlBox.Text ?? "").Trim() : "";
+            map["peerSyncSecret"] = SrvPeerSyncSecretBox != null ? (SrvPeerSyncSecretBox.Text ?? "").Trim() : "";
+            map["peerSyncServerName"] = SrvPeerSyncServerNameBox != null ? (SrvPeerSyncServerNameBox.Text ?? "").Trim() : "";
+            map["peerSyncPollMinutes"] = SrvPeerSyncPollBox != null ? (SrvPeerSyncPollBox.Text ?? "60").Trim() : "60";
             return map;
+        }
+
+        private void SrvPeerSyncGenerate_Click(object sender, RoutedEventArgs e)
+        {
+            var secret = NotifyPairing.GenerateCode() + NotifyPairing.GenerateCode();
+            if (SrvPeerSyncSecretBox != null)
+                SrvPeerSyncSecretBox.Text = secret;
+            MarkSrvSettingsDirty(true);
+            SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
+        }
+
+        private void SrvPeerSyncCopy_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var secret = SrvPeerSyncSecretBox != null ? (SrvPeerSyncSecretBox.Text ?? "").Trim() : "";
+                if (string.IsNullOrEmpty(secret)) return;
+                Clipboard.SetText(secret);
+            }
+            catch { }
+        }
+
+        private void SrvPeerSyncNow_Click(object sender, RoutedEventArgs e)
+        {
+            SendAosCmd("peerSyncNow");
+            if (SrvPeerSyncStatusText != null)
+                SrvPeerSyncStatusText.Text = ClientUiStrings.T("PeerSyncNow");
+        }
+
+        private void SrvPeerSyncPush_Click(object sender, RoutedEventArgs e)
+        {
+            SendAosCmd("peerSyncPush");
+            if (SrvPeerSyncStatusText != null)
+                SrvPeerSyncStatusText.Text = ClientUiStrings.T("PeerSyncPush");
+        }
+
+        private void SrvPeerSyncUpdateAll_Click(object sender, RoutedEventArgs e)
+        {
+            var ask = ClientUiStrings.T("PeerSyncUpdateAllConfirm");
+            var result = MessageBox.Show(this, ask, ClientUiStrings.T("PeerSyncUpdateAll"),
+                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+            if (result != MessageBoxResult.Yes) return;
+            SendAosCmd("peerSyncUpdateAll");
+            if (SrvPeerSyncStatusText != null)
+                SrvPeerSyncStatusText.Text = ClientUiStrings.T("PeerSyncUpdateAll");
+        }
+
+        private void SrvPeerSyncTest_Click(object sender, RoutedEventArgs e)
+        {
+            SendAosCmd("peerSyncTest");
+            if (SrvPeerSyncStatusText != null)
+                SrvPeerSyncStatusText.Text = ClientUiStrings.T("PeerSyncTest");
+        }
+
+        private void ApplyPeerStatusSync(string text)
+        {
+            var rows = PeerDashboardWire.Parse(text);
+            if (SrvPeerSyncPeersList != null)
+                SrvPeerSyncPeersList.ItemsSource = rows;
+            if (SrvPeerSyncPeersEmptyHint != null)
+            {
+                SrvPeerSyncPeersEmptyHint.Text = ClientUiStrings.T("PeerSyncPeersEmpty");
+                SrvPeerSyncPeersEmptyHint.Visibility = (rows == null || rows.Count == 0)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
         }
 
 

@@ -185,7 +185,7 @@ namespace KaiAosRenew
         public const string TransferredBin =
             @"C:\ProgramData\BMW\ISPI\data\KAI\KeyUploader\Transferred\keyreader.bin";
 
-        private const int MaxEvents = 100;
+        private const int MaxEvents = 500;
         private const int MaxVinHistory = 10;
         private const int MaxBinHints = 50;
         private const int LogTailBytes = 512 * 1024;
@@ -581,6 +581,119 @@ namespace KaiAosRenew
                 UpdateRecentVinCacheUnlocked();
                 return snap;
             }
+        }
+
+        /// <summary>
+        /// Search persisted history (key-events.xml) plus archived key-bins filenames for older VINs.
+        /// Case-insensitive match on VIN, paint, upholstery, I-level, km, reader id and detail text.
+        /// Newest first; capped at <paramref name="maxResults"/> (default 100 when &lt;= 0).
+        /// </summary>
+        public List<KeyActivityEvent> SearchHistory(string query, int maxResults)
+        {
+            var results = new List<KeyActivityEvent>();
+            var q = (query ?? "").Trim();
+            if (q.Length == 0) return results;
+            if (maxResults <= 0) maxResults = 100;
+
+            var matched = new List<KeyActivityEvent>();
+            // VINs already present in history; archived bins only add VINs not seen there.
+            var seenVins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            lock (_gate)
+            {
+                EnsureHistoryLoaded();
+                foreach (var ev in _persisted)
+                {
+                    if (ev == null) continue;
+                    if (!string.IsNullOrEmpty(ev.Vin)) seenVins.Add(ev.Vin);
+                    if (!EventMatchesQuery(ev, q)) continue;
+                    var clone = CloneEvent(ev);
+                    try { TryAssignDebugBinPath(clone); }
+                    catch { }
+                    matched.Add(clone);
+                }
+            }
+            matched.Sort((a, b) => b.DetectedLocal.CompareTo(a.DetectedLocal));
+
+            foreach (var ev in matched)
+            {
+                if (results.Count >= maxResults) break;
+                results.Add(ev);
+            }
+
+            if (results.Count < maxResults)
+            {
+                try
+                {
+                    var bins = Path.Combine(KeyDebugStoreDir, "key-bins");
+                    if (Directory.Exists(bins))
+                    {
+                        var files = Directory.GetFiles(bins, "*.bin");
+                        Array.Sort(files, (a, b) => File.GetLastWriteTime(b).CompareTo(File.GetLastWriteTime(a)));
+                        foreach (var f in files)
+                        {
+                            if (results.Count >= maxResults) break;
+                            var name = Path.GetFileNameWithoutExtension(f) ?? "";
+                            var us = name.LastIndexOf('_');
+                            var vin = (us >= 0 ? name.Substring(us + 1) : name).Trim().ToUpperInvariant();
+                            if (vin.Length != 17) continue;
+                            if (name.IndexOf(q, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                            if (!seenVins.Add(vin)) continue;
+                            var ev = new KeyActivityEvent
+                            {
+                                Vin = vin,
+                                DetectedLocal = File.GetLastWriteTime(f),
+                                ReaderId = "",
+                                Detail = "Archived key bin",
+                                Status = KeyEventStatus.Unknown,
+                                DebugBinPath = f
+                            };
+                            KeyBinFields fields;
+                            if (TryParseKeyReaderBin(f, out fields) && fields != null)
+                            {
+                                ev.Paint = fields.Paint;
+                                ev.Upholstery = fields.Upholstery;
+                                ev.ILevelCurrent = fields.ILevelCurrent;
+                                ev.ILevelBackup = fields.ILevelBackup;
+                                ev.ILevelPlant = fields.ILevelPlant;
+                                ev.MileageKm = fields.MileageKm;
+                            }
+                            results.Add(ev);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            results.Sort((a, b) => b.DetectedLocal.CompareTo(a.DetectedLocal));
+            if (results.Count > maxResults)
+                results = results.GetRange(0, maxResults);
+            return results;
+        }
+
+        private static bool EventMatchesQuery(KeyActivityEvent ev, string q)
+        {
+            if (ev == null || string.IsNullOrEmpty(q)) return false;
+            if (ContainsText(ev.Vin, q)
+                || ContainsText(ev.Paint, q)
+                || ContainsText(ev.Upholstery, q)
+                || ContainsText(ev.ILevelCurrent, q)
+                || ContainsText(ev.ReaderId, q)
+                || ContainsText(ev.Detail, q)
+                || ContainsText(ev.DetailText, q))
+                return true;
+            if (ev.MileageKm.HasValue && ev.MileageKm.Value > 0)
+            {
+                if (ContainsText(ev.MileageKm.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), q)
+                    || ContainsText(ev.KmText, q))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool ContainsText(string hay, string needle)
+        {
+            return !string.IsNullOrEmpty(hay)
+                && hay.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void EnsureHistoryLoaded()

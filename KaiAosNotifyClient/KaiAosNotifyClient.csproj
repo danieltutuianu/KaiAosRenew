@@ -137,6 +137,12 @@
     <Compile Include="..\Shared\ActivityRegisterLogic.cs">
       <Link>Shared\ActivityRegisterLogic.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\PeerSyncCrypto.cs">
+      <Link>Shared\PeerSyncCrypto.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\PeerSyncLogic.cs">
+      <Link>Shared\PeerSyncLogic.cs</Link>
+    </Compile>
     <Compile Include="..\ChromiumCrypto.cs">
       <Link>ChromiumCrypto.cs</Link>
     </Compile>

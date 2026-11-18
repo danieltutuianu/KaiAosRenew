@@ -732,6 +732,7 @@ namespace KaiAosNotifyClient
             if (SrvKeysGroup != null) SrvKeysGroup.Header = ClientUiStrings.T("SettingsKeys");
             if (SrvAuthGroup != null) SrvAuthGroup.Header = ClientUiStrings.T("SettingsAuth");
             if (SrvNotifyGroup != null) SrvNotifyGroup.Header = ClientUiStrings.T("SettingsNotifyGroup");
+            if (SrvPeerSyncGroup != null) SrvPeerSyncGroup.Header = ClientUiStrings.T("SettingsPeerSyncGroup");
             if (SrvPathsGroup != null) SrvPathsGroup.Header = ClientUiStrings.T("SettingsPaths");
             if (SrvLanguageLabel != null) SrvLanguageLabel.Text = ClientUiStrings.T("Language");
             if (SrvThemeLabel != null) SrvThemeLabel.Text = ClientUiStrings.T("Theme");
@@ -757,6 +758,56 @@ namespace KaiAosNotifyClient
             if (SrvNotifyEnabledCheck != null) SrvNotifyEnabledCheck.Content = ClientUiStrings.T("NotifyServerEnable");
             if (SrvNotifyPortLabel != null) SrvNotifyPortLabel.Text = ClientUiStrings.T("NotifyServerPort");
             if (SrvNotifyIpLabel != null) SrvNotifyIpLabel.Text = ClientUiStrings.T("NotifyServerIpLabel");
+            if (SrvPeerSyncEnableCheck != null) SrvPeerSyncEnableCheck.Content = ClientUiStrings.T("PeerSyncEnable");
+            if (SrvPeerSyncUrlLabel != null) SrvPeerSyncUrlLabel.Text = ClientUiStrings.T("PeerSyncUrl");
+            if (SrvPeerSyncSecretLabel != null)
+            {
+                SrvPeerSyncSecretLabel.Text = ClientUiStrings.T("PeerSyncSecret");
+                SrvPeerSyncSecretLabel.ToolTip = ClientUiStrings.T("PeerSyncSecretTip");
+            }
+            if (SrvPeerSyncSecretBox != null)
+                SrvPeerSyncSecretBox.ToolTip = ClientUiStrings.T("PeerSyncSecretTip");
+            if (SrvPeerSyncGenerateBtn != null)
+            {
+                SrvPeerSyncGenerateBtn.Content = ClientUiStrings.T("PeerSyncGenerate");
+                SrvPeerSyncGenerateBtn.ToolTip = ClientUiStrings.T("PeerSyncGenerateTip");
+            }
+            if (SrvPeerSyncCopyBtn != null)
+                SrvPeerSyncCopyBtn.ToolTip = ClientUiStrings.T("PeerSyncCopyTip");
+            if (SrvPeerSyncServerNameLabel != null)
+                SrvPeerSyncServerNameLabel.Text = ClientUiStrings.T("PeerSyncServerName");
+            if (SrvPeerSyncPollLabel != null)
+            {
+                SrvPeerSyncPollLabel.Text = ClientUiStrings.T("PeerSyncPollMinutes");
+                SrvPeerSyncPollLabel.ToolTip = ClientUiStrings.T("PeerSyncPollTip");
+            }
+            if (SrvPeerSyncPollBox != null)
+                SrvPeerSyncPollBox.ToolTip = ClientUiStrings.T("PeerSyncPollTip");
+            if (SrvPeerSyncNowBtn != null) SrvPeerSyncNowBtn.Content = ClientUiStrings.T("PeerSyncNow");
+            if (SrvPeerSyncPushBtn != null)
+            {
+                SrvPeerSyncPushBtn.Content = ClientUiStrings.T("PeerSyncPush");
+                SrvPeerSyncPushBtn.ToolTip = ClientUiStrings.T("PeerSyncPushTip");
+            }
+            if (SrvPeerSyncUpdateAllBtn != null)
+            {
+                SrvPeerSyncUpdateAllBtn.Content = ClientUiStrings.T("PeerSyncUpdateAll");
+                SrvPeerSyncUpdateAllBtn.ToolTip = ClientUiStrings.T("PeerSyncUpdateAllTip");
+            }
+            if (SrvPeerSyncTestBtn != null) SrvPeerSyncTestBtn.Content = ClientUiStrings.T("PeerSyncTest");
+            if (SrvPeerSyncPeersLabel != null) SrvPeerSyncPeersLabel.Text = ClientUiStrings.T("PeerSyncPeers");
+            if (SrvPeerSyncColServer != null) SrvPeerSyncColServer.Header = ClientUiStrings.T("PeerSyncColServer");
+            if (SrvPeerSyncColHealth != null) SrvPeerSyncColHealth.Header = ClientUiStrings.T("PeerSyncColHealth");
+            if (SrvPeerSyncColToken != null) SrvPeerSyncColToken.Header = ClientUiStrings.T("PeerSyncColToken");
+            if (SrvPeerSyncColVersion != null) SrvPeerSyncColVersion.Header = ClientUiStrings.T("PeerSyncColVersion");
+            if (SrvPeerSyncColClients != null) SrvPeerSyncColClients.Header = ClientUiStrings.T("PeerSyncColClients");
+            if (SrvPeerSyncColSeen != null) SrvPeerSyncColSeen.Header = ClientUiStrings.T("PeerSyncColSeen");
+            if (SrvPeerSyncPeersEmptyHint != null)
+            {
+                SrvPeerSyncPeersEmptyHint.Text = ClientUiStrings.T("PeerSyncPeersEmpty");
+                if (SrvPeerSyncPeersList != null && SrvPeerSyncPeersList.ItemsSource == null)
+                    SrvPeerSyncPeersEmptyHint.Visibility = Visibility.Visible;
+            }
             if (SrvPathsKaiConfig != null) SrvPathsKaiConfig.Text = ClientUiStrings.T("SectionConfig");
             if (SrvConfigPathLabel != null) SrvConfigPathLabel.Text = ClientUiStrings.T("ConfigPath");
             if (SrvPathsKeyReader != null) SrvPathsKeyReader.Text = ClientUiStrings.T("SettingsKeyReader");
@@ -878,6 +929,17 @@ namespace KaiAosNotifyClient
                 {
                     SrvNotifyIpBox.Text = KvStr(map, "notifyIps", "");
                     SizeTextBoxToContent(SrvNotifyIpBox);
+                }
+                if (SrvPeerSyncEnableCheck != null) SrvPeerSyncEnableCheck.IsChecked = KvFlag(map, "peerSyncEnabled", false);
+                if (SrvPeerSyncUrlBox != null) SrvPeerSyncUrlBox.Text = KvStr(map, "peerSyncUrl", "");
+                if (SrvPeerSyncSecretBox != null) SrvPeerSyncSecretBox.Text = KvStr(map, "peerSyncSecret", "");
+                if (SrvPeerSyncServerNameBox != null) SrvPeerSyncServerNameBox.Text = KvStr(map, "peerSyncServerName", "");
+                if (SrvPeerSyncPollBox != null) SrvPeerSyncPollBox.Text = KvStr(map, "peerSyncPollMinutes", "60");
+                if (SrvPeerSyncStatusText != null)
+                {
+                    SrvPeerSyncStatusText.Text = KvFlag(map, "peerSyncEnabled", false)
+                        ? ClientUiStrings.T("PeerSyncStatusIdle")
+                        : ClientUiStrings.T("PeerSyncStatusDisabled");
                 }
                 if (SrvConfigPathBox != null) SrvConfigPathBox.Text = KvStr(map, "configPath", "");
                 if (SrvDataBinBox != null) SrvDataBinBox.Text = KvStr(map, "keyReaderDataBin", "");

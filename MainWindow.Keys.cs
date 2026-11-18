@@ -294,7 +294,7 @@ namespace KaiAosRenew
             await RetryBmwUploadAsync(ev, false);
         }
 
-        private async void RetryBmwUploadAfter403(string vin, string readerId)
+        private async Task RetryBmwUploadAfter403Async(string vin, string readerId)
         {
             KeyActivityEvent ev = null;
             foreach (var e in _keysAllEvents ?? new List<KeyActivityEvent>())
@@ -420,10 +420,107 @@ namespace KaiAosRenew
             ApplyKeysFilter();
         }
 
+        private const int KeysSearchHistoryMax = 200;
+
         private void KeysSearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            _keysSearchText = KeysSearchBox != null ? (KeysSearchBox.Text ?? "").Trim() : "";
+            if (KeysSearchClearBtn != null)
+            {
+                var has = KeysSearchBox != null && !string.IsNullOrEmpty(KeysSearchBox.Text);
+                KeysSearchClearBtn.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (_loadingUi) return;
+            EnsureKeysSearchDebounceTimer();
+            _keysSearchDebounceTimer.Stop();
+            _keysSearchDebounceTimer.Start();
+        }
+
+        private void KeysSearchClear_Click(object sender, RoutedEventArgs e)
+        {
+            if (_keysSearchDebounceTimer != null)
+                _keysSearchDebounceTimer.Stop();
+            _keysSearchText = "";
+            _keysSearchHistory = new List<KeyActivityEvent>();
+            if (KeysSearchBox != null)
+                KeysSearchBox.Text = "";
             ApplyKeysFilter();
+            if (KeysSearchBox != null)
+                KeysSearchBox.Focus();
+        }
+
+        private void EnsureKeysSearchDebounceTimer()
+        {
+            if (_keysSearchDebounceTimer != null) return;
+            _keysSearchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _keysSearchDebounceTimer.Tick += delegate
+            {
+                _keysSearchDebounceTimer.Stop();
+                ApplyKeysSearchFromBox();
+            };
+        }
+
+        private void ApplyKeysSearchFromBox()
+        {
+            var query = KeysSearchBox != null ? (KeysSearchBox.Text ?? "").Trim() : "";
+            _keysSearchText = query;
+            if (query.Length == 0)
+            {
+                _keysSearchHistory = new List<KeyActivityEvent>();
+                ApplyKeysFilter();
+                return;
+            }
+            // Show in-memory matches immediately, then merge older history when the lookup returns.
+            ApplyKeysFilter();
+            var monitor = _keyMonitor;
+            if (monitor == null) return;
+            Task.Run(delegate
+            {
+                List<KeyActivityEvent> found = null;
+                try { found = monitor.SearchHistory(query, KeysSearchHistoryMax); }
+                catch { }
+                if (found == null) return;
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(delegate
+                    {
+                        // Ignore stale results if the user kept typing.
+                        if (!string.Equals(_keysSearchText, query, StringComparison.Ordinal)) return;
+                        _keysSearchHistory = FilterAfterKeysClear(found);
+                        ApplyKeysFilter();
+                    }), DispatcherPriority.Background);
+                }
+                catch { }
+            });
+        }
+
+        private static bool SameKeyIdentity(KeyActivityEvent a, KeyActivityEvent b)
+        {
+            if (a == null || b == null) return false;
+            if (!string.IsNullOrEmpty(a.FileId) && string.Equals(a.FileId, b.FileId, StringComparison.Ordinal))
+                return true;
+            if (string.IsNullOrEmpty(a.Vin) || !string.Equals(a.Vin, b.Vin, StringComparison.OrdinalIgnoreCase))
+                return false;
+            return Math.Abs((a.DetectedLocal - b.DetectedLocal).TotalMinutes) <= 3;
+        }
+
+        /// <summary>Append history hits that are not already in <paramref name="baseRows"/>.</summary>
+        private static List<KeyActivityEvent> MergeKeysSearchHistory(
+            List<KeyActivityEvent> baseRows, IList<KeyActivityEvent> history)
+        {
+            var merged = new List<KeyActivityEvent>(baseRows ?? new List<KeyActivityEvent>());
+            if (history == null || history.Count == 0) return merged;
+            var baseCount = merged.Count;
+            foreach (var h in history)
+            {
+                if (h == null || string.IsNullOrWhiteSpace(h.Vin)) continue;
+                var dup = false;
+                for (var i = 0; i < baseCount; i++)
+                {
+                    if (SameKeyIdentity(merged[i], h)) { dup = true; break; }
+                }
+                if (!dup) merged.Add(h);
+            }
+            return merged;
         }
 
         private void KeysOptions_Changed(object sender, RoutedEventArgs e)
@@ -1135,6 +1232,8 @@ namespace KaiAosRenew
             _uiOp = "ApplyKeysFilter";
             // Hide orphan "Picked up" rows with no Local/BMW outcome (Status Unknown).
             IEnumerable<KeyActivityEvent> src = FilterMeaningful(_keysAllEvents);
+            if (!string.IsNullOrEmpty(_keysSearchText) && _keysSearchHistory != null && _keysSearchHistory.Count > 0)
+                src = MergeKeysSearchHistory(src as List<KeyActivityEvent>, _keysSearchHistory);
             switch (_keysFilter)
             {
                 case "today":

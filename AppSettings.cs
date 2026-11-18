@@ -82,6 +82,28 @@ namespace KaiAosRenew
         public int NotifyServerPort { get; set; }
         /// <summary>Optional LAN pairing code (empty = no auth). Stored as plain text in settings.xml.</summary>
         public string NotifyPairingCode { get; set; }
+        /// <summary>Sync AOS credentials with peer servers via Google Apps Script relay.</summary>
+        public bool PeerSyncEnabled { get; set; }
+        /// <summary>Google Apps Script Web App URL (.../exec).</summary>
+        public string PeerSyncUrl { get; set; }
+        /// <summary>Shared peer sync secret (DPAPI-protected).</summary>
+        public string PeerSyncSecretProtectedBase64 { get; set; }
+        /// <summary>Stable GUID for this server instance (peer origin/ack targeting).</summary>
+        public string PeerSyncServerId { get; set; }
+        /// <summary>Human-readable name shown in peer Activity / ACK messages.</summary>
+        public string PeerSyncServerName { get; set; }
+        /// <summary>Peer relay poll interval in minutes (1–1440), default 60.</summary>
+        public int PeerSyncPollMinutes { get; set; }
+        /// <summary>Last processed peer credential seq from relay.</summary>
+        public long PeerSyncLastSeq { get; set; }
+        /// <summary>Last processed peer credential eventId.</summary>
+        public string PeerSyncLastEventId { get; set; }
+        /// <summary>Last processed peer ACK seq from relay.</summary>
+        public long PeerSyncLastAckSeq { get; set; }
+        /// <summary>Last processed peer command seq from relay.</summary>
+        public long PeerSyncLastCmdSeq { get; set; }
+        /// <summary>Last processed peer command id (dedupe).</summary>
+        public string PeerSyncLastCmdId { get; set; }
         /// <summary>Force Update UI / debug banner until explicitly turned off.</summary>
         public bool DebugMode { get; set; }
         /// <summary>User pressed Stop timer; suppresses auto-start until Start timer.</summary>
@@ -118,6 +140,17 @@ namespace KaiAosRenew
             NotifyServerEnabled = false;
             NotifyServerPort = 17890;
             NotifyPairingCode = "";
+            PeerSyncEnabled = false;
+            PeerSyncUrl = "";
+            PeerSyncSecretProtectedBase64 = null;
+            PeerSyncServerId = "";
+            PeerSyncServerName = "";
+            PeerSyncPollMinutes = 60;
+            PeerSyncLastSeq = 0;
+            PeerSyncLastEventId = "";
+            PeerSyncLastAckSeq = 0;
+            PeerSyncLastCmdSeq = 0;
+            PeerSyncLastCmdId = "";
         }
 
         private static string StoreDir
@@ -163,6 +196,38 @@ namespace KaiAosRenew
             PasswordProtectedBase64 = Convert.ToBase64String(protectedBytes);
         }
 
+        public string GetPeerSyncSecret()
+        {
+            if (string.IsNullOrEmpty(PeerSyncSecretProtectedBase64))
+                return string.Empty;
+            var protectedBytes = Convert.FromBase64String(PeerSyncSecretProtectedBase64);
+            var plain = ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser);
+            return Encoding.UTF8.GetString(plain);
+        }
+
+        public void SetPeerSyncSecret(string secret)
+        {
+            if (string.IsNullOrEmpty(secret))
+            {
+                PeerSyncSecretProtectedBase64 = null;
+                return;
+            }
+            var plain = Encoding.UTF8.GetBytes(secret);
+            var protectedBytes = ProtectedData.Protect(plain, null, DataProtectionScope.CurrentUser);
+            PeerSyncSecretProtectedBase64 = Convert.ToBase64String(protectedBytes);
+        }
+
+        public void EnsurePeerSyncServerId()
+        {
+            Guid parsed;
+            if (!string.IsNullOrWhiteSpace(PeerSyncServerId) && Guid.TryParse(PeerSyncServerId.Trim(), out parsed))
+            {
+                PeerSyncServerId = parsed.ToString("D");
+                return;
+            }
+            PeerSyncServerId = Guid.NewGuid().ToString("D");
+        }
+
         public void NormalizeClamps()
         {
             if (PasswordRotateRemindHours < 1) PasswordRotateRemindHours = 1;
@@ -182,6 +247,26 @@ namespace KaiAosRenew
                 NotifyServerPort = 17890;
             if (NotifyPairingCode == null) NotifyPairingCode = "";
             NotifyPairingCode = NotifyPairingCode.Trim();
+            if (PeerSyncUrl == null) PeerSyncUrl = "";
+            PeerSyncUrl = PeerSyncUrl.Trim();
+            if (PeerSyncServerId == null) PeerSyncServerId = "";
+            PeerSyncServerId = PeerSyncServerId.Trim();
+            if (PeerSyncServerName == null) PeerSyncServerName = "";
+            PeerSyncServerName = PeerSyncServerName.Trim();
+            if (string.IsNullOrWhiteSpace(PeerSyncServerName))
+            {
+                try { PeerSyncServerName = Environment.MachineName; }
+                catch { PeerSyncServerName = "Server"; }
+            }
+            // 0 = missing from older settings.xml → default 1 hour.
+            if (PeerSyncPollMinutes < 1) PeerSyncPollMinutes = 60;
+            if (PeerSyncPollMinutes > 1440) PeerSyncPollMinutes = 1440;
+            if (PeerSyncLastSeq < 0) PeerSyncLastSeq = 0;
+            if (PeerSyncLastAckSeq < 0) PeerSyncLastAckSeq = 0;
+            if (PeerSyncLastCmdSeq < 0) PeerSyncLastCmdSeq = 0;
+            if (PeerSyncLastEventId == null) PeerSyncLastEventId = "";
+            if (PeerSyncLastCmdId == null) PeerSyncLastCmdId = "";
+            EnsurePeerSyncServerId();
             if (string.IsNullOrWhiteSpace(KeysPickupFolder))
                 KeysPickupFolder = @"C:\Users\Public\keyreader";
             if (string.IsNullOrWhiteSpace(KeysUploaderLogDir))
@@ -370,6 +455,11 @@ namespace KaiAosRenew
             portable.NotifyServerEnabled = NotifyServerEnabled;
             portable.NotifyServerPort = NotifyServerPort;
             portable.NotifyPairingCode = NotifyPairingCode;
+            portable.PeerSyncEnabled = PeerSyncEnabled;
+            portable.PeerSyncUrl = PeerSyncUrl;
+            portable.PeerSyncServerName = PeerSyncServerName;
+            portable.PeerSyncPollMinutes = PeerSyncPollMinutes;
+            // Secret stays DPAPI-local (same as AOS password) — not in portable export.
             var ser = new XmlSerializer(typeof(AppSettings));
             using (var sw = new StringWriter())
             {
@@ -440,6 +530,13 @@ namespace KaiAosRenew
                 NotifyServerPort = imported.NotifyServerPort;
             if (imported.NotifyPairingCode != null)
                 NotifyPairingCode = imported.NotifyPairingCode.Trim();
+            PeerSyncEnabled = imported.PeerSyncEnabled;
+            if (imported.PeerSyncUrl != null)
+                PeerSyncUrl = imported.PeerSyncUrl.Trim();
+            if (!string.IsNullOrWhiteSpace(imported.PeerSyncServerName))
+                PeerSyncServerName = imported.PeerSyncServerName.Trim();
+            if (imported.PeerSyncPollMinutes >= 1 && imported.PeerSyncPollMinutes <= 1440)
+                PeerSyncPollMinutes = imported.PeerSyncPollMinutes;
             NormalizeClamps();
         }
     }

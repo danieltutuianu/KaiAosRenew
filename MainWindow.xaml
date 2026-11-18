@@ -86,6 +86,10 @@
                      Style="{DynamicResource KaiTextBox}"
                      ToolTip="VIN / paint / I-level"
                      TextChanged="KeysSearchBox_TextChanged" />
+            <Button x:Name="KeysSearchClearBtn" Content="✕" Style="{DynamicResource BeigeButton}"
+                    Click="KeysSearchClear_Click" MinWidth="28" Padding="8,4,8,4" Margin="6,0,0,0"
+                    HorizontalContentAlignment="Center" Visibility="Collapsed"
+                    ToolTip="Clear search" />
           </StackPanel>
 
           <StackPanel Grid.Row="1" Margin="0,0,0,8">
@@ -1026,6 +1030,121 @@
                           ToolTip="Add inbound TCP/UDP firewall rules for the notify port (UAC)"
                           Tag="{DynamicResource IconFix}" />
                 </StackPanel>
+              </StackPanel>
+            </GroupBox>
+
+            <GroupBox x:Name="SettingsPeerSyncGroup" Header="Peer sync (multi-site)" Style="{DynamicResource KaiGroupBox}">
+              <StackPanel>
+                <CheckBox x:Name="PeerSyncEnableCheck" Content="Enable peer sync (Google Apps Script)"
+                          Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
+                          Checked="PeerSync_Changed" Unchecked="PeerSync_Changed"
+                          ToolTip="Sync AOS email/password with other KaiAosRenew servers via Google Apps Script" />
+                <StackPanel Grid.IsSharedSizeScope="True">
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PeerSyncUrlLabel" Text="Web App URL:" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <TextBox x:Name="PeerSyncUrlBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
+                             LostFocus="PeerSyncField_LostFocus"
+                             ToolTip="Google Apps Script Web App URL ending with /exec" />
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PeerSyncSecretLabel" Text="Shared secret:" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0"
+                               ToolTip="Same secret on every server. Used for AES encryption and relay auth." />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                      <TextBox x:Name="PeerSyncSecretBox" Width="220" HorizontalAlignment="Left"
+                               Style="{DynamicResource KaiTextBox}"
+                               LostFocus="PeerSyncField_LostFocus"
+                               ToolTip="Same secret on every server. Used for AES encryption and relay auth." />
+                      <Button x:Name="PeerSyncGenerateBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="80" Padding="8,2" VerticalAlignment="Center"
+                              Content="Generate"
+                              Click="PeerSyncGenerate_Click"
+                              ToolTip="Generate a new shared secret" />
+                      <Button x:Name="PeerSyncCopyBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                              Content=""
+                              Click="PeerSyncCopy_Click"
+                              ToolTip="Copy shared secret"
+                              Tag="{DynamicResource IconCopy}" />
+                    </StackPanel>
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PeerSyncServerNameLabel" Text="This server name:" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <TextBox x:Name="PeerSyncServerNameBox" Grid.Column="1" Width="220" HorizontalAlignment="Left"
+                             Style="{DynamicResource KaiTextBox}"
+                             LostFocus="PeerSyncField_LostFocus" />
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PeerSyncPollLabel" Text="Poll interval (minutes):" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0"
+                               ToolTip="How often to check the relay for credential updates (default 60 = 1 hour)." />
+                    <TextBox x:Name="PeerSyncPollBox" Grid.Column="1" Width="80" HorizontalAlignment="Left"
+                             Style="{DynamicResource KaiTextBox}" Text="60"
+                             PreviewTextInput="IntervalBox_PreviewTextInput"
+                             LostFocus="PeerSyncField_LostFocus"
+                             ToolTip="How often to check the relay for credential updates (default 60 = 1 hour)." />
+                  </Grid>
+                </StackPanel>
+                <WrapPanel Margin="0,4,0,4">
+                  <Button x:Name="PeerSyncNowBtn" Content="Sync now" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" Click="PeerSyncNow_Click"
+                          ToolTip="Poll the relay immediately" Tag="{DynamicResource IconRefresh}" />
+                  <Button x:Name="PeerSyncPushBtn" Content="Push now" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" Click="PeerSyncPush_Click"
+                          ToolTip="Publish current AOS credentials without changing the password"
+                          Tag="{DynamicResource IconUpdate}" />
+                  <Button x:Name="PeerSyncUpdateAllBtn" Content="Update all peers" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" Click="PeerSyncUpdateAll_Click"
+                          ToolTip="Tell other sites to install the latest server update"
+                          Tag="{DynamicResource IconUpdate}" />
+                  <Button x:Name="PeerSyncTestBtn" Content="Test connection" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" Click="PeerSyncTest_Click"
+                          ToolTip="Ping the Google Apps Script relay" Tag="{DynamicResource IconInfo}" />
+                </WrapPanel>
+                <TextBlock x:Name="PeerSyncStatusText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
+                           Foreground="{DynamicResource TextMutedBrush}" Text="" />
+                <TextBlock x:Name="PeerSyncPeersLabel" Text="Peer servers:" Style="{DynamicResource SectionText}"
+                           Margin="0,8,0,6" />
+                <ListView x:Name="PeerSyncPeersList" Height="120" Margin="0,0,0,4">
+                  <ListView.View>
+                    <GridView>
+                      <GridViewColumn x:Name="PeerSyncColServer" Header="Server" Width="120"
+                                      DisplayMemberBinding="{Binding ServerName}" />
+                      <GridViewColumn x:Name="PeerSyncColHealth" Header="Status" Width="70"
+                                      DisplayMemberBinding="{Binding Health}" />
+                      <GridViewColumn x:Name="PeerSyncColToken" Header="Token" Width="70"
+                                      DisplayMemberBinding="{Binding TokenStatus}" />
+                      <GridViewColumn x:Name="PeerSyncColVersion" Header="Version" Width="70"
+                                      DisplayMemberBinding="{Binding AppVersion}" />
+                      <GridViewColumn x:Name="PeerSyncColClients" Header="Clients" Width="55"
+                                      DisplayMemberBinding="{Binding ClientCount}" />
+                      <GridViewColumn x:Name="PeerSyncColSeen" Header="Last seen" Width="120"
+                                      DisplayMemberBinding="{Binding LastSeen}" />
+                    </GridView>
+                  </ListView.View>
+                </ListView>
+                <TextBlock x:Name="PeerSyncPeersEmptyHint" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{DynamicResource TextMutedBrush}" Text="" Visibility="Collapsed" />
               </StackPanel>
             </GroupBox>
 

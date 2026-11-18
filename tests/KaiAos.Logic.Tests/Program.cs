@@ -20,6 +20,7 @@ namespace KaiAos.Logic.Tests
             Run("MatchesLogSearch", TestSearch);
             Run("TryParseExportDay", TestExportDay);
             Run("FilterRegisterHistory", TestFilterRegisterHistory);
+            Run("PeerSync decisions", TestPeerSyncLogic);
 
             Console.WriteLine();
             if (_failed == 0)
@@ -183,6 +184,84 @@ namespace KaiAos.Logic.Tests
 
             var unknown = ActivityRegisterLogic.FilterRegisterHistory(rows, "nope", "");
             AssertEqual(0, unknown.Count, "unknown empty");
+        }
+
+        private static void TestPeerSyncLogic()
+        {
+            AssertTrue(PeerSyncLogic.ShouldIgnoreOwnEvent("abc", "ABC"), "own event ignore");
+            AssertTrue(!PeerSyncLogic.ShouldIgnoreOwnEvent("abc", "xyz"), "foreign event");
+
+            AssertTrue(PeerSyncLogic.IsNewerSeq(5, 4), "newer seq");
+            AssertTrue(!PeerSyncLogic.IsNewerSeq(4, 4), "same seq");
+            AssertTrue(PeerSyncLogic.IsDuplicateEvent("e1", "e1"), "dup event");
+            AssertTrue(!PeerSyncLogic.IsDuplicateEvent("e1", "e2"), "diff event");
+
+            AssertTrue(PeerSyncLogic.ShouldCommitCredentials(true, true, false, false), "commit ok");
+            AssertTrue(!PeerSyncLogic.ShouldCommitCredentials(true, true, true, false), "auth rejected");
+            AssertTrue(!PeerSyncLogic.ShouldCommitCredentials(true, false, false, true), "skipped");
+            AssertTrue(!PeerSyncLogic.ShouldCommitCredentials(false, true, false, false), "fail");
+            AssertTrue(PeerSyncLogic.ShouldPublishAfterLocalRegister(true, true, false, false), "publish");
+
+            AssertTrue(PeerSyncLogic.CredentialsDiffer("a@b.c", "1", "a@b.c", "2"), "pass change");
+            AssertTrue(!PeerSyncLogic.CredentialsDiffer("A@B.C", "x", "a@b.c", "x"), "same creds");
+
+            AssertEqual(1, PeerSyncLogic.ClampPollMinutes(0), "poll min");
+            AssertEqual(1440, PeerSyncLogic.ClampPollMinutes(9999), "poll max");
+            AssertEqual(60, PeerSyncLogic.ClampPollMinutes(60), "poll 60");
+
+            var ev = new PeerCredsEvent
+            {
+                Seq = 3,
+                EventId = "evt1",
+                OriginServerId = "peer-1",
+                PayloadEnc = "blob"
+            };
+            AssertTrue(PeerSyncLogic.ShouldProcessInboundCreds(ev, "local-1", 2, "old"), "inbound process");
+            AssertTrue(!PeerSyncLogic.ShouldProcessInboundCreds(ev, "peer-1", 2, "old"), "skip own");
+            AssertTrue(!PeerSyncLogic.ShouldProcessInboundCreds(ev, "local-1", 3, "old"), "skip old seq");
+            AssertTrue(!PeerSyncLogic.ShouldProcessInboundCreds(ev, "local-1", 2, "evt1"), "skip dup");
+
+            var ack = new PeerAckEvent
+            {
+                AckSeq = 9,
+                TargetServerId = "local-1",
+                PayloadEnc = "blob"
+            };
+            AssertTrue(PeerSyncLogic.ShouldProcessInboundAck(ack, "local-1", 8), "ack process");
+            AssertTrue(!PeerSyncLogic.ShouldProcessInboundAck(ack, "other", 8), "ack wrong target");
+            AssertTrue(!PeerSyncLogic.ShouldProcessInboundAck(ack, "local-1", 9), "ack old");
+
+            var cmd = new PeerCommandEvent
+            {
+                CmdSeq = 4,
+                CmdId = "c1",
+                OriginServerId = "peer-1",
+                PayloadEnc = "blob"
+            };
+            AssertTrue(PeerSyncLogic.ShouldProcessInboundCommand(cmd, "local-1", 3, "old"), "cmd process");
+            AssertTrue(!PeerSyncLogic.ShouldProcessInboundCommand(cmd, "peer-1", 3, "old"), "cmd skip own");
+            AssertTrue(!PeerSyncLogic.ShouldProcessInboundCommand(cmd, "local-1", 4, "old"), "cmd skip old");
+            AssertTrue(!PeerSyncLogic.ShouldProcessInboundCommand(cmd, "local-1", 3, "c1"), "cmd skip dup");
+
+            var now = DateTime.UtcNow;
+            AssertEqual(PeerSyncLogic.HealthOnline,
+                PeerSyncLogic.ClassifyPeerHealth(now.ToString("o"), 60, now), "health online");
+            AssertEqual(PeerSyncLogic.HealthStale,
+                PeerSyncLogic.ClassifyPeerHealth(now.AddHours(-3).ToString("o"), 60, now), "health stale");
+            AssertEqual(PeerSyncLogic.HealthOffline,
+                PeerSyncLogic.ClassifyPeerHealth(now.AddDays(-2).ToString("o"), 60, now), "health offline");
+            AssertEqual(PeerSyncLogic.HealthOffline,
+                PeerSyncLogic.ClassifyPeerHealth("", 60, now), "health empty");
+
+            var wire = new List<PeerDashboardWire>
+            {
+                new PeerDashboardWire { ServerId = "a", ServerName = "Alpha", Health = "Online", TokenStatus = "OK" }
+            };
+            var enc = PeerDashboardWire.Encode(wire);
+            var parsed = PeerDashboardWire.Parse(enc);
+            AssertEqual(1, parsed.Count, "wire count");
+            AssertEqual("Alpha", parsed[0].ServerName, "wire name");
+            AssertEqual("Online", parsed[0].Health, "wire health");
         }
     }
 }

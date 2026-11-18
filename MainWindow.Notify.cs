@@ -131,12 +131,17 @@ namespace KaiAosRenew
             }
             if (kind == "clientupdateallreq")
             {
-                var ignore = RequestUpdateAllClientsAsync(false, "client");
+                Forget(RequestUpdateAllClientsAsync(false, "client"), "RequestUpdateAllClients");
                 return;
             }
             if (kind == "updatefeed")
             {
-                var ignore = HandleInboundUpdateFeedAsync(msg.Text);
+                Forget(HandleInboundUpdateFeedAsync(msg.Text), "HandleInboundUpdateFeed");
+                return;
+            }
+            if (kind == "keysearchreq")
+            {
+                HandleKeySearchReq(clientId, msg.Text);
                 return;
             }
             if (kind == "aossyncreq")
@@ -147,6 +152,7 @@ namespace KaiAosRenew
             if (kind == "settingssyncreq")
             {
                 SendServerSettingsTo(clientId);
+                SendPeerStatusSyncTo(clientId);
                 return;
             }
             if (kind == "settingsexportreq")
@@ -176,7 +182,7 @@ namespace KaiAosRenew
             }
             if (kind == "updatefeedreq")
             {
-                var ignore = HandleUpdateFeedReqAsync(clientId);
+                Forget(HandleUpdateFeedReqAsync(clientId), "HandleUpdateFeedReq");
                 return;
             }
             if (kind == "clientupdating")
@@ -226,6 +232,44 @@ namespace KaiAosRenew
                 HandleRegisterExportReq(clientId, msg);
                 return;
             }
+        }
+
+        private const int KeySearchReplyMax = 200;
+
+        /// <summary>Client typed a Keys search: look through persisted history + key-bins and reply keySearchSync.</summary>
+        private void HandleKeySearchReq(int clientId, string query)
+        {
+            var q = (query ?? "").Trim();
+            if (q.Length == 0) return;
+            if (q.Length > 64) q = q.Substring(0, 64);
+            var monitor = _keyMonitor;
+            if (monitor == null) return;
+            Forget(Task.Run(() =>
+            {
+                List<KeyActivityEvent> found = null;
+                try { found = monitor.SearchHistory(q, KeySearchReplyMax); }
+                catch (Exception ex)
+                {
+                    try { RenewEngine.Log("Notify keySearch: " + ex.Message); }
+                    catch { }
+                }
+                try
+                {
+                    // Title echoes the query so the client can drop stale replies.
+                    NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                    {
+                        Kind = "keySearchSync",
+                        Level = "info",
+                        Title = q,
+                        Text = NotifyKeySync.EncodeKeySync(found ?? new List<KeyActivityEvent>()) ?? ""
+                    });
+                }
+                catch (Exception ex)
+                {
+                    try { RenewEngine.Log("Notify keySearch send: " + ex.Message); }
+                    catch { }
+                }
+            }), "keySearchReq");
         }
 
         private void HandleActivityHistoryReq(int clientId, NotifyMessage msg)
@@ -621,6 +665,8 @@ namespace KaiAosRenew
                 {
                     _loadingUi = false;
                 }
+                LoadPeerSyncToUi();
+                ApplyPeerSyncFromSettings(true);
                 AppendLog("Server settings imported from client " + clientId, LogLevel.Info);
                 SendAosAck(clientId, true, "settingsImport");
                 BroadcastServerSettings();
@@ -671,6 +717,20 @@ namespace KaiAosRenew
                     _settings.UseSystemProxy = MapFlag(map, "useSystemProxy", _settings.UseSystemProxy);
                     _settings.AuthCooldownMinutes = MapInt(map, "authCooldownMinutes", _settings.AuthCooldownMinutes, 5, 240);
                     _settings.AuthRegisterBlockAfter = MapInt(map, "authRegisterBlockAfter", GetAuthRegisterBlockAfter(), 1, 10);
+                    if (map.ContainsKey("peerSyncEnabled")
+                        || map.ContainsKey("peerSyncUrl")
+                        || map.ContainsKey("peerSyncSecret")
+                        || map.ContainsKey("peerSyncServerName")
+                        || map.ContainsKey("peerSyncPollMinutes"))
+                    {
+                        _settings.PeerSyncEnabled = MapFlag(map, "peerSyncEnabled", _settings.PeerSyncEnabled);
+                        _settings.PeerSyncUrl = MapStr(map, "peerSyncUrl", _settings.PeerSyncUrl ?? "");
+                        if (map.ContainsKey("peerSyncSecret"))
+                            _settings.SetPeerSyncSecret(MapStr(map, "peerSyncSecret", ""));
+                        _settings.PeerSyncServerName = MapStr(map, "peerSyncServerName", _settings.PeerSyncServerName ?? "");
+                        _settings.PeerSyncPollMinutes = MapInt(map, "peerSyncPollMinutes",
+                            PeerSyncLogic.ClampPollMinutes(_settings.PeerSyncPollMinutes), 1, 1440);
+                    }
                     _settings.NormalizeClamps();
                     _settings.Save();
 
@@ -692,6 +752,7 @@ namespace KaiAosRenew
                     if (UseSystemProxyCheck != null) UseSystemProxyCheck.IsChecked = _settings.UseSystemProxy;
                     if (AuthCooldownMinutesBox != null) AuthCooldownMinutesBox.Text = _settings.AuthCooldownMinutes.ToString();
                     if (AuthRegisterBlockAfterBox != null) AuthRegisterBlockAfterBox.Text = _settings.AuthRegisterBlockAfter.ToString();
+                    LoadPeerSyncToUi();
 
                     ApplyStartup(_settings.StartWithWindows);
                     ApplyKeysMonitorSettings();
@@ -699,6 +760,7 @@ namespace KaiAosRenew
                     ThemeManager.Apply(_settings.ThemeMode);
                     ApplyLanguage();
                     RefreshAuthCooldownBanner();
+                    ApplyPeerSyncFromSettings(true);
 
                     if (map.ContainsKey("keyReaderLogLevel"))
                     {
@@ -905,6 +967,7 @@ namespace KaiAosRenew
                 _clientsUpdating.Remove(idCopy);
                 RefreshNotifyClientsCombo();
                 BroadcastNotifyClientsList();
+                SchedulePeerHeartbeat();
             }));
         }
 
@@ -918,12 +981,14 @@ namespace KaiAosRenew
                 SendRegisterSyncTo(idCopy);
                 SendAosSyncTo(idCopy);
                 SendServerSettingsTo(idCopy);
+                SendPeerStatusSyncTo(idCopy);
                 SendKaiSyncTo(idCopy);
                 SendUpdateFeedTo(idCopy);
                 // Always push (including empty clear) so offline clients drop a stale banner.
                 BroadcastKeysReaderWarn(idCopy);
                 RefreshNotifyClientsCombo();
                 BroadcastNotifyClientsList();
+                SchedulePeerHeartbeat();
             }));
             try
             {

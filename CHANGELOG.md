@@ -4,6 +4,15 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.23] - 2026-11-18
+
+- Peer sync: multi-site AOS credential sync via Google Apps Script / Drive (encrypted AES+HMAC); Force Register verify + rollback; Settings + Server Settings UI; poll interval default 60 minutes
+- Peer sync: dashboard of peer servers (status/token/version/clients); Push now (publish without password change); Update all peers (coordinated Velopack self-update via relay command)
+- Keys: VIN history search — server key history raised to 500 rows; `SearchHistory` scans `key-events.xml` and archived `key-bins` filenames; search also matches Upholstery, Reader and Detail; 200 ms debounce + clear (✕) button on server and client
+- Client: Keys search sends `keySearchReq` to the server and merges `keySearchSync` results (older VINs) into the list without overwriting local history
+- Reliability: replaced `#pragma warning disable 4014` / unobserved fire-and-forget tasks with `Forget(...)` helper (faults logged as warnings)
+- CI: GitHub Actions workflow (`.github/workflows/ci.yml`) restores NuGet packages, runs `tests\run.bat`, and builds the Release x86 notify client
+
 ## [1.2.22] - 2026-11-18
 
 - Settings: “Update all clients” broadcasts `clientUpdate` (server + client Server Settings via `clientUpdateAllReq`); outdated clients silent-apply Velopack, already-current clients ignore

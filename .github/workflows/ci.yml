@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download nuget.exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tools | Out-Null
+          if (-not (Test-Path tools\nuget.exe)) {
+            Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile tools\nuget.exe
+          }
+
+      - name: NuGet restore (server + client packages.config)
+        shell: cmd
+        run: |
+          tools\nuget.exe restore packages.config -PackagesDirectory packages -NonInteractive
+          if errorlevel 1 exit /b 1
+          tools\nuget.exe restore KaiAosNotifyClient\packages.config -PackagesDirectory packages -NonInteractive
+          if errorlevel 1 exit /b 1
+
+      - name: Protocol + logic tests
+        shell: cmd
+        run: tests\run.bat
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      # Server build.bat is intentionally skipped: it needs BMW ISPI DLLs that are not in the repo.
+      - name: Build client (Release|x86)
+        shell: cmd
+        run: msbuild KaiAosNotifyClient\KaiAosNotifyClient.csproj /t:Rebuild /p:Configuration=Release /p:Platform=x86 /v:m /nologo

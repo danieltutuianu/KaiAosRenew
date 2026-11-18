@@ -299,6 +299,27 @@ namespace KaiAosRenew
                     SendAosAck(clientId, true, "retryBmw");
                     return;
                 }
+                if (c == "peersyncnow")
+                {
+                    Forget(BeginPeerSyncPollAsync(true), "PeerSyncNow");
+                    SendAosAck(clientId, true, "peerSyncNow");
+                    return;
+                }
+                if (c == "peersynctest")
+                {
+                    Forget(RunPeerSyncTestAsync(clientId), "PeerSyncTest");
+                    return;
+                }
+                if (c == "peersyncpush")
+                {
+                    Forget(PushPeerCredentialsNowAsync(clientId), "PeerSyncPush");
+                    return;
+                }
+                if (c == "peersyncupdateall")
+                {
+                    Forget(TriggerPeerUpdateAllAsync(clientId), "PeerSyncUpdateAll");
+                    return;
+                }
                 SendAosAck(clientId, false, "Unknown command");
             }
             catch (Exception ex)
@@ -1737,6 +1758,7 @@ namespace KaiAosRenew
                 }
                 if (startTimerOnSuccess && !_timerActive)
                     StartTimer(true, false);
+                MaybePublishPeerCredentialsAfterLocalRegister(result, settings != null ? settings.Email : null, password);
             }
             else
             {
@@ -1779,7 +1801,7 @@ namespace KaiAosRenew
             _pending403RetryReaderId = null;
             _registerStrikeNotedThisRun = false;
             if (!string.IsNullOrEmpty(retryVin))
-                Dispatcher.BeginInvoke(new Action(() => RetryBmwUploadAfter403(retryVin, retryReader)));
+                Forget(RetryBmwUploadAfter403Async(retryVin, retryReader), "RetryBmwUploadAfter403");
             RefreshPasswordHintBanners(false);
             RefreshStatusBadge();
             SetBusy(false);

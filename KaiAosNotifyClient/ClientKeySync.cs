@@ -9,6 +9,12 @@ namespace KaiAosNotifyClient
     {
         public static List<ClientKeyRow> ParseKeySync(string text)
         {
+            return ParseKeySync(text, ClientKeyHistory.MaxEvents);
+        }
+
+        public static List<ClientKeyRow> ParseKeySync(string text, int maxRows)
+        {
+            if (maxRows < 1) maxRows = ClientKeyHistory.MaxEvents;
             var list = new List<ClientKeyRow>();
             if (string.IsNullOrWhiteSpace(text)) return list;
             var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
@@ -18,7 +24,7 @@ namespace KaiAosNotifyClient
                 var row = ParseKeySyncLine(raw);
                 if (row != null && !string.IsNullOrEmpty(row.Vin))
                     list.Add(row);
-                if (list.Count >= ClientKeyHistory.MaxEvents) break;
+                if (list.Count >= maxRows) break;
             }
             return list;
         }
