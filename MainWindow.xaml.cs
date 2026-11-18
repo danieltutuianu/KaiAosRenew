@@ -879,7 +879,7 @@ namespace KaiAosRenew
         {
             if (_tray == null) return;
             var alert = _hasFailureAlert || _hintTrayIcon || _keysAlert || _renewAlert;
-            var outdated = _debugMode || _pendingUpdate != null;
+            var outdated = _pendingUpdate != null;
             if (alert)
             {
                 if (_errorIcon == null)
@@ -982,6 +982,7 @@ namespace KaiAosRenew
                 ShowForcedDebugUpdateUi();
             else
                 ShowPendingUpdate(_pendingUpdate);
+            RefreshTrayIcon();
         }
 
 

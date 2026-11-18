@@ -4,6 +4,11 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.20] - 2026-11-18
+
+- Keys: parse paint/upholstery for `.bin` variants without `%` prefix and alphanumeric paint codes; merge BinHints; decode SQLite `KeyBinary`; backfill from archived key-bins
+- Tray: Debug Mode no longer forces the amber outdated badge (server + client); badge only for real updates
+
 ## [1.2.19] - 2026-11-18
 
 - Client: sticky footer “Update server” offer (no flash-and-vanish after Check for updates); skip false UpdateNone when server update is available

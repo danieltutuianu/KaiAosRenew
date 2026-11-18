@@ -413,6 +413,7 @@ namespace KaiAosNotifyClient
                 ShowPendingUpdate(_pendingUpdate);
                 RefreshServerUpdateFromFeed();
             }
+            RefreshTrayOutdatedIcon();
         }
 
 
@@ -1882,8 +1883,7 @@ namespace KaiAosNotifyClient
         private void RefreshTrayOutdatedIcon()
         {
             if (_tray == null) return;
-            var outdated = _debugMode
-                || _pendingUpdate != null
+            var outdated = _pendingUpdate != null
                 || (!_awaitingServerUpdateReconnect
                     && !string.IsNullOrEmpty(_latestServerReleaseVer)
                     && !string.IsNullOrEmpty(_serverVersionFromFooter)

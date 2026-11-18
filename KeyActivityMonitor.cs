@@ -287,9 +287,10 @@ namespace KaiAosRenew
         private static readonly Regex RxVin = new Regex(
             @"\b([A-HJ-NPR-Z0-9]{17})\b",
             RegexOptions.Compiled);
+        /// <summary>Paint/upholstery token: % + 4 alnum paint (must include a digit) + 4 alnum upholstery.</summary>
         private static readonly Regex RxPaintUph = new Regex(
-            @"%(\d{4})([A-Z0-9]{4})",
-            RegexOptions.Compiled);
+            @"%([0-9A-Z]{4})([A-Z0-9]{4})",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
         /// <summary>I-level family: any series letter + 3 hex (E/F/G/I/… and later).</summary>
         private static readonly Regex RxILevelFamily = new Regex(
             @"^[A-Z][0-9A-F]{3}$",
@@ -567,7 +568,10 @@ namespace KaiAosRenew
                 InheritUploadStatusByVin(merged);
                 merged = DeduplicateVinRows(merged);
                 foreach (var ev in merged)
+                {
                     TryAssignDebugBinPath(ev);
+                    BackfillEventFromArchivedBin(ev);
+                }
                 snap.Events = merged;
                 snap.KeysToday = CountKeysToday(merged);
                 snap.NewEvents = DetectNewEvents(merged);
@@ -849,7 +853,23 @@ namespace KaiAosRenew
                 if (string.Equals(_binHints[i].Vin, fields.Vin, StringComparison.OrdinalIgnoreCase)
                     && Math.Abs((_binHints[i].Time - when).TotalSeconds) <= 2)
                 {
-                    _binHints[i] = BinHint.From(when, fields);
+                    // Merge non-empty fields — do not wipe I-level/paint from a richer prior hint.
+                    var existing = _binHints[i];
+                    var merged = BinHint.From(when, fields);
+                    if (string.IsNullOrEmpty(merged.Paint) && !string.IsNullOrEmpty(existing.Paint))
+                        merged.Paint = existing.Paint;
+                    if (string.IsNullOrEmpty(merged.Upholstery) && !string.IsNullOrEmpty(existing.Upholstery))
+                        merged.Upholstery = existing.Upholstery;
+                    if (string.IsNullOrEmpty(merged.ILevelCurrent) && !string.IsNullOrEmpty(existing.ILevelCurrent))
+                        merged.ILevelCurrent = existing.ILevelCurrent;
+                    if (string.IsNullOrEmpty(merged.ILevelBackup) && !string.IsNullOrEmpty(existing.ILevelBackup))
+                        merged.ILevelBackup = existing.ILevelBackup;
+                    if (string.IsNullOrEmpty(merged.ILevelPlant) && !string.IsNullOrEmpty(existing.ILevelPlant))
+                        merged.ILevelPlant = existing.ILevelPlant;
+                    if ((!merged.MileageKm.HasValue || merged.MileageKm.Value <= 0)
+                        && existing.MileageKm.HasValue && existing.MileageKm.Value > 0)
+                        merged.MileageKm = existing.MileageKm;
+                    _binHints[i] = merged;
                     return;
                 }
             }
@@ -873,7 +893,7 @@ namespace KaiAosRenew
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText =
-                            "SELECT Vin, Color, Upholstery, TotalDistanceKm, ReadDate FROM KeyBaseDataEntity " +
+                            "SELECT Vin, Color, Upholstery, TotalDistanceKm, ReadDate, KeyBinary FROM KeyBaseDataEntity " +
                             "WHERE Vin IS NOT NULL AND Vin <> '' ORDER BY ReadDate DESC LIMIT 50";
                         using (var r = cmd.ExecuteReader())
                         {
@@ -894,6 +914,34 @@ namespace KaiAosRenew
                                     }
                                 }
                                 catch { }
+                                try
+                                {
+                                    if (r["KeyBinary"] != DBNull.Value && r["KeyBinary"] != null)
+                                    {
+                                        var blob = r["KeyBinary"] as byte[];
+                                        if (blob != null && blob.Length > 0)
+                                        {
+                                            KeyBinFields fromBin;
+                                            if (TryParseKeyReaderBytes(blob, out fromBin) && fromBin != null)
+                                            {
+                                                if (string.IsNullOrEmpty(fields.Paint) && !string.IsNullOrEmpty(fromBin.Paint))
+                                                    fields.Paint = fromBin.Paint;
+                                                if (string.IsNullOrEmpty(fields.Upholstery) && !string.IsNullOrEmpty(fromBin.Upholstery))
+                                                    fields.Upholstery = fromBin.Upholstery;
+                                                if ((!fields.MileageKm.HasValue || fields.MileageKm.Value <= 0)
+                                                    && fromBin.MileageKm.HasValue && fromBin.MileageKm.Value > 0)
+                                                    fields.MileageKm = fromBin.MileageKm;
+                                                if (string.IsNullOrEmpty(fields.ILevelCurrent) && !string.IsNullOrEmpty(fromBin.ILevelCurrent))
+                                                    fields.ILevelCurrent = fromBin.ILevelCurrent;
+                                                if (string.IsNullOrEmpty(fields.ILevelBackup) && !string.IsNullOrEmpty(fromBin.ILevelBackup))
+                                                    fields.ILevelBackup = fromBin.ILevelBackup;
+                                                if (string.IsNullOrEmpty(fields.ILevelPlant) && !string.IsNullOrEmpty(fromBin.ILevelPlant))
+                                                    fields.ILevelPlant = fromBin.ILevelPlant;
+                                            }
+                                        }
+                                    }
+                                }
+                                catch { }
                                 DateTime when = DateTime.Now;
                                 if (r["ReadDate"] != DBNull.Value && r["ReadDate"] != null)
                                 {
@@ -909,7 +957,7 @@ namespace KaiAosRenew
             }
             catch
             {
-                // Color/Upholstery columns may be missing naming — fall back VIN-only
+                // Color/Upholstery/KeyBinary columns may be missing — fall back VIN-only
                 try
                 {
                     var cs = "Data Source=" + _sqlitePath + ";Version=3;Read Only=True;FailIfMissing=True";
@@ -985,6 +1033,7 @@ namespace KaiAosRenew
                     && best.MileageKm.HasValue && best.MileageKm.Value > 0)
                     ev.MileageKm = best.MileageKm;
                 TryAssignDebugBinPath(ev);
+                BackfillEventFromArchivedBin(ev);
             }
         }
 
@@ -1228,8 +1277,20 @@ namespace KaiAosRenew
 
                 var ascii = Encoding.ASCII.GetString(bytes);
                 var paintHits = new List<string>();
+                for (var i = 0; i + 11 <= bytes.Length; i++)
+                {
+                    if (bytes[i] != 0x84 || bytes[i + 1] != 0x01) continue;
+                    string tagPaint, tagUph;
+                    if (!TryReadPaintUphAscii(bytes, i + 3, out tagPaint, out tagUph)) continue;
+                    paintHits.Add("84:01:" + (char)bytes[i + 2] + tagPaint + tagUph + "@0x" + i.ToString("X"));
+                }
                 for (var pu = RxPaintUph.Match(ascii); pu.Success; pu = pu.NextMatch())
+                {
+                    var p = pu.Groups[1].Value.ToUpperInvariant();
+                    var u = pu.Groups[2].Value.ToUpperInvariant();
+                    if (!IsValidPaintCode(p) || !IsValidUpholsteryCode(u)) continue;
                     paintHits.Add(pu.Value + "@0x" + pu.Index.ToString("X"));
+                }
 
                 var ilevelHits = new List<string>();
                 for (var i = 0; i + 3 < bytes.Length; i++)
@@ -1319,6 +1380,83 @@ namespace KaiAosRenew
             }
         }
 
+        private static bool IsAsciiAlnumUpper(byte b)
+        {
+            return (b >= (byte)'0' && b <= (byte)'9')
+                || (b >= (byte)'A' && b <= (byte)'Z')
+                || (b >= (byte)'a' && b <= (byte)'z');
+        }
+
+        private static bool IsValidPaintCode(string paint)
+        {
+            if (string.IsNullOrEmpty(paint) || paint.Length != 4) return false;
+            var hasDigit = false;
+            for (var i = 0; i < 4; i++)
+            {
+                var c = char.ToUpperInvariant(paint[i]);
+                if (c >= '0' && c <= '9') hasDigit = true;
+                else if (c < 'A' || c > 'Z') return false;
+            }
+            return hasDigit;
+        }
+
+        private static bool IsValidUpholsteryCode(string uph)
+        {
+            if (string.IsNullOrEmpty(uph) || uph.Length != 4) return false;
+            var letters = 0;
+            for (var i = 0; i < 4; i++)
+            {
+                var c = char.ToUpperInvariant(uph[i]);
+                if (c >= 'A' && c <= 'Z') letters++;
+                else if (c < '0' || c > '9') return false;
+            }
+            return letters >= 2;
+        }
+
+        private static bool TryReadPaintUphAscii(byte[] bytes, int paintStart, out string paint, out string upholstery)
+        {
+            paint = null;
+            upholstery = null;
+            if (bytes == null || paintStart < 0 || paintStart + 8 > bytes.Length) return false;
+            for (var i = 0; i < 8; i++)
+            {
+                if (!IsAsciiAlnumUpper(bytes[paintStart + i])) return false;
+            }
+            paint = Encoding.ASCII.GetString(bytes, paintStart, 4).ToUpperInvariant();
+            upholstery = Encoding.ASCII.GetString(bytes, paintStart + 4, 4).ToUpperInvariant();
+            return IsValidPaintCode(paint) && IsValidUpholsteryCode(upholstery);
+        }
+
+        /// <summary>
+        /// Fill missing Paint/Upholstery/I-level/Km on a persisted event from its archived key-bins\{VIN}.bin.
+        /// </summary>
+        private void BackfillEventFromArchivedBin(KeyActivityEvent ev)
+        {
+            if (ev == null || string.IsNullOrEmpty(ev.Vin)) return;
+            var needsPaint = string.IsNullOrEmpty(ev.Paint);
+            var needsUph = string.IsNullOrEmpty(ev.Upholstery);
+            var needsI = string.IsNullOrEmpty(ev.ILevelCurrent);
+            var needsKm = !ev.MileageKm.HasValue || ev.MileageKm.Value <= 0;
+            if (!needsPaint && !needsUph && !needsI && !needsKm) return;
+            var path = ev.DebugBinPath;
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            try
+            {
+                KeyBinFields fields;
+                if (!TryParseKeyReaderBin(path, out fields) || fields == null) return;
+                if (needsPaint && !string.IsNullOrEmpty(fields.Paint)) ev.Paint = fields.Paint;
+                if (needsUph && !string.IsNullOrEmpty(fields.Upholstery)) ev.Upholstery = fields.Upholstery;
+                if (needsI && !string.IsNullOrEmpty(fields.ILevelCurrent)) ev.ILevelCurrent = fields.ILevelCurrent;
+                if (string.IsNullOrEmpty(ev.ILevelBackup) && !string.IsNullOrEmpty(fields.ILevelBackup))
+                    ev.ILevelBackup = fields.ILevelBackup;
+                if (string.IsNullOrEmpty(ev.ILevelPlant) && !string.IsNullOrEmpty(fields.ILevelPlant))
+                    ev.ILevelPlant = fields.ILevelPlant;
+                if (needsKm && fields.MileageKm.HasValue && fields.MileageKm.Value > 0)
+                    ev.MileageKm = fields.MileageKm;
+            }
+            catch { }
+        }
+
         internal static bool TryParseKeyReaderBytes(byte[] bytes, out KeyBinFields fields)
         {
             fields = null;
@@ -1335,29 +1473,79 @@ namespace KaiAosRenew
             if (letters < 2) return false;
 
             fields = new KeyBinFields { Vin = vin };
-            // Paint/Upholstery: prefer %ddddXXXX closest to the VIN match.
             var vinIndex = m.Index;
-            Match bestPu = null;
-            var bestPuDist = int.MaxValue;
-            for (var pu = RxPaintUph.Match(ascii); pu.Success; pu = pu.NextMatch())
+            var vinEnd = vinIndex + 17;
+            string paint = null;
+            string upholstery = null;
+            var puRecordStart = -1; // start of prefix byte before paint (i.e. tag+2 / %)
+
+            // 1) Prefer 0x84 0x01 <anyByte> <Paint:4> <Upholstery:4> closest to VIN (outside VIN span).
+            var bestTagDist = int.MaxValue;
+            for (var i = 0; i + 11 <= bytes.Length; i++)
             {
-                var dist = Math.Abs(pu.Index - vinIndex);
-                if (dist < bestPuDist)
+                if (bytes[i] != 0x84 || bytes[i + 1] != 0x01) continue;
+                var prefixAt = i + 2;
+                var paintAt = i + 3;
+                // Entire paint/uph block and tag must sit outside the 17-byte VIN.
+                if (i < vinEnd && paintAt + 8 > vinIndex) continue;
+                string tagPaint, tagUph;
+                if (!TryReadPaintUphAscii(bytes, paintAt, out tagPaint, out tagUph)) continue;
+                var dist = Math.Abs(prefixAt - vinIndex);
+                if (dist < bestTagDist)
                 {
-                    bestPuDist = dist;
-                    bestPu = pu;
+                    bestTagDist = dist;
+                    paint = tagPaint;
+                    upholstery = tagUph;
+                    puRecordStart = prefixAt;
                 }
             }
-            if (bestPu != null)
+
+            // 2) Fallback: fixed VIN-relative layout at vinIndex+24..31.
+            if (paint == null && vinIndex + 32 <= bytes.Length)
             {
-                fields.Paint = bestPu.Groups[1].Value;
-                fields.Upholstery = bestPu.Groups[2].Value.ToUpperInvariant();
+                string fixedPaint, fixedUph;
+                if (TryReadPaintUphAscii(bytes, vinIndex + 24, out fixedPaint, out fixedUph))
+                {
+                    paint = fixedPaint;
+                    upholstery = fixedUph;
+                    puRecordStart = vinIndex + 23; // prefix byte before paint
+                }
             }
 
-            // Mileage: big-endian 24-bit, 13 bytes after the %paintUph token, else fixed offset 0x28.
+            // 3) Fallback: %PaintUph regex (alnum paint with >=1 digit), closest to VIN.
+            if (paint == null)
+            {
+                Match bestPu = null;
+                var bestPuDist = int.MaxValue;
+                for (var pu = RxPaintUph.Match(ascii); pu.Success; pu = pu.NextMatch())
+                {
+                    var p = pu.Groups[1].Value.ToUpperInvariant();
+                    var u = pu.Groups[2].Value.ToUpperInvariant();
+                    if (!IsValidPaintCode(p) || !IsValidUpholsteryCode(u)) continue;
+                    var dist = Math.Abs(pu.Index - vinIndex);
+                    if (dist < bestPuDist)
+                    {
+                        bestPuDist = dist;
+                        bestPu = pu;
+                    }
+                }
+                if (bestPu != null)
+                {
+                    paint = bestPu.Groups[1].Value.ToUpperInvariant();
+                    upholstery = bestPu.Groups[2].Value.ToUpperInvariant();
+                    puRecordStart = bestPu.Index;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(paint)) fields.Paint = paint;
+            if (!string.IsNullOrEmpty(upholstery)) fields.Upholstery = upholstery;
+
+            // Mileage: BE24 at puStart+13, else vinIndex+36, else 0x28.
             var kmOffset = -1;
-            if (bestPu != null && bestPu.Index + 13 + 3 <= bytes.Length)
-                kmOffset = bestPu.Index + 13;
+            if (puRecordStart >= 0 && puRecordStart + 13 + 3 <= bytes.Length)
+                kmOffset = puRecordStart + 13;
+            else if (vinIndex + 36 + 3 <= bytes.Length)
+                kmOffset = vinIndex + 36;
             else if (bytes.Length > 0x2A)
                 kmOffset = 0x28;
             if (kmOffset >= 0 && kmOffset + 3 <= bytes.Length)
