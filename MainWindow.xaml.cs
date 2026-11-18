@@ -1513,12 +1513,11 @@ namespace KaiAosRenew
             map["notifyPort"] = _settings.NotifyServerPort.ToString();
             try { map["notifyIps"] = NotifyServer.GetLocalIpv4Summary() ?? ""; }
             catch { map["notifyIps"] = ""; }
-            map["peerSyncEnabled"] = _settings.PeerSyncEnabled ? "1" : "0";
-            map["peerSyncUrl"] = _settings.PeerSyncUrl ?? "";
-            try { map["peerSyncSecret"] = _settings.GetPeerSyncSecret() ?? ""; }
-            catch { map["peerSyncSecret"] = ""; }
-            map["peerSyncServerName"] = _settings.PeerSyncServerName ?? "";
-            map["peerSyncPollMinutes"] = PeerSyncLogic.ClampPollMinutes(_settings.PeerSyncPollMinutes).ToString();
+            map["firebasePushEnabled"] = _settings.FirebasePushEnabled ? "1" : "0";
+            map["firebasePushUrl"] = _settings.FirebasePushUrl ?? "";
+            try { map["firebasePushSecret"] = _settings.GetFirebasePushSecret() ?? ""; }
+            catch { map["firebasePushSecret"] = ""; }
+            map["firebasePushServerName"] = _settings.FirebasePushServerName ?? "";
             try
             {
                 var paths = DesktopKeyReaderReg.ReadAbsolute();

@@ -13,11 +13,9 @@ namespace KaiAosRenew
 {
     public partial class MainWindow : Window
     {
-        private readonly DispatcherTimer _peerSyncTimer = new DispatcherTimer();
         private readonly DispatcherTimer _peerHeartbeatDebounce = new DispatcherTimer();
         private int _peerSyncBusy;
         private int _peerSyncPending;
-        private string _peerSyncStatusText = "";
         private long _peerSyncLastPeersSeq;
         private bool _peerLastSyncOk = true;
         private string _peerLastSyncUtc = "";
@@ -28,236 +26,10 @@ namespace KaiAosRenew
 
         private void InitPeerSync()
         {
-            _peerSyncTimer.Tick -= PeerSyncTimer_Tick;
-            _peerSyncTimer.Tick += PeerSyncTimer_Tick;
             _peerHeartbeatDebounce.Interval = TimeSpan.FromSeconds(8);
             _peerHeartbeatDebounce.Tick -= PeerHeartbeatDebounce_Tick;
             _peerHeartbeatDebounce.Tick += PeerHeartbeatDebounce_Tick;
-            if (PeerSyncPeersList != null)
-                PeerSyncPeersList.ItemsSource = _peerDashboardRows;
-            ApplyPeerSyncFromSettings(true);
-        }
-
-        private void ApplyPeerSyncFromSettings(bool pollNow)
-        {
-            if (_settings == null) return;
-            _settings.EnsurePeerSyncServerId();
-            _settings.NormalizeClamps();
-            UpdatePeerSyncStatusUi();
-            _peerSyncTimer.Stop();
-            if (!_settings.PeerSyncEnabled) return;
-            var minutes = PeerSyncLogic.ClampPollMinutes(_settings.PeerSyncPollMinutes);
-            _peerSyncTimer.Interval = TimeSpan.FromMinutes(minutes);
-            _peerSyncTimer.Start();
-            if (pollNow)
-                BeginPeerSyncPoll(false);
-        }
-
-        private void PeerSyncTimer_Tick(object sender, EventArgs e)
-        {
-            BeginPeerSyncPoll(false);
-        }
-
-        private void PeerSync_Changed(object sender, RoutedEventArgs e)
-        {
-            if (_loadingUi || _settings == null) return;
-            CapturePeerSyncFromUi();
-            try { _settings.Save(); }
-            catch { }
-            BroadcastServerSettings();
-            ApplyPeerSyncFromSettings(true);
-        }
-
-        private void PeerSyncField_LostFocus(object sender, RoutedEventArgs e)
-        {
-            if (_loadingUi || _settings == null) return;
-            CapturePeerSyncFromUi();
-            try { _settings.Save(); }
-            catch { }
-            BroadcastServerSettings();
-            ApplyPeerSyncFromSettings(false);
-        }
-
-        private void PeerSyncGenerate_Click(object sender, RoutedEventArgs e)
-        {
-            if (_settings == null) return;
-            var secret = NotifyPairing.GenerateCode() + NotifyPairing.GenerateCode();
-            _settings.SetPeerSyncSecret(secret);
-            if (PeerSyncSecretBox != null)
-                PeerSyncSecretBox.Text = secret;
-            try { _settings.Save(); }
-            catch { }
-            BroadcastServerSettings();
-            ApplyPeerSyncFromSettings(false);
-        }
-
-        private void PeerSyncCopy_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var secret = PeerSyncSecretBox != null
-                    ? (PeerSyncSecretBox.Text ?? "").Trim()
-                    : (_settings != null ? (_settings.GetPeerSyncSecret() ?? "") : "");
-                if (string.IsNullOrEmpty(secret)) return;
-                NativeMethods.TrySetClipboardText(secret);
-            }
-            catch { }
-        }
-
-        private async void PeerSyncNow_Click(object sender, RoutedEventArgs e)
-        {
-            await BeginPeerSyncPollAsync(true);
-        }
-
-        private async void PeerSyncTest_Click(object sender, RoutedEventArgs e)
-        {
-            await RunPeerSyncTestAsync(0);
-        }
-
-        private async void PeerSyncPush_Click(object sender, RoutedEventArgs e)
-        {
-            await PushPeerCredentialsNowAsync(0).ConfigureAwait(true);
-        }
-
-        private async void PeerSyncUpdateAll_Click(object sender, RoutedEventArgs e)
-        {
-            var ask = UiStrings.T("PeerSyncUpdateAllConfirm");
-            var result = MessageBox.Show(this, ask, UiStrings.T("PeerSyncUpdateAll"),
-                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
-            if (result != MessageBoxResult.Yes) return;
-            await TriggerPeerUpdateAllAsync(0).ConfigureAwait(true);
-        }
-
-        private void CapturePeerSyncFromUi()
-        {
-            if (_settings == null) return;
-            _settings.PeerSyncEnabled = PeerSyncEnableCheck != null && PeerSyncEnableCheck.IsChecked == true;
-            if (PeerSyncUrlBox != null)
-                _settings.PeerSyncUrl = (PeerSyncUrlBox.Text ?? "").Trim();
-            if (PeerSyncSecretBox != null)
-                _settings.SetPeerSyncSecret((PeerSyncSecretBox.Text ?? "").Trim());
-            if (PeerSyncServerNameBox != null)
-            {
-                var name = (PeerSyncServerNameBox.Text ?? "").Trim();
-                if (!string.IsNullOrEmpty(name))
-                    _settings.PeerSyncServerName = name;
-            }
-            int minutes = 60;
-            if (PeerSyncPollBox != null)
-            {
-                int parsed;
-                if (!int.TryParse((PeerSyncPollBox.Text ?? "").Trim(), out parsed) || parsed < 1)
-                    parsed = 60;
-                minutes = PeerSyncLogic.ClampPollMinutes(parsed);
-                PeerSyncPollBox.Text = minutes.ToString();
-            }
-            _settings.PeerSyncPollMinutes = minutes;
-            _settings.EnsurePeerSyncServerId();
-            _settings.NormalizeClamps();
-        }
-
-        private void LoadPeerSyncToUi()
-        {
-            if (_settings == null) return;
-            _settings.EnsurePeerSyncServerId();
-            if (PeerSyncEnableCheck != null)
-                PeerSyncEnableCheck.IsChecked = _settings.PeerSyncEnabled;
-            if (PeerSyncUrlBox != null)
-                PeerSyncUrlBox.Text = _settings.PeerSyncUrl ?? "";
-            if (PeerSyncSecretBox != null)
-            {
-                try { PeerSyncSecretBox.Text = _settings.GetPeerSyncSecret() ?? ""; }
-                catch { PeerSyncSecretBox.Text = ""; }
-            }
-            if (PeerSyncServerNameBox != null)
-                PeerSyncServerNameBox.Text = _settings.PeerSyncServerName ?? "";
-            if (PeerSyncPollBox != null)
-                PeerSyncPollBox.Text = PeerSyncLogic.ClampPollMinutes(_settings.PeerSyncPollMinutes).ToString();
-            UpdatePeerSyncStatusUi();
-        }
-
-        private void ApplyPeerSyncLanguage()
-        {
-            if (SettingsPeerSyncGroup != null)
-                SettingsPeerSyncGroup.Header = UiStrings.T("SettingsPeerSyncGroup");
-            if (PeerSyncEnableCheck != null)
-                PeerSyncEnableCheck.Content = UiStrings.T("PeerSyncEnable");
-            if (PeerSyncUrlLabel != null)
-                PeerSyncUrlLabel.Text = UiStrings.T("PeerSyncUrl");
-            if (PeerSyncSecretLabel != null)
-            {
-                PeerSyncSecretLabel.Text = UiStrings.T("PeerSyncSecret");
-                PeerSyncSecretLabel.ToolTip = UiStrings.T("PeerSyncSecretTip");
-            }
-            if (PeerSyncSecretBox != null)
-                PeerSyncSecretBox.ToolTip = UiStrings.T("PeerSyncSecretTip");
-            if (PeerSyncGenerateBtn != null)
-            {
-                PeerSyncGenerateBtn.Content = UiStrings.T("PeerSyncGenerate");
-                PeerSyncGenerateBtn.ToolTip = UiStrings.T("PeerSyncGenerateTip");
-            }
-            if (PeerSyncCopyBtn != null)
-                PeerSyncCopyBtn.ToolTip = UiStrings.T("PeerSyncCopyTip");
-            if (PeerSyncServerNameLabel != null)
-                PeerSyncServerNameLabel.Text = UiStrings.T("PeerSyncServerName");
-            if (PeerSyncPollLabel != null)
-            {
-                PeerSyncPollLabel.Text = UiStrings.T("PeerSyncPollMinutes");
-                PeerSyncPollLabel.ToolTip = UiStrings.T("PeerSyncPollTip");
-            }
-            if (PeerSyncPollBox != null)
-                PeerSyncPollBox.ToolTip = UiStrings.T("PeerSyncPollTip");
-            if (PeerSyncNowBtn != null)
-                PeerSyncNowBtn.Content = UiStrings.T("PeerSyncNow");
-            if (PeerSyncTestBtn != null)
-                PeerSyncTestBtn.Content = UiStrings.T("PeerSyncTest");
-            if (PeerSyncPushBtn != null)
-            {
-                PeerSyncPushBtn.Content = UiStrings.T("PeerSyncPush");
-                PeerSyncPushBtn.ToolTip = UiStrings.T("PeerSyncPushTip");
-            }
-            if (PeerSyncUpdateAllBtn != null)
-            {
-                PeerSyncUpdateAllBtn.Content = UiStrings.T("PeerSyncUpdateAll");
-                PeerSyncUpdateAllBtn.ToolTip = UiStrings.T("PeerSyncUpdateAllTip");
-            }
-            if (PeerSyncPeersLabel != null)
-                PeerSyncPeersLabel.Text = UiStrings.T("PeerSyncPeers");
-            if (PeerSyncColServer != null) PeerSyncColServer.Header = UiStrings.T("PeerSyncColServer");
-            if (PeerSyncColHealth != null) PeerSyncColHealth.Header = UiStrings.T("PeerSyncColHealth");
-            if (PeerSyncColToken != null) PeerSyncColToken.Header = UiStrings.T("PeerSyncColToken");
-            if (PeerSyncColVersion != null) PeerSyncColVersion.Header = UiStrings.T("PeerSyncColVersion");
-            if (PeerSyncColClients != null) PeerSyncColClients.Header = UiStrings.T("PeerSyncColClients");
-            if (PeerSyncColSeen != null) PeerSyncColSeen.Header = UiStrings.T("PeerSyncColSeen");
-            UpdatePeerSyncStatusUi();
-            UpdatePeerDashboardEmptyHint();
-        }
-
-        private void UpdatePeerSyncStatusUi()
-        {
-            if (PeerSyncStatusText == null) return;
-            if (_settings == null || !_settings.PeerSyncEnabled)
-            {
-                PeerSyncStatusText.Text = UiStrings.T("PeerSyncStatusDisabled");
-                return;
-            }
-            if (!string.IsNullOrEmpty(_peerSyncStatusText))
-            {
-                PeerSyncStatusText.Text = _peerSyncStatusText;
-                return;
-            }
-            PeerSyncStatusText.Text = UiStrings.T("PeerSyncStatusIdle");
-        }
-
-        private void SetPeerSyncStatus(string text)
-        {
-            _peerSyncStatusText = text ?? "";
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(UpdatePeerSyncStatusUi));
-                return;
-            }
-            UpdatePeerSyncStatusUi();
+            InitFirebasePush();
         }
 
         private void BeginPeerSyncPoll(bool manual)
@@ -284,7 +56,7 @@ namespace KaiAosRenew
 
         private async Task BeginPeerSyncPollAsync(bool manual)
         {
-            if (_settings == null || !_settings.PeerSyncEnabled) return;
+            if (_settings == null || !IsPeerRelayActive()) return;
             if (Interlocked.CompareExchange(ref _peerSyncBusy, 1, 0) != 0)
             {
                 Interlocked.Exchange(ref _peerSyncPending, 1);
@@ -306,42 +78,36 @@ namespace KaiAosRenew
 
         private async Task PollPeerSyncOnceAsync(bool manual)
         {
-            if (_settings == null || !_settings.PeerSyncEnabled) return;
-            string url = _settings.PeerSyncUrl ?? "";
-            string secret;
-            try { secret = _settings.GetPeerSyncSecret() ?? ""; }
-            catch { secret = ""; }
-            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(secret))
+            if (_settings == null || !IsPeerRelayActive()) return;
+            string url, secret, serverName;
+            if (!TryGetActivePeerRelay(out url, out secret, out serverName))
             {
                 if (manual)
-                    SetPeerSyncStatus(string.Format(UiStrings.T("PeerSyncStatusFail"), "URL/secret"));
+                    SetActiveRelayStatus(string.Format(UiStrings.T("FirebasePushStatusFail"), "URL/secret"));
                 return;
             }
             var serverId = _settings.PeerSyncServerId ?? "";
-            var sinceSeq = _settings.PeerSyncLastSeq;
-            var sinceAck = _settings.PeerSyncLastAckSeq;
-            var sinceCmd = _settings.PeerSyncLastCmdSeq;
-            var sincePeers = _peerSyncLastPeersSeq;
             // Heartbeat first so our presence is in the peers list we receive.
             await SendPeerHeartbeatAsync(url, secret).ConfigureAwait(true);
-            PeerSyncClient.PollResult poll;
+            PeerRelayPollResult poll;
             try
             {
-                poll = await PeerSyncClient.PollAsync(
-                    url, secret, serverId, sinceSeq, sinceAck, sinceCmd, sincePeers, CancellationToken.None)
+                poll = await PeerSyncFirebaseClient.SnapshotAsync(url, secret, serverId, CancellationToken.None)
                     .ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                SetPeerSyncStatus(string.Format(UiStrings.T("PeerSyncStatusFail"), ex.Message ?? "poll"));
+                SetActiveRelayStatus(string.Format(UiStrings.T("FirebasePushStatusFail"), ex.Message ?? "poll"));
                 return;
             }
             if (poll == null || !poll.Ok)
             {
-                SetPeerSyncStatus(string.Format(UiStrings.T("PeerSyncStatusFail"), poll != null ? poll.Error : "poll"));
+                SetActiveRelayStatus(string.Format(
+                    UiStrings.T("FirebasePushStatusFail"),
+                    poll != null ? poll.Error : "poll"));
                 return;
             }
-            SetPeerSyncStatus(UiStrings.T("PeerSyncStatusOk"));
+            SetActiveRelayStatus(UiStrings.T("FirebasePushStatusOk"));
 
             if (poll.Peers != null && poll.Peers.Count > 0)
                 ApplyPeerDashboardFromWire(poll.Peers, secret);
@@ -398,58 +164,11 @@ namespace KaiAosRenew
             }
         }
 
-        private async Task RunPeerSyncTestAsync(int replyClientId)
-        {
-            if (_settings == null)
-            {
-                if (replyClientId > 0) SendAosAck(replyClientId, false, "No settings");
-                return;
-            }
-            CapturePeerSyncFromUi();
-            string url = _settings.PeerSyncUrl ?? "";
-            string secret;
-            try { secret = _settings.GetPeerSyncSecret() ?? ""; }
-            catch { secret = ""; }
-            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(secret))
-            {
-                var fail = string.Format(UiStrings.T("PeerSyncStatusFail"), "URL/secret");
-                SetPeerSyncStatus(fail);
-                if (replyClientId > 0) SendAosAck(replyClientId, false, fail);
-                return;
-            }
-            PeerSyncClient.ActionResult ping;
-            try
-            {
-                ping = await PeerSyncClient.PingAsync(url, secret, CancellationToken.None).ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                var fail = string.Format(UiStrings.T("PeerSyncStatusFail"), ex.Message ?? "ping");
-                SetPeerSyncStatus(fail);
-                if (replyClientId > 0) SendAosAck(replyClientId, false, fail);
-                return;
-            }
-            if (ping == null || !ping.Ok)
-            {
-                var fail = string.Format(UiStrings.T("PeerSyncStatusFail"), ping != null ? ping.Error : "ping");
-                SetPeerSyncStatus(fail);
-                if (replyClientId > 0) SendAosAck(replyClientId, false, fail);
-                return;
-            }
-            var ok = string.Format(UiStrings.T("PeerSyncTestOk"), ping.Seq);
-            SetPeerSyncStatus(ok);
-            AppendLog(ok, LogLevel.Info);
-            if (replyClientId > 0) SendAosAck(replyClientId, true, "peerSyncTest");
-        }
-
         private async Task PublishPeerCredentialsAsync(string email, string password, int intervalHours, int blockAfter)
         {
-            if (_settings == null || !_settings.PeerSyncEnabled) return;
-            string url = _settings.PeerSyncUrl ?? "";
-            string secret;
-            try { secret = _settings.GetPeerSyncSecret() ?? ""; }
-            catch { secret = ""; }
-            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(secret)) return;
+            if (_settings == null || !IsPeerRelayActive()) return;
+            string url, secret, serverName;
+            if (!TryGetActivePeerRelay(out url, out secret, out serverName)) return;
 
             var payload = new PeerCredsPayload
             {
@@ -466,17 +185,14 @@ namespace KaiAosRenew
                 return;
             }
             var eventId = Guid.NewGuid().ToString("N");
-            var statusEnc = BuildLocalPeerStatusEnc(secret);
-            PeerSyncClient.ActionResult published;
+            var statusEnc = BuildLocalPeerStatusEnc(secret, serverName);
+            PeerRelayActionResult published;
             try
             {
-                published = await PeerSyncClient.PublishAsync(
+                published = await PeerSyncFirebaseClient.PublishAsync(
                     url, secret, eventId,
-                    _settings.PeerSyncServerId,
-                    _settings.PeerSyncServerName,
-                    enc,
-                    statusEnc,
-                    CancellationToken.None).ConfigureAwait(true);
+                    _settings.PeerSyncServerId, serverName,
+                    enc, statusEnc, CancellationToken.None).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -495,7 +211,7 @@ namespace KaiAosRenew
             try { _settings.Save(); }
             catch { }
             AppendLog(string.Format(UiStrings.T("PeerSyncPublished"), eventId), LogLevel.Info);
-            SetPeerSyncStatus(UiStrings.T("PeerSyncStatusOk"));
+            SetActiveRelayStatus(UiStrings.T("FirebasePushStatusOk"));
             NotePeerSyncOutcome(true, "published " + eventId);
         }
 
@@ -702,11 +418,8 @@ namespace KaiAosRenew
         private async Task SendPeerAckAsync(PeerCredsEvent ev, bool ok, bool rollbackAttempted, bool rollbackOk, string message)
         {
             if (_settings == null || ev == null) return;
-            string url = _settings.PeerSyncUrl ?? "";
-            string secret;
-            try { secret = _settings.GetPeerSyncSecret() ?? ""; }
-            catch { secret = ""; }
-            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(secret)) return;
+            string url, secret, serverName;
+            if (!TryGetActivePeerRelay(out url, out secret, out serverName)) return;
             var ackPayload = new PeerAckPayload
             {
                 Ok = ok,
@@ -718,17 +431,14 @@ namespace KaiAosRenew
             try { enc = PeerSyncCrypto.EncryptAck(secret, ackPayload); }
             catch { return; }
             var ackId = Guid.NewGuid().ToString("N");
-            var statusEnc = BuildLocalPeerStatusEnc(secret);
+            var statusEnc = BuildLocalPeerStatusEnc(secret, serverName);
             try
             {
-                await PeerSyncClient.AckAsync(
+                await PeerSyncFirebaseClient.AckAsync(
                     url, secret, ackId, ev.EventId,
                     ev.OriginServerId,
-                    _settings.PeerSyncServerId,
-                    _settings.PeerSyncServerName,
-                    enc,
-                    statusEnc,
-                    CancellationToken.None).ConfigureAwait(true);
+                    _settings.PeerSyncServerId, serverName,
+                    enc, statusEnc, CancellationToken.None).ConfigureAwait(true);
             }
             catch { }
         }
@@ -770,7 +480,7 @@ namespace KaiAosRenew
         /// </summary>
         private void MaybePublishPeerCredentialsAfterLocalRegister(RenewResult result, string email, string password)
         {
-            if (_settings == null || !_settings.PeerSyncEnabled) return;
+            if (_settings == null || !IsPeerRelayActive()) return;
             if (result == null) return;
             if (!PeerSyncLogic.ShouldPublishAfterLocalRegister(
                 result.Ok, result.RegisterAttempted, result.RegisterAuthRejected, result.SkippedRegister))
@@ -789,14 +499,14 @@ namespace KaiAosRenew
 
         private async Task PushPeerCredentialsNowAsync(int replyClientId)
         {
-            if (_settings == null || !_settings.PeerSyncEnabled)
+            if (_settings == null || !IsPeerRelayActive())
             {
-                var off = UiStrings.T("PeerSyncStatusDisabled");
-                SetPeerSyncStatus(off);
+                var off = UiStrings.T("FirebasePushStatusDisabled");
+                SetActiveRelayStatus(off);
                 if (replyClientId > 0) SendAosAck(replyClientId, false, off);
                 return;
             }
-            CapturePeerSyncFromUi();
+            CaptureFirebasePushFromUi();
             var email = (_settings.Email ?? "").Trim();
             string password;
             try { password = _settings.GetPassword() ?? ""; }
@@ -804,7 +514,7 @@ namespace KaiAosRenew
             if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
             {
                 var fail = string.Format(UiStrings.T("PeerSyncPublishFail"), "empty credentials");
-                SetPeerSyncStatus(fail);
+                SetActiveRelayStatus(fail);
                 AppendLog(fail, LogLevel.Warning);
                 if (replyClientId > 0) SendAosAck(replyClientId, false, fail);
                 return;
@@ -812,26 +522,24 @@ namespace KaiAosRenew
             var hours = _settings.IntervalHours < 1 ? 1 : _settings.IntervalHours;
             var block = GetAuthRegisterBlockAfter();
             await PublishPeerCredentialsAsync(email, password, hours, block).ConfigureAwait(true);
-            AppendLog(UiStrings.T("PeerSyncPushDone"), LogLevel.Info);
-            if (replyClientId > 0) SendAosAck(replyClientId, true, "peerSyncPush");
+            AppendLog(UiStrings.T("FirebasePushPushDone"), LogLevel.Info);
+            if (replyClientId > 0)
+                SendAosAck(replyClientId, true, "firebasePushPush");
         }
 
         private async Task TriggerPeerUpdateAllAsync(int replyClientId)
         {
-            if (_settings == null || !_settings.PeerSyncEnabled)
+            if (_settings == null || !IsPeerRelayActive())
             {
-                var off = UiStrings.T("PeerSyncStatusDisabled");
+                var off = UiStrings.T("FirebasePushStatusDisabled");
                 if (replyClientId > 0) SendAosAck(replyClientId, false, off);
                 return;
             }
-            CapturePeerSyncFromUi();
-            string url = _settings.PeerSyncUrl ?? "";
-            string secret;
-            try { secret = _settings.GetPeerSyncSecret() ?? ""; }
-            catch { secret = ""; }
-            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(secret))
+            CaptureFirebasePushFromUi();
+            string url, secret, serverName;
+            if (!TryGetActivePeerRelay(out url, out secret, out serverName))
             {
-                var fail = string.Format(UiStrings.T("PeerSyncStatusFail"), "URL/secret");
+                var fail = string.Format(UiStrings.T("FirebasePushStatusFail"), "URL/secret");
                 if (replyClientId > 0) SendAosAck(replyClientId, false, fail);
                 return;
             }
@@ -856,13 +564,13 @@ namespace KaiAosRenew
                 return;
             }
             var cmdId = Guid.NewGuid().ToString("N");
-            var statusEnc = BuildLocalPeerStatusEnc(secret);
-            PeerSyncClient.ActionResult published;
+            var statusEnc = BuildLocalPeerStatusEnc(secret, serverName);
+            PeerRelayActionResult published;
             try
             {
-                published = await PeerSyncClient.PublishCommandAsync(
+                published = await PeerSyncFirebaseClient.PublishCommandAsync(
                     url, secret, cmdId, PeerSyncLogic.CommandTypeUpdateAll,
-                    _settings.PeerSyncServerId, _settings.PeerSyncServerName,
+                    _settings.PeerSyncServerId, serverName,
                     enc, statusEnc, CancellationToken.None).ConfigureAwait(true);
             }
             catch (Exception ex)
@@ -884,7 +592,8 @@ namespace KaiAosRenew
             try { _settings.Save(); }
             catch { }
             AppendLog(string.Format(UiStrings.T("PeerSyncCmdSent"), targetVer), LogLevel.Info);
-            if (replyClientId > 0) SendAosAck(replyClientId, true, "peerSyncUpdateAll");
+            if (replyClientId > 0)
+                SendAosAck(replyClientId, true, "firebasePushUpdateAll");
 
             // Also update local site when includeLocal.
             if (cmdPayload.IncludeLocal && !_remoteServerUpdateBusy)
@@ -942,52 +651,48 @@ namespace KaiAosRenew
         private void PeerHeartbeatDebounce_Tick(object sender, EventArgs e)
         {
             _peerHeartbeatDebounce.Stop();
-            if (_settings == null || !_settings.PeerSyncEnabled) return;
+            if (_settings == null || !IsPeerRelayActive()) return;
             Forget(SendPeerHeartbeatStandaloneAsync(), "PeerHeartbeat");
         }
 
         private void SchedulePeerHeartbeat()
         {
-            if (_settings == null || !_settings.PeerSyncEnabled) return;
+            if (_settings == null || !IsPeerRelayActive()) return;
             _peerHeartbeatDebounce.Stop();
             _peerHeartbeatDebounce.Start();
         }
 
         private async Task SendPeerHeartbeatStandaloneAsync()
         {
-            if (_settings == null || !_settings.PeerSyncEnabled) return;
-            string url = _settings.PeerSyncUrl ?? "";
-            string secret;
-            try { secret = _settings.GetPeerSyncSecret() ?? ""; }
-            catch { secret = ""; }
-            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(secret)) return;
+            if (_settings == null || !IsPeerRelayActive()) return;
+            string url, secret, serverName;
+            if (!TryGetActivePeerRelay(out url, out secret, out serverName)) return;
             await SendPeerHeartbeatAsync(url, secret).ConfigureAwait(true);
         }
 
         private async Task SendPeerHeartbeatAsync(string url, string secret)
         {
             if (_settings == null) return;
-            var statusEnc = BuildLocalPeerStatusEnc(secret);
+            var serverName = _settings.FirebasePushServerName ?? "";
+            var statusEnc = BuildLocalPeerStatusEnc(secret, serverName);
             try
             {
-                var hb = await PeerSyncClient.HeartbeatAsync(
+                var hb = await PeerSyncFirebaseClient.HeartbeatAsync(
                     url, secret,
-                    _settings.PeerSyncServerId,
-                    _settings.PeerSyncServerName,
-                    statusEnc,
-                    CancellationToken.None).ConfigureAwait(true);
+                    _settings.PeerSyncServerId, serverName,
+                    statusEnc, CancellationToken.None).ConfigureAwait(true);
                 if (hb != null && hb.Ok && hb.PeersSeq > _peerSyncLastPeersSeq)
                     _peerSyncLastPeersSeq = hb.PeersSeq;
             }
             catch { }
         }
 
-        private string BuildLocalPeerStatusEnc(string secret)
+        private string BuildLocalPeerStatusEnc(string secret, string serverName)
         {
             if (_settings == null || string.IsNullOrEmpty(secret)) return "";
             var status = new PeerStatusPayload
             {
-                ServerName = _settings.PeerSyncServerName ?? "",
+                ServerName = serverName ?? "",
                 AppVersion = AppVersionDisplay ?? "",
                 TokenStatus = BuildLocalTokenStatusLabel(),
                 TokenExpiryUtc = _settings.LastTokenExpiryUtc.HasValue
@@ -1033,9 +738,8 @@ namespace KaiAosRenew
         private void ApplyPeerDashboardFromWire(List<PeerRecord> wirePeers, string secret)
         {
             if (wirePeers == null) return;
-            var pollMin = _settings != null
-                ? PeerSyncLogic.ClampPollMinutes(_settings.PeerSyncPollMinutes)
-                : 60;
+            // Firebase push heartbeats are frequent; use a tight online window.
+            const int pollMin = 1;
             var localId = _settings != null ? (_settings.PeerSyncServerId ?? "") : "";
             var now = DateTime.UtcNow;
             var decoded = new List<PeerRecord>();
@@ -1101,11 +805,7 @@ namespace KaiAosRenew
 
         private void UpdatePeerDashboardEmptyHint()
         {
-            if (PeerSyncPeersEmptyHint == null) return;
-            PeerSyncPeersEmptyHint.Text = UiStrings.T("PeerSyncPeersEmpty");
-            PeerSyncPeersEmptyHint.Visibility = _peerDashboardRows.Count == 0
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+            UpdateFirebaseDashboardEmptyHint();
         }
 
         private void BroadcastPeerStatusSync(List<PeerDashboardWire> rows)

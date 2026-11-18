@@ -2787,75 +2787,85 @@ namespace KaiAosNotifyClient
             map["authCooldownMinutes"] = SrvAuthCooldownBox != null ? (SrvAuthCooldownBox.Text ?? "60").Trim() : "60";
             map["authRegisterBlockAfter"] = SrvAuthBlockAfterBox != null ? (SrvAuthBlockAfterBox.Text ?? "3").Trim() : "3";
             map["keyReaderLogLevel"] = (SrvKrLogLevelCombo != null ? SrvKrLogLevelCombo.SelectedValue as string : null) ?? "4";
-            map["peerSyncEnabled"] = SrvPeerSyncEnableCheck != null && SrvPeerSyncEnableCheck.IsChecked == true ? "1" : "0";
-            map["peerSyncUrl"] = SrvPeerSyncUrlBox != null ? (SrvPeerSyncUrlBox.Text ?? "").Trim() : "";
-            map["peerSyncSecret"] = SrvPeerSyncSecretBox != null ? (SrvPeerSyncSecretBox.Text ?? "").Trim() : "";
-            map["peerSyncServerName"] = SrvPeerSyncServerNameBox != null ? (SrvPeerSyncServerNameBox.Text ?? "").Trim() : "";
-            map["peerSyncPollMinutes"] = SrvPeerSyncPollBox != null ? (SrvPeerSyncPollBox.Text ?? "60").Trim() : "60";
+            map["firebasePushEnabled"] = SrvFirebasePushEnableCheck != null && SrvFirebasePushEnableCheck.IsChecked == true ? "1" : "0";
+            map["firebasePushUrl"] = SrvFirebasePushUrlBox != null ? (SrvFirebasePushUrlBox.Text ?? "").Trim() : "";
+            map["firebasePushSecret"] = SrvFirebasePushSecretBox != null ? (SrvFirebasePushSecretBox.Text ?? "").Trim() : "";
+            map["firebasePushServerName"] = SrvFirebasePushServerNameBox != null ? (SrvFirebasePushServerNameBox.Text ?? "").Trim() : "";
             return map;
         }
 
-        private void SrvPeerSyncGenerate_Click(object sender, RoutedEventArgs e)
+        private void SrvFirebasePushGenerate_Click(object sender, RoutedEventArgs e)
         {
             var secret = NotifyPairing.GenerateCode() + NotifyPairing.GenerateCode();
-            if (SrvPeerSyncSecretBox != null)
-                SrvPeerSyncSecretBox.Text = secret;
+            if (SrvFirebasePushSecretBox != null)
+                SrvFirebasePushSecretBox.Text = secret;
             MarkSrvSettingsDirty(true);
             SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
         }
 
-        private void SrvPeerSyncCopy_Click(object sender, RoutedEventArgs e)
+        private void SrvFirebasePushUrlCopy_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                var secret = SrvPeerSyncSecretBox != null ? (SrvPeerSyncSecretBox.Text ?? "").Trim() : "";
+                var url = SrvFirebasePushUrlBox != null ? (SrvFirebasePushUrlBox.Text ?? "").Trim() : "";
+                if (string.IsNullOrEmpty(url)) return;
+                Clipboard.SetText(url);
+            }
+            catch { }
+        }
+
+        private void SrvFirebasePushCopy_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var secret = SrvFirebasePushSecretBox != null ? (SrvFirebasePushSecretBox.Text ?? "").Trim() : "";
                 if (string.IsNullOrEmpty(secret)) return;
                 Clipboard.SetText(secret);
             }
             catch { }
         }
 
-        private void SrvPeerSyncNow_Click(object sender, RoutedEventArgs e)
+        private void SrvFirebasePushNow_Click(object sender, RoutedEventArgs e)
         {
-            SendAosCmd("peerSyncNow");
-            if (SrvPeerSyncStatusText != null)
-                SrvPeerSyncStatusText.Text = ClientUiStrings.T("PeerSyncNow");
+            SendAosCmd("firebasePushNow");
+            if (SrvFirebasePushStatusText != null)
+                SrvFirebasePushStatusText.Text = ClientUiStrings.T("FirebasePushNow");
         }
 
-        private void SrvPeerSyncPush_Click(object sender, RoutedEventArgs e)
+        private void SrvFirebasePushPush_Click(object sender, RoutedEventArgs e)
         {
-            SendAosCmd("peerSyncPush");
-            if (SrvPeerSyncStatusText != null)
-                SrvPeerSyncStatusText.Text = ClientUiStrings.T("PeerSyncPush");
+            SendAosCmd("firebasePushPush");
+            if (SrvFirebasePushStatusText != null)
+                SrvFirebasePushStatusText.Text = ClientUiStrings.T("FirebasePushPush");
         }
 
-        private void SrvPeerSyncUpdateAll_Click(object sender, RoutedEventArgs e)
+        private void SrvFirebasePushUpdateAll_Click(object sender, RoutedEventArgs e)
         {
-            var ask = ClientUiStrings.T("PeerSyncUpdateAllConfirm");
-            var result = MessageBox.Show(this, ask, ClientUiStrings.T("PeerSyncUpdateAll"),
+            var ask = ClientUiStrings.T("FirebasePushUpdateAllConfirm");
+            var result = MessageBox.Show(this, ask, ClientUiStrings.T("FirebasePushUpdateAll"),
                 MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
             if (result != MessageBoxResult.Yes) return;
-            SendAosCmd("peerSyncUpdateAll");
-            if (SrvPeerSyncStatusText != null)
-                SrvPeerSyncStatusText.Text = ClientUiStrings.T("PeerSyncUpdateAll");
+            SendAosCmd("firebasePushUpdateAll");
+            if (SrvFirebasePushStatusText != null)
+                SrvFirebasePushStatusText.Text = ClientUiStrings.T("FirebasePushUpdateAll");
         }
 
-        private void SrvPeerSyncTest_Click(object sender, RoutedEventArgs e)
+        private void SrvFirebasePushTest_Click(object sender, RoutedEventArgs e)
         {
-            SendAosCmd("peerSyncTest");
-            if (SrvPeerSyncStatusText != null)
-                SrvPeerSyncStatusText.Text = ClientUiStrings.T("PeerSyncTest");
+            SendAosCmd("firebasePushTest");
+            if (SrvFirebasePushStatusText != null)
+                SrvFirebasePushStatusText.Text = ClientUiStrings.T("FirebasePushTest");
         }
 
         private void ApplyPeerStatusSync(string text)
         {
             var rows = PeerDashboardWire.Parse(text);
-            if (SrvPeerSyncPeersList != null)
-                SrvPeerSyncPeersList.ItemsSource = rows;
-            if (SrvPeerSyncPeersEmptyHint != null)
+            if (SrvFirebasePushPeersList != null)
+                SrvFirebasePushPeersList.ItemsSource = rows;
+            if (SrvFirebasePushPeersEmptyHint != null)
             {
-                SrvPeerSyncPeersEmptyHint.Text = ClientUiStrings.T("PeerSyncPeersEmpty");
-                SrvPeerSyncPeersEmptyHint.Visibility = (rows == null || rows.Count == 0)
+                SrvFirebasePushPeersEmptyHint.Text = ClientUiStrings.T("FirebasePushPeersEmpty");
+                SrvFirebasePushPeersEmptyHint.Visibility = (rows == null || rows.Count == 0)
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             }

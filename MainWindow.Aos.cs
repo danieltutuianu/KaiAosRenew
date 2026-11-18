@@ -299,25 +299,25 @@ namespace KaiAosRenew
                     SendAosAck(clientId, true, "retryBmw");
                     return;
                 }
-                if (c == "peersyncnow")
+                if (c == "firebasepushnow")
                 {
-                    Forget(BeginPeerSyncPollAsync(true), "PeerSyncNow");
-                    SendAosAck(clientId, true, "peerSyncNow");
+                    Forget(BeginPeerSyncPollAsync(true), "FirebasePushNow");
+                    SendAosAck(clientId, true, "firebasePushNow");
                     return;
                 }
-                if (c == "peersynctest")
+                if (c == "firebasepushtest")
                 {
-                    Forget(RunPeerSyncTestAsync(clientId), "PeerSyncTest");
+                    Forget(RunFirebasePushTestAsync(clientId), "FirebasePushTest");
                     return;
                 }
-                if (c == "peersyncpush")
+                if (c == "firebasepushpush")
                 {
-                    Forget(PushPeerCredentialsNowAsync(clientId), "PeerSyncPush");
+                    Forget(PushPeerCredentialsNowAsync(clientId), "FirebasePushPush");
                     return;
                 }
-                if (c == "peersyncupdateall")
+                if (c == "firebasepushupdateall")
                 {
-                    Forget(TriggerPeerUpdateAllAsync(clientId), "PeerSyncUpdateAll");
+                    Forget(TriggerPeerUpdateAllAsync(clientId), "FirebasePushUpdateAll");
                     return;
                 }
                 SendAosAck(clientId, false, "Unknown command");

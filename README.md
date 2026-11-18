@@ -54,6 +54,14 @@ Pași:
 
 Setările și logurile rămân pe fiecare PC în `%AppData%\KaiAosRenew\` (nu sunt în ZIP).
 
+## Sync multi-site (credențiale AOS)
+
+Sincronizarea între site-uri folosește **Firebase push (multi-site)** — Firebase Realtime Database (SSE), latență tipică ~1–2 s, cu o verificare de siguranță la 60 min.
+
+Setup Firebase: [`tools/firebase/README.md`](tools/firebase/README.md)
+
+Aceleași controale apar și în client, sub **Server Settings**.
+
 ## Build
 
 Necesită KAI instalat (DLL-uri BMW) și MSBuild .NET Framework x86:

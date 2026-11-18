@@ -134,8 +134,13 @@
     <Compile Include="Shared\ActivityRegisterLogic.cs" />
     <Compile Include="Shared\PeerSyncCrypto.cs" />
     <Compile Include="Shared\PeerSyncLogic.cs" />
-    <Compile Include="PeerSyncClient.cs" />
+    <Compile Include="Shared\PeerSyncFirebaseParse.cs" />
+    <Compile Include="Shared\PeerRelayResults.cs" />
+    <Compile Include="PeerSyncFirebaseClient.cs" />
     <Compile Include="MainWindow.PeerSync.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.FirebasePush.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="DesktopKeyReaderReg.cs" />

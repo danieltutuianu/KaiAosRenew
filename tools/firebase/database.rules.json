@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "kai-aos-peer": {
+      "$authTag": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}

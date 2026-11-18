@@ -4,6 +4,13 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.24] - 2026-11-18
+
+- Firebase push: near real-time multi-site AOS credential sync via Realtime Database (REST + SSE); Settings + Server Settings UI; encrypted payloads unchanged
+- Removed Google Apps Script / Drive peer sync transport (UI, client, tools/google-apps-script)
+- Firebase Database URL field shortened with Copy button (server + client Server Settings)
+- Docs: `tools/firebase/` setup (rules + README); root README multi-site section is Firebase-only
+
 ## [1.2.23] - 2026-11-18
 
 - Peer sync: multi-site AOS credential sync via Google Apps Script / Drive (encrypted AES+HMAC); Force Register verify + rollback; Settings + Server Settings UI; poll interval default 60 minutes

@@ -1033,117 +1033,113 @@
               </StackPanel>
             </GroupBox>
 
-            <GroupBox x:Name="SettingsPeerSyncGroup" Header="Peer sync (multi-site)" Style="{DynamicResource KaiGroupBox}">
+            <GroupBox x:Name="SettingsFirebasePushGroup" Header="Firebase push (multi-site)" Style="{DynamicResource KaiGroupBox}">
               <StackPanel>
-                <CheckBox x:Name="PeerSyncEnableCheck" Content="Enable peer sync (Google Apps Script)"
+                <CheckBox x:Name="FirebasePushEnableCheck" Content="Enable Firebase push (Realtime Database)"
                           Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
-                          Checked="PeerSync_Changed" Unchecked="PeerSync_Changed"
-                          ToolTip="Sync AOS email/password with other KaiAosRenew servers via Google Apps Script" />
+                          Checked="FirebasePush_Changed" Unchecked="FirebasePush_Changed"
+                          ToolTip="Near real-time AOS credential sync via Firebase Realtime Database" />
                 <StackPanel Grid.IsSharedSizeScope="True">
                   <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
-                      <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
-                      <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="PeerSyncUrlLabel" Text="Web App URL:" Style="{DynamicResource FieldLabel}"
-                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
-                    <TextBox x:Name="PeerSyncUrlBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
-                             LostFocus="PeerSyncField_LostFocus"
-                             ToolTip="Google Apps Script Web App URL ending with /exec" />
-                  </Grid>
-                  <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
+                      <ColumnDefinition SharedSizeGroup="FbLabel" Width="Auto" />
                       <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="PeerSyncSecretLabel" Text="Shared secret:" Style="{DynamicResource FieldLabel}"
-                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0"
-                               ToolTip="Same secret on every server. Used for AES encryption and relay auth." />
+                    <TextBlock x:Name="FirebasePushUrlLabel" Text="Database URL:" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                      <TextBox x:Name="PeerSyncSecretBox" Width="220" HorizontalAlignment="Left"
+                      <TextBox x:Name="FirebasePushUrlBox" Width="420" HorizontalAlignment="Left"
                                Style="{DynamicResource KaiTextBox}"
-                               LostFocus="PeerSyncField_LostFocus"
-                               ToolTip="Same secret on every server. Used for AES encryption and relay auth." />
-                      <Button x:Name="PeerSyncGenerateBtn"
-                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
-                              MinWidth="80" Padding="8,2" VerticalAlignment="Center"
-                              Content="Generate"
-                              Click="PeerSyncGenerate_Click"
-                              ToolTip="Generate a new shared secret" />
-                      <Button x:Name="PeerSyncCopyBtn"
+                               LostFocus="FirebasePushField_LostFocus"
+                               ToolTip="Firebase Realtime Database URL (https://….firebasedatabase.app)" />
+                      <Button x:Name="FirebasePushUrlCopyBtn"
                               Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
                               MinWidth="36" Padding="8,2" VerticalAlignment="Center"
                               Content=""
-                              Click="PeerSyncCopy_Click"
+                              Click="FirebasePushUrlCopy_Click"
+                              ToolTip="Copy database URL"
+                              Tag="{DynamicResource IconCopy}" />
+                    </StackPanel>
+                  </Grid>
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition SharedSizeGroup="FbLabel" Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="FirebasePushSecretLabel" Text="Shared secret:" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0"
+                               ToolTip="Same secret on every server. Used for AES encryption and path auth." />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                      <TextBox x:Name="FirebasePushSecretBox" Width="220" HorizontalAlignment="Left"
+                               Style="{DynamicResource KaiTextBox}"
+                               LostFocus="FirebasePushField_LostFocus"
+                               ToolTip="Same secret on every server. Used for AES encryption and path auth." />
+                      <Button x:Name="FirebasePushGenerateBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="80" Padding="8,2" VerticalAlignment="Center"
+                              Content="Generate"
+                              Click="FirebasePushGenerate_Click"
+                              ToolTip="Generate a new shared secret" />
+                      <Button x:Name="FirebasePushCopyBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                              Content=""
+                              Click="FirebasePushCopy_Click"
                               ToolTip="Copy shared secret"
                               Tag="{DynamicResource IconCopy}" />
                     </StackPanel>
                   </Grid>
                   <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
-                      <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
+                      <ColumnDefinition SharedSizeGroup="FbLabel" Width="Auto" />
                       <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="PeerSyncServerNameLabel" Text="This server name:" Style="{DynamicResource FieldLabel}"
+                    <TextBlock x:Name="FirebasePushServerNameLabel" Text="This server name:" Style="{DynamicResource FieldLabel}"
                                Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
-                    <TextBox x:Name="PeerSyncServerNameBox" Grid.Column="1" Width="220" HorizontalAlignment="Left"
+                    <TextBox x:Name="FirebasePushServerNameBox" Grid.Column="1" Width="220" HorizontalAlignment="Left"
                              Style="{DynamicResource KaiTextBox}"
-                             LostFocus="PeerSyncField_LostFocus" />
-                  </Grid>
-                  <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition SharedSizeGroup="PeerLabel" Width="Auto" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="PeerSyncPollLabel" Text="Poll interval (minutes):" Style="{DynamicResource FieldLabel}"
-                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0"
-                               ToolTip="How often to check the relay for credential updates (default 60 = 1 hour)." />
-                    <TextBox x:Name="PeerSyncPollBox" Grid.Column="1" Width="80" HorizontalAlignment="Left"
-                             Style="{DynamicResource KaiTextBox}" Text="60"
-                             PreviewTextInput="IntervalBox_PreviewTextInput"
-                             LostFocus="PeerSyncField_LostFocus"
-                             ToolTip="How often to check the relay for credential updates (default 60 = 1 hour)." />
+                             LostFocus="FirebasePushField_LostFocus" />
                   </Grid>
                 </StackPanel>
                 <WrapPanel Margin="0,4,0,4">
-                  <Button x:Name="PeerSyncNowBtn" Content="Sync now" Style="{DynamicResource BeigeButton}"
-                          Margin="0,0,8,6" Padding="10,4" Click="PeerSyncNow_Click"
-                          ToolTip="Poll the relay immediately" Tag="{DynamicResource IconRefresh}" />
-                  <Button x:Name="PeerSyncPushBtn" Content="Push now" Style="{DynamicResource BeigeButton}"
-                          Margin="0,0,8,6" Padding="10,4" Click="PeerSyncPush_Click"
+                  <Button x:Name="FirebasePushNowBtn" Content="Sync now" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" Click="FirebasePushNow_Click"
+                          ToolTip="Fetch a Firebase snapshot immediately" Tag="{DynamicResource IconRefresh}" />
+                  <Button x:Name="FirebasePushPushBtn" Content="Push now" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" Click="FirebasePushPush_Click"
                           ToolTip="Publish current AOS credentials without changing the password"
                           Tag="{DynamicResource IconUpdate}" />
-                  <Button x:Name="PeerSyncUpdateAllBtn" Content="Update all peers" Style="{DynamicResource BeigeButton}"
-                          Margin="0,0,8,6" Padding="10,4" Click="PeerSyncUpdateAll_Click"
+                  <Button x:Name="FirebasePushUpdateAllBtn" Content="Update all peers" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" Click="FirebasePushUpdateAll_Click"
                           ToolTip="Tell other sites to install the latest server update"
                           Tag="{DynamicResource IconUpdate}" />
-                  <Button x:Name="PeerSyncTestBtn" Content="Test connection" Style="{DynamicResource BeigeButton}"
-                          Margin="0,0,8,6" Padding="10,4" Click="PeerSyncTest_Click"
-                          ToolTip="Ping the Google Apps Script relay" Tag="{DynamicResource IconInfo}" />
+                  <Button x:Name="FirebasePushTestBtn" Content="Test connection" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" Click="FirebasePushTest_Click"
+                          ToolTip="Ping the Firebase Realtime Database" Tag="{DynamicResource IconInfo}" />
                 </WrapPanel>
-                <TextBlock x:Name="PeerSyncStatusText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
+                <TextBlock x:Name="FirebasePushStatusText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
                            Foreground="{DynamicResource TextMutedBrush}" Text="" />
-                <TextBlock x:Name="PeerSyncPeersLabel" Text="Peer servers:" Style="{DynamicResource SectionText}"
+                <TextBlock x:Name="FirebasePushPeersLabel" Text="Peer servers:" Style="{DynamicResource SectionText}"
                            Margin="0,8,0,6" />
-                <ListView x:Name="PeerSyncPeersList" Height="120" Margin="0,0,0,4">
+                <ListView x:Name="FirebasePushPeersList" Height="120" Margin="0,0,0,4">
                   <ListView.View>
                     <GridView>
-                      <GridViewColumn x:Name="PeerSyncColServer" Header="Server" Width="120"
+                      <GridViewColumn x:Name="FirebasePushColServer" Header="Server" Width="120"
                                       DisplayMemberBinding="{Binding ServerName}" />
-                      <GridViewColumn x:Name="PeerSyncColHealth" Header="Status" Width="70"
+                      <GridViewColumn x:Name="FirebasePushColHealth" Header="Status" Width="70"
                                       DisplayMemberBinding="{Binding Health}" />
-                      <GridViewColumn x:Name="PeerSyncColToken" Header="Token" Width="70"
+                      <GridViewColumn x:Name="FirebasePushColToken" Header="Token" Width="70"
                                       DisplayMemberBinding="{Binding TokenStatus}" />
-                      <GridViewColumn x:Name="PeerSyncColVersion" Header="Version" Width="70"
+                      <GridViewColumn x:Name="FirebasePushColVersion" Header="Version" Width="70"
                                       DisplayMemberBinding="{Binding AppVersion}" />
-                      <GridViewColumn x:Name="PeerSyncColClients" Header="Clients" Width="55"
+                      <GridViewColumn x:Name="FirebasePushColClients" Header="Clients" Width="55"
                                       DisplayMemberBinding="{Binding ClientCount}" />
-                      <GridViewColumn x:Name="PeerSyncColSeen" Header="Last seen" Width="120"
+                      <GridViewColumn x:Name="FirebasePushColSeen" Header="Last seen" Width="120"
                                       DisplayMemberBinding="{Binding LastSeen}" />
                     </GridView>
                   </ListView.View>
                 </ListView>
-                <TextBlock x:Name="PeerSyncPeersEmptyHint" TextWrapping="Wrap" FontSize="12"
+                <TextBlock x:Name="FirebasePushPeersEmptyHint" TextWrapping="Wrap" FontSize="12"
                            Foreground="{DynamicResource TextMutedBrush}" Text="" Visibility="Collapsed" />
               </StackPanel>
             </GroupBox>

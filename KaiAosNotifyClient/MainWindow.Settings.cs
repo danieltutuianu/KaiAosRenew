@@ -732,7 +732,6 @@ namespace KaiAosNotifyClient
             if (SrvKeysGroup != null) SrvKeysGroup.Header = ClientUiStrings.T("SettingsKeys");
             if (SrvAuthGroup != null) SrvAuthGroup.Header = ClientUiStrings.T("SettingsAuth");
             if (SrvNotifyGroup != null) SrvNotifyGroup.Header = ClientUiStrings.T("SettingsNotifyGroup");
-            if (SrvPeerSyncGroup != null) SrvPeerSyncGroup.Header = ClientUiStrings.T("SettingsPeerSyncGroup");
             if (SrvPathsGroup != null) SrvPathsGroup.Header = ClientUiStrings.T("SettingsPaths");
             if (SrvLanguageLabel != null) SrvLanguageLabel.Text = ClientUiStrings.T("Language");
             if (SrvThemeLabel != null) SrvThemeLabel.Text = ClientUiStrings.T("Theme");
@@ -758,55 +757,51 @@ namespace KaiAosNotifyClient
             if (SrvNotifyEnabledCheck != null) SrvNotifyEnabledCheck.Content = ClientUiStrings.T("NotifyServerEnable");
             if (SrvNotifyPortLabel != null) SrvNotifyPortLabel.Text = ClientUiStrings.T("NotifyServerPort");
             if (SrvNotifyIpLabel != null) SrvNotifyIpLabel.Text = ClientUiStrings.T("NotifyServerIpLabel");
-            if (SrvPeerSyncEnableCheck != null) SrvPeerSyncEnableCheck.Content = ClientUiStrings.T("PeerSyncEnable");
-            if (SrvPeerSyncUrlLabel != null) SrvPeerSyncUrlLabel.Text = ClientUiStrings.T("PeerSyncUrl");
-            if (SrvPeerSyncSecretLabel != null)
+            if (SrvFirebasePushGroup != null) SrvFirebasePushGroup.Header = ClientUiStrings.T("SettingsFirebasePushGroup");
+            if (SrvFirebasePushEnableCheck != null) SrvFirebasePushEnableCheck.Content = ClientUiStrings.T("FirebasePushEnable");
+            if (SrvFirebasePushUrlLabel != null) SrvFirebasePushUrlLabel.Text = ClientUiStrings.T("FirebasePushUrl");
+            if (SrvFirebasePushUrlCopyBtn != null)
+                SrvFirebasePushUrlCopyBtn.ToolTip = ClientUiStrings.T("FirebasePushUrlCopyTip");
+            if (SrvFirebasePushSecretLabel != null)
             {
-                SrvPeerSyncSecretLabel.Text = ClientUiStrings.T("PeerSyncSecret");
-                SrvPeerSyncSecretLabel.ToolTip = ClientUiStrings.T("PeerSyncSecretTip");
+                SrvFirebasePushSecretLabel.Text = ClientUiStrings.T("FirebasePushSecret");
+                SrvFirebasePushSecretLabel.ToolTip = ClientUiStrings.T("FirebasePushSecretTip");
             }
-            if (SrvPeerSyncSecretBox != null)
-                SrvPeerSyncSecretBox.ToolTip = ClientUiStrings.T("PeerSyncSecretTip");
-            if (SrvPeerSyncGenerateBtn != null)
+            if (SrvFirebasePushSecretBox != null)
+                SrvFirebasePushSecretBox.ToolTip = ClientUiStrings.T("FirebasePushSecretTip");
+            if (SrvFirebasePushGenerateBtn != null)
             {
-                SrvPeerSyncGenerateBtn.Content = ClientUiStrings.T("PeerSyncGenerate");
-                SrvPeerSyncGenerateBtn.ToolTip = ClientUiStrings.T("PeerSyncGenerateTip");
+                SrvFirebasePushGenerateBtn.Content = ClientUiStrings.T("FirebasePushGenerate");
+                SrvFirebasePushGenerateBtn.ToolTip = ClientUiStrings.T("FirebasePushGenerateTip");
             }
-            if (SrvPeerSyncCopyBtn != null)
-                SrvPeerSyncCopyBtn.ToolTip = ClientUiStrings.T("PeerSyncCopyTip");
-            if (SrvPeerSyncServerNameLabel != null)
-                SrvPeerSyncServerNameLabel.Text = ClientUiStrings.T("PeerSyncServerName");
-            if (SrvPeerSyncPollLabel != null)
+            if (SrvFirebasePushCopyBtn != null)
+                SrvFirebasePushCopyBtn.ToolTip = ClientUiStrings.T("FirebasePushCopyTip");
+            if (SrvFirebasePushServerNameLabel != null)
+                SrvFirebasePushServerNameLabel.Text = ClientUiStrings.T("FirebasePushServerName");
+            if (SrvFirebasePushNowBtn != null) SrvFirebasePushNowBtn.Content = ClientUiStrings.T("FirebasePushNow");
+            if (SrvFirebasePushPushBtn != null)
             {
-                SrvPeerSyncPollLabel.Text = ClientUiStrings.T("PeerSyncPollMinutes");
-                SrvPeerSyncPollLabel.ToolTip = ClientUiStrings.T("PeerSyncPollTip");
+                SrvFirebasePushPushBtn.Content = ClientUiStrings.T("FirebasePushPush");
+                SrvFirebasePushPushBtn.ToolTip = ClientUiStrings.T("FirebasePushPushTip");
             }
-            if (SrvPeerSyncPollBox != null)
-                SrvPeerSyncPollBox.ToolTip = ClientUiStrings.T("PeerSyncPollTip");
-            if (SrvPeerSyncNowBtn != null) SrvPeerSyncNowBtn.Content = ClientUiStrings.T("PeerSyncNow");
-            if (SrvPeerSyncPushBtn != null)
+            if (SrvFirebasePushUpdateAllBtn != null)
             {
-                SrvPeerSyncPushBtn.Content = ClientUiStrings.T("PeerSyncPush");
-                SrvPeerSyncPushBtn.ToolTip = ClientUiStrings.T("PeerSyncPushTip");
+                SrvFirebasePushUpdateAllBtn.Content = ClientUiStrings.T("FirebasePushUpdateAll");
+                SrvFirebasePushUpdateAllBtn.ToolTip = ClientUiStrings.T("FirebasePushUpdateAllTip");
             }
-            if (SrvPeerSyncUpdateAllBtn != null)
+            if (SrvFirebasePushTestBtn != null) SrvFirebasePushTestBtn.Content = ClientUiStrings.T("FirebasePushTest");
+            if (SrvFirebasePushPeersLabel != null) SrvFirebasePushPeersLabel.Text = ClientUiStrings.T("FirebasePushPeers");
+            if (SrvFirebasePushColServer != null) SrvFirebasePushColServer.Header = ClientUiStrings.T("PeerSyncColServer");
+            if (SrvFirebasePushColHealth != null) SrvFirebasePushColHealth.Header = ClientUiStrings.T("PeerSyncColHealth");
+            if (SrvFirebasePushColToken != null) SrvFirebasePushColToken.Header = ClientUiStrings.T("PeerSyncColToken");
+            if (SrvFirebasePushColVersion != null) SrvFirebasePushColVersion.Header = ClientUiStrings.T("PeerSyncColVersion");
+            if (SrvFirebasePushColClients != null) SrvFirebasePushColClients.Header = ClientUiStrings.T("PeerSyncColClients");
+            if (SrvFirebasePushColSeen != null) SrvFirebasePushColSeen.Header = ClientUiStrings.T("PeerSyncColSeen");
+            if (SrvFirebasePushPeersEmptyHint != null)
             {
-                SrvPeerSyncUpdateAllBtn.Content = ClientUiStrings.T("PeerSyncUpdateAll");
-                SrvPeerSyncUpdateAllBtn.ToolTip = ClientUiStrings.T("PeerSyncUpdateAllTip");
-            }
-            if (SrvPeerSyncTestBtn != null) SrvPeerSyncTestBtn.Content = ClientUiStrings.T("PeerSyncTest");
-            if (SrvPeerSyncPeersLabel != null) SrvPeerSyncPeersLabel.Text = ClientUiStrings.T("PeerSyncPeers");
-            if (SrvPeerSyncColServer != null) SrvPeerSyncColServer.Header = ClientUiStrings.T("PeerSyncColServer");
-            if (SrvPeerSyncColHealth != null) SrvPeerSyncColHealth.Header = ClientUiStrings.T("PeerSyncColHealth");
-            if (SrvPeerSyncColToken != null) SrvPeerSyncColToken.Header = ClientUiStrings.T("PeerSyncColToken");
-            if (SrvPeerSyncColVersion != null) SrvPeerSyncColVersion.Header = ClientUiStrings.T("PeerSyncColVersion");
-            if (SrvPeerSyncColClients != null) SrvPeerSyncColClients.Header = ClientUiStrings.T("PeerSyncColClients");
-            if (SrvPeerSyncColSeen != null) SrvPeerSyncColSeen.Header = ClientUiStrings.T("PeerSyncColSeen");
-            if (SrvPeerSyncPeersEmptyHint != null)
-            {
-                SrvPeerSyncPeersEmptyHint.Text = ClientUiStrings.T("PeerSyncPeersEmpty");
-                if (SrvPeerSyncPeersList != null && SrvPeerSyncPeersList.ItemsSource == null)
-                    SrvPeerSyncPeersEmptyHint.Visibility = Visibility.Visible;
+                SrvFirebasePushPeersEmptyHint.Text = ClientUiStrings.T("FirebasePushPeersEmpty");
+                if (SrvFirebasePushPeersList != null && SrvFirebasePushPeersList.ItemsSource == null)
+                    SrvFirebasePushPeersEmptyHint.Visibility = Visibility.Visible;
             }
             if (SrvPathsKaiConfig != null) SrvPathsKaiConfig.Text = ClientUiStrings.T("SectionConfig");
             if (SrvConfigPathLabel != null) SrvConfigPathLabel.Text = ClientUiStrings.T("ConfigPath");
@@ -930,16 +925,15 @@ namespace KaiAosNotifyClient
                     SrvNotifyIpBox.Text = KvStr(map, "notifyIps", "");
                     SizeTextBoxToContent(SrvNotifyIpBox);
                 }
-                if (SrvPeerSyncEnableCheck != null) SrvPeerSyncEnableCheck.IsChecked = KvFlag(map, "peerSyncEnabled", false);
-                if (SrvPeerSyncUrlBox != null) SrvPeerSyncUrlBox.Text = KvStr(map, "peerSyncUrl", "");
-                if (SrvPeerSyncSecretBox != null) SrvPeerSyncSecretBox.Text = KvStr(map, "peerSyncSecret", "");
-                if (SrvPeerSyncServerNameBox != null) SrvPeerSyncServerNameBox.Text = KvStr(map, "peerSyncServerName", "");
-                if (SrvPeerSyncPollBox != null) SrvPeerSyncPollBox.Text = KvStr(map, "peerSyncPollMinutes", "60");
-                if (SrvPeerSyncStatusText != null)
+                if (SrvFirebasePushEnableCheck != null) SrvFirebasePushEnableCheck.IsChecked = KvFlag(map, "firebasePushEnabled", false);
+                if (SrvFirebasePushUrlBox != null) SrvFirebasePushUrlBox.Text = KvStr(map, "firebasePushUrl", "");
+                if (SrvFirebasePushSecretBox != null) SrvFirebasePushSecretBox.Text = KvStr(map, "firebasePushSecret", "");
+                if (SrvFirebasePushServerNameBox != null) SrvFirebasePushServerNameBox.Text = KvStr(map, "firebasePushServerName", "");
+                if (SrvFirebasePushStatusText != null)
                 {
-                    SrvPeerSyncStatusText.Text = KvFlag(map, "peerSyncEnabled", false)
-                        ? ClientUiStrings.T("PeerSyncStatusIdle")
-                        : ClientUiStrings.T("PeerSyncStatusDisabled");
+                    SrvFirebasePushStatusText.Text = KvFlag(map, "firebasePushEnabled", false)
+                        ? ClientUiStrings.T("FirebasePushStatusIdle")
+                        : ClientUiStrings.T("FirebasePushStatusDisabled");
                 }
                 if (SrvConfigPathBox != null) SrvConfigPathBox.Text = KvStr(map, "configPath", "");
                 if (SrvDataBinBox != null) SrvDataBinBox.Text = KvStr(map, "keyReaderDataBin", "");

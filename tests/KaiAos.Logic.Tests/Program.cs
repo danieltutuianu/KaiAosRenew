@@ -21,6 +21,7 @@ namespace KaiAos.Logic.Tests
             Run("TryParseExportDay", TestExportDay);
             Run("FilterRegisterHistory", TestFilterRegisterHistory);
             Run("PeerSync decisions", TestPeerSyncLogic);
+            Run("Firebase parse", TestFirebaseParse);
 
             Console.WriteLine();
             if (_failed == 0)
@@ -262,6 +263,72 @@ namespace KaiAos.Logic.Tests
             AssertEqual(1, parsed.Count, "wire count");
             AssertEqual("Alpha", parsed[0].ServerName, "wire name");
             AssertEqual("Online", parsed[0].Health, "wire health");
+        }
+
+        private static void TestFirebaseParse()
+        {
+            AssertTrue(PeerSyncFirebaseParse.IsFirebaseDatabaseUrl(
+                "https://demo-default-rtdb.europe-west1.firebasedatabase.app"), "rtdb url");
+            AssertTrue(PeerSyncFirebaseParse.IsFirebaseDatabaseUrl(
+                "https://demo.firebaseio.com/"), "legacy url");
+            AssertTrue(!PeerSyncFirebaseParse.IsFirebaseDatabaseUrl(
+                "https://script.google.com/macros/s/xxx/exec"), "apps script not firebase");
+            AssertTrue(!PeerSyncFirebaseParse.IsFirebaseDatabaseUrl(""), "empty url");
+
+            var tag = PeerSyncFirebaseParse.AuthTagToPathSegment("ab+c/d==");
+            AssertEqual("ab-c_d", tag, "auth tag path");
+
+            var norm = PeerSyncFirebaseParse.NormalizeDatabaseUrl(
+                "https://demo.firebaseio.com/foo.json/");
+            AssertEqual("https://demo.firebaseio.com/foo", norm, "normalize db url");
+
+            var root = PeerSyncFirebaseParse.BuildRelayRootUrl(
+                "https://demo.firebaseio.com", "secret-xyz");
+            AssertTrue(root.StartsWith("https://demo.firebaseio.com/kai-aos-peer/"), "root prefix");
+            AssertTrue(root.Length > "https://demo.firebaseio.com/kai-aos-peer/".Length, "root tag");
+
+            var json = @"{
+  ""meta"": { ""seq"": 2, ""ackSeq"": 1, ""cmdSeq"": 3, ""peersSeq"": 4 },
+  ""latestCreds"": {
+    ""seq"": 2, ""eventId"": ""e1"", ""originServerId"": ""s1"",
+    ""originName"": ""A"", ""createdUtc"": ""2020-01-01T00:00:00Z"",
+    ""payloadEnc"": ""blob""
+  },
+  ""latestCommand"": {
+    ""cmdSeq"": 3, ""cmdId"": ""c1"", ""type"": ""updateAll"",
+    ""originServerId"": ""s1"", ""originName"": ""A"",
+    ""createdUtc"": ""2020-01-01T00:00:00Z"", ""payloadEnc"": ""cmdblob""
+  },
+  ""acks"": {
+    ""a1"": {
+      ""ackSeq"": 1, ""ackId"": ""a1"", ""targetServerId"": ""local"",
+      ""forEventId"": ""e0"", ""responderServerId"": ""s2"",
+      ""responderName"": ""B"", ""createdUtc"": ""2020-01-01T00:00:00Z"",
+      ""payloadEnc"": ""ackblob""
+    }
+  },
+  ""peers"": {
+    ""s1"": { ""serverId"": ""s1"", ""lastSeenUtc"": ""2020-01-01T00:00:00Z"", ""statusEnc"": ""st"" }
+  }
+}";
+            var snap = PeerSyncFirebaseParse.ParseRootJson(json);
+            AssertEqual(2, (int)snap.Seq, "snap seq");
+            AssertEqual(1, (int)snap.AckSeq, "snap ackSeq");
+            AssertEqual(3, (int)snap.CmdSeq, "snap cmdSeq");
+            AssertEqual(4, (int)snap.PeersSeq, "snap peersSeq");
+            AssertTrue(snap.LatestCreds != null && snap.LatestCreds.EventId == "e1", "snap creds");
+            AssertTrue(snap.LatestCommand != null && snap.LatestCommand.CmdId == "c1", "snap cmd");
+            AssertEqual(1, snap.Acks.Count, "snap acks");
+            AssertEqual(1, snap.Peers.Count, "snap peers");
+
+            string path;
+            Newtonsoft.Json.Linq.JToken data;
+            AssertTrue(PeerSyncFirebaseParse.TryParseSseData(
+                "{\"path\":\"/latestCreds\",\"data\":{\"seq\":2}}", out path, out data), "sse parse");
+            AssertEqual("latestCreds", path, "sse path");
+            AssertTrue(PeerSyncFirebaseParse.SsePathNeedsSnapshot(path), "sse needs snapshot");
+            AssertTrue(!PeerSyncFirebaseParse.SsePathNeedsSnapshot("other/x"), "sse ignore other");
+            AssertTrue(PeerSyncFirebaseParse.SsePathNeedsSnapshot(""), "sse root");
         }
     }
 }

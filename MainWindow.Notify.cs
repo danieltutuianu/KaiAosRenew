@@ -665,8 +665,8 @@ namespace KaiAosRenew
                 {
                     _loadingUi = false;
                 }
-                LoadPeerSyncToUi();
-                ApplyPeerSyncFromSettings(true);
+                LoadFirebasePushToUi();
+                ApplyFirebasePushFromSettings(true);
                 AppendLog("Server settings imported from client " + clientId, LogLevel.Info);
                 SendAosAck(clientId, true, "settingsImport");
                 BroadcastServerSettings();
@@ -717,19 +717,16 @@ namespace KaiAosRenew
                     _settings.UseSystemProxy = MapFlag(map, "useSystemProxy", _settings.UseSystemProxy);
                     _settings.AuthCooldownMinutes = MapInt(map, "authCooldownMinutes", _settings.AuthCooldownMinutes, 5, 240);
                     _settings.AuthRegisterBlockAfter = MapInt(map, "authRegisterBlockAfter", GetAuthRegisterBlockAfter(), 1, 10);
-                    if (map.ContainsKey("peerSyncEnabled")
-                        || map.ContainsKey("peerSyncUrl")
-                        || map.ContainsKey("peerSyncSecret")
-                        || map.ContainsKey("peerSyncServerName")
-                        || map.ContainsKey("peerSyncPollMinutes"))
+                    if (map.ContainsKey("firebasePushEnabled")
+                        || map.ContainsKey("firebasePushUrl")
+                        || map.ContainsKey("firebasePushSecret")
+                        || map.ContainsKey("firebasePushServerName"))
                     {
-                        _settings.PeerSyncEnabled = MapFlag(map, "peerSyncEnabled", _settings.PeerSyncEnabled);
-                        _settings.PeerSyncUrl = MapStr(map, "peerSyncUrl", _settings.PeerSyncUrl ?? "");
-                        if (map.ContainsKey("peerSyncSecret"))
-                            _settings.SetPeerSyncSecret(MapStr(map, "peerSyncSecret", ""));
-                        _settings.PeerSyncServerName = MapStr(map, "peerSyncServerName", _settings.PeerSyncServerName ?? "");
-                        _settings.PeerSyncPollMinutes = MapInt(map, "peerSyncPollMinutes",
-                            PeerSyncLogic.ClampPollMinutes(_settings.PeerSyncPollMinutes), 1, 1440);
+                        _settings.FirebasePushEnabled = MapFlag(map, "firebasePushEnabled", _settings.FirebasePushEnabled);
+                        _settings.FirebasePushUrl = MapStr(map, "firebasePushUrl", _settings.FirebasePushUrl ?? "");
+                        if (map.ContainsKey("firebasePushSecret"))
+                            _settings.SetFirebasePushSecret(MapStr(map, "firebasePushSecret", ""));
+                        _settings.FirebasePushServerName = MapStr(map, "firebasePushServerName", _settings.FirebasePushServerName ?? "");
                     }
                     _settings.NormalizeClamps();
                     _settings.Save();
@@ -752,7 +749,7 @@ namespace KaiAosRenew
                     if (UseSystemProxyCheck != null) UseSystemProxyCheck.IsChecked = _settings.UseSystemProxy;
                     if (AuthCooldownMinutesBox != null) AuthCooldownMinutesBox.Text = _settings.AuthCooldownMinutes.ToString();
                     if (AuthRegisterBlockAfterBox != null) AuthRegisterBlockAfterBox.Text = _settings.AuthRegisterBlockAfter.ToString();
-                    LoadPeerSyncToUi();
+                    LoadFirebasePushToUi();
 
                     ApplyStartup(_settings.StartWithWindows);
                     ApplyKeysMonitorSettings();
@@ -760,7 +757,7 @@ namespace KaiAosRenew
                     ThemeManager.Apply(_settings.ThemeMode);
                     ApplyLanguage();
                     RefreshAuthCooldownBanner();
-                    ApplyPeerSyncFromSettings(true);
+                    ApplyFirebasePushFromSettings(true);
 
                     if (map.ContainsKey("keyReaderLogLevel"))
                     {

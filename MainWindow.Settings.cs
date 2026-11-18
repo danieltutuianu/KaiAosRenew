@@ -236,7 +236,7 @@ namespace KaiAosRenew
                 SettingsNotifyGroup.Header = UiStrings.T("SettingsNotifyGroup");
             if (NotifyServerEnableCheck != null)
                 NotifyServerEnableCheck.Content = UiStrings.T("NotifyServerEnable");
-            ApplyPeerSyncLanguage();
+            ApplyFirebasePushLanguage();
             if (NotifyServerPortLabel != null)
                 NotifyServerPortLabel.Text = UiStrings.T("NotifyServerPort");
             if (NotifyPairingCodeLabel != null)
@@ -800,7 +800,7 @@ namespace KaiAosRenew
                     NotifyPairingCodeBox.Text = _settings.NotifyPairingCode ?? "";
                 RefreshNotifyServerIpDisplay();
                 RefreshNotifyClientsCombo();
-                LoadPeerSyncToUi();
+                LoadFirebasePushToUi();
                 if (string.IsNullOrWhiteSpace(_settings.KeysPickupFolder))
                     _settings.KeysPickupFolder = KeyActivityMonitor.DefaultPickupFolder;
                 _settings.NormalizeClamps();
@@ -1143,7 +1143,7 @@ namespace KaiAosRenew
                 _settings.NotifyServerEnabled = NotifyServerEnableCheck.IsChecked == true;
             ParseAndSetNotifyServerPort();
             ParseAndSetNotifyPairingCode();
-            CapturePeerSyncFromUi();
+            CaptureFirebasePushFromUi();
             if (KeysStallMinutesBox != null)
             {
                 int stall;
@@ -1177,7 +1177,6 @@ namespace KaiAosRenew
             _settings.Save();
             ApplyStartup(_settings.StartWithWindows);
             ApplyNotifyServerFromSettings();
-            ApplyPeerSyncFromSettings(false);
             CaptureAosSavedCredentials();
             _aosCredentialsDirty = false;
             UpdateAosDirtyStatus();
@@ -1395,8 +1394,8 @@ namespace KaiAosRenew
                     _loadingUi = false;
                 }
                 ApplyStartup(_settings.StartWithWindows);
-                LoadPeerSyncToUi();
-                ApplyPeerSyncFromSettings(true);
+                LoadFirebasePushToUi();
+                ApplyFirebasePushFromSettings(true);
                 AppendLog(string.Format(UiStrings.T("ImportOk"), dlg.FileName));
                 BroadcastServerSettings();
                 BroadcastAosSync();

@@ -46,6 +46,9 @@
     <Compile Include="..\..\Shared\PeerSyncLogic.cs">
       <Link>Shared\PeerSyncLogic.cs</Link>
     </Compile>
+    <Compile Include="..\..\Shared\PeerSyncFirebaseParse.cs">
+      <Link>Shared\PeerSyncFirebaseParse.cs</Link>
+    </Compile>
     <Compile Include="..\..\Shared\ActivityRegisterLogic.cs">
       <Link>Shared\ActivityRegisterLogic.cs</Link>
     </Compile>
