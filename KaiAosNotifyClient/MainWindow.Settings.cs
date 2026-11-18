@@ -74,6 +74,12 @@ namespace KaiAosNotifyClient
             if (TabSettings != null) TabSettings.Header = ClientUiStrings.T("TabSettings");
             if (ActivitySection != null) ActivitySection.Text = ClientUiStrings.T("ActivitySection");
             if (ActivityFilterLabel != null) ActivityFilterLabel.Text = ClientUiStrings.T("RegisterFilter");
+            if (ActivitySearchLabel != null) ActivitySearchLabel.Text = ClientUiStrings.T("ActivitySearch");
+            if (ActivitySearchBox != null) ActivitySearchBox.ToolTip = ClientUiStrings.T("ActivitySearchTip");
+            if (ActivityLoadingHint != null) ActivityLoadingHint.Text = ClientUiStrings.T("LogsLoading");
+            if (RegisterSearchLabel != null) RegisterSearchLabel.Text = ClientUiStrings.T("RegisterSearch");
+            if (RegisterSearchBox != null) RegisterSearchBox.ToolTip = ClientUiStrings.T("RegisterSearchTip");
+            if (RegisterLoadingHint != null) RegisterLoadingHint.Text = ClientUiStrings.T("LogsLoading");
             if (ActivityClearBtn != null) ActivityClearBtn.Content = ClientUiStrings.T("ClearLog");
             if (SaveActivityLogBtn != null) SaveActivityLogBtn.Content = ClientUiStrings.T("SaveLog");
             if (SaveRegisterLogBtn != null) SaveRegisterLogBtn.Content = ClientUiStrings.T("SaveLog");
@@ -187,8 +193,6 @@ namespace KaiAosNotifyClient
             if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.Content = ClientUiStrings.T("CheckForUpdates");
             if (_pendingUpdate != null)
                 ShowPendingUpdate(_pendingUpdate);
-            else if (_debugMode)
-                ShowForcedDebugClientUpdateUi();
             else if (FooterUpdateBtn != null)
                 FooterUpdateBtn.Content = ClientUiStrings.T("Update");
             RefreshVersionLabel();

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
+    <ProjectGuid>{B2C3D4E5-F6A7-8901-BCDE-F12345678901}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>KaiAos.Protocol.Tests</RootNamespace>
+    <AssemblyName>KaiAos.Protocol.Tests</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <PlatformTarget>x86</PlatformTarget>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
+    <OutputPath>$(MSBuildProjectDirectory)\bin\Release\</OutputPath>
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
+    <OutputPath>$(MSBuildProjectDirectory)\bin\Debug\</OutputPath>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\..\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="Stubs\RenewEngine.cs" />
+    <Compile Include="..\..\Shared\NotifyMessage.cs">
+      <Link>Shared\NotifyMessage.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\NotifyPairing.cs">
+      <Link>Shared\NotifyPairing.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\ActivityRegisterLogic.cs">
+      <Link>Shared\ActivityRegisterLogic.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\TcpUtf8LineReader.cs">
+      <Link>Shared\TcpUtf8LineReader.cs</Link>
+    </Compile>
+    <Compile Include="..\..\NotifyServer.cs">
+      <Link>NotifyServer.cs</Link>
+    </Compile>
+    <Compile Include="..\..\KaiAosNotifyClient\NotifyClient.cs">
+      <Link>NotifyClient.cs</Link>
+    </Compile>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

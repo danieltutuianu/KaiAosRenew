@@ -91,7 +91,9 @@ namespace KaiAosRenew
         private readonly List<LogEntry> _logEntries = new List<LogEntry>();
         private readonly ObservableCollection<LogEntry> _activityRows = new ObservableCollection<LogEntry>();
         private readonly List<RegisterHistoryRow> _registerHistory = new List<RegisterHistoryRow>();
-        private const int RegisterHistoryMax = 200;
+        private const int RegisterHistoryMax = 5000;
+        /// <summary>When Register filter is All, only bind this many newest rows.</summary>
+        private const int RegisterUnfilteredDisplayMax = 500;
         private string _registerFilter = "all";
         private bool _registerFilterReady;
         private WinForms.NotifyIcon _tray;
@@ -117,6 +119,12 @@ namespace KaiAosRenew
         private HwndSource _hwndSource;
         private string _lastValidConfigPath;
         private string _logFilter = "all";
+        private string _activitySearchText = "";
+        private string _registerSearchText = "";
+        private DispatcherTimer _activityFilterScanTimer;
+        private DispatcherTimer _activitySearchDebounceTimer;
+        private DispatcherTimer _registerSearchDebounceTimer;
+        private int _activityFilterScanGen;
         private string _lastServiceProblemSignature;
         private bool _serviceCheckDoneOnce;
         private bool? _tokenFooterOk;
@@ -271,7 +279,7 @@ namespace KaiAosRenew
                 ApplyFailureAlert(_settings.LastMessage ?? "Last run failed.");
             SetTimerStatus(false);
             SeedRegisterTimesFromLog();
-            SeedRegisterActivityFromRenewLog();
+            SeedActivityHistoryFromLog();
             LoadRegisterHistoryFromLog();
             InitRegisterFilterCombo();
             UpdateTokenAgeText();
@@ -978,10 +986,7 @@ namespace KaiAosRenew
                 KeysColBin.Width = _debugMode ? 36 : 0;
             if (KeysColBinPad != null)
                 KeysColBinPad.Width = _debugMode ? 18 : 0;
-            if (_debugMode)
-                ShowForcedDebugUpdateUi();
-            else
-                ShowPendingUpdate(_pendingUpdate);
+            ShowPendingUpdate(_pendingUpdate);
             RefreshTrayIcon();
         }
 
@@ -2317,6 +2322,51 @@ namespace KaiAosRenew
             RefreshLogView();
         }
 
+        private void ActivitySearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_loadingUi) return;
+            EnsureActivitySearchDebounceTimer();
+            _activitySearchDebounceTimer.Stop();
+            _activitySearchDebounceTimer.Start();
+        }
+
+        private void RegisterSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_loadingUi) return;
+            EnsureRegisterSearchDebounceTimer();
+            _registerSearchDebounceTimer.Stop();
+            _registerSearchDebounceTimer.Start();
+        }
+
+        private void EnsureActivitySearchDebounceTimer()
+        {
+            if (_activitySearchDebounceTimer != null) return;
+            _activitySearchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _activitySearchDebounceTimer.Tick += (s, ev) =>
+            {
+                _activitySearchDebounceTimer.Stop();
+                _activitySearchText = ActivitySearchBox != null ? (ActivitySearchBox.Text ?? "").Trim() : "";
+                RefreshLogView();
+            };
+        }
+
+        private void EnsureRegisterSearchDebounceTimer()
+        {
+            if (_registerSearchDebounceTimer != null) return;
+            _registerSearchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _registerSearchDebounceTimer.Tick += (s, ev) =>
+            {
+                _registerSearchDebounceTimer.Stop();
+                _registerSearchText = RegisterSearchBox != null ? (RegisterSearchBox.Text ?? "").Trim() : "";
+                ApplyRegisterFilter();
+            };
+        }
+
+        private static bool MatchesLogSearch(string text, string needle)
+        {
+            return ActivityRegisterLogic.MatchesLogSearch(text, needle);
+        }
+
         private void ClearLog_Click(object sender, RoutedEventArgs e)
         {
             _logEntries.Clear();
@@ -2839,9 +2889,7 @@ namespace KaiAosRenew
 
         private static bool IsRegistrationFilterMatch(string text)
         {
-            if (string.IsNullOrEmpty(text)) return false;
-            return text.IndexOf("Registration", StringComparison.OrdinalIgnoreCase) >= 0
-                || text.IndexOf("Register", StringComparison.OrdinalIgnoreCase) >= 0;
+            return ActivityRegisterLogic.IsRegistrationFilterMatch(text);
         }
 
 
@@ -2958,20 +3006,28 @@ namespace KaiAosRenew
                 Level = resolved,
                 Text = line ?? ""
             };
-            _logEntries.Add(entry);
-            if (_logEntries.Count > 2000)
-                _logEntries.RemoveRange(0, _logEntries.Count - 2000);
-            if (ShouldShowLogEntry(entry))
+            if (!IsActivityUiNoise(entry.Text))
             {
-                _activityRows.Add(entry);
-                while (_activityRows.Count > MaxLogBlocks)
-                    _activityRows.RemoveAt(0);
-                if (TabActivity != null && TabActivity.IsSelected)
-                    ScrollActivityLogToEnd();
+                _logEntries.Add(entry);
+                // Cheap cap only — full age trim runs on seed / RefreshLogView.
+                while (_logEntries.Count > MaxLogEntriesMemory)
+                    _logEntries.RemoveAt(0);
+                if (ShouldShowLogEntry(entry) && IsWithinLogRetention(entry.Time))
+                {
+                    _activityRows.Add(entry);
+                    var rowCap = (string.IsNullOrEmpty(_logFilter) ||
+                        string.Equals(_logFilter, "all", StringComparison.OrdinalIgnoreCase))
+                        ? MaxLogBlocks
+                        : ActivityFilteredMax;
+                    while (_activityRows.Count > rowCap)
+                        _activityRows.RemoveAt(0);
+                    if (TabActivity != null && TabActivity.IsSelected)
+                        ScrollActivityLogToEnd();
+                }
+                if (resolved == LogLevel.Error)
+                    MaybeRaiseActivityAlert();
+                BroadcastActivityEntry(entry);
             }
-            if (resolved == LogLevel.Error)
-                MaybeRaiseActivityAlert();
-            BroadcastActivityEntry(entry);
             MaybeAppendRegisterHistory(entry.Text, entry.Time);
             UpdateClearButtonsEnabled();
         }
@@ -2999,68 +3055,163 @@ namespace KaiAosRenew
 
         private static LogLevel InferLogLevel(string line, bool verboseOnly)
         {
-            if (verboseOnly) return LogLevel.Verbose;
-            if (string.IsNullOrEmpty(line)) return LogLevel.Info;
-            if (line.StartsWith("FAIL", StringComparison.OrdinalIgnoreCase))
-                return LogLevel.Error;
-            if (line.StartsWith("OK:", StringComparison.OrdinalIgnoreCase)
-                || line.StartsWith("Last success", StringComparison.OrdinalIgnoreCase))
-                return LogLevel.Success;
-            if (line.IndexOf("Balloon tip: Error", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                line.IndexOf("Balloon-Tipp: Fehler", StringComparison.OrdinalIgnoreCase) >= 0)
-                return LogLevel.Error;
-            if (line.IndexOf("Balloon tip: Warning", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                line.IndexOf("Balloon-Tipp: Warnung", StringComparison.OrdinalIgnoreCase) >= 0)
-                return LogLevel.Warning;
-            if (line.IndexOf("does not exist", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                line.IndexOf("Missing ", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                line.IndexOf("invalid", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                line.IndexOf("lipsește", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                line.IndexOf("nu există", StringComparison.OrdinalIgnoreCase) >= 0)
-                return LogLevel.Warning;
-            return LogLevel.Info;
+            switch (ActivityRegisterLogic.InferLogLevel(line, verboseOnly))
+            {
+                case ActivityRegisterLogic.ActivityLogLevel.Success: return LogLevel.Success;
+                case ActivityRegisterLogic.ActivityLogLevel.Warning: return LogLevel.Warning;
+                case ActivityRegisterLogic.ActivityLogLevel.Error: return LogLevel.Error;
+                case ActivityRegisterLogic.ActivityLogLevel.Verbose: return LogLevel.Verbose;
+                default: return LogLevel.Info;
+            }
         }
 
         private bool ShouldShowLogEntry(LogEntry entry)
         {
-            if (_logFilter == "keyreader")
+            return ShouldShowLogEntry(entry, _logFilter, _activitySearchText);
+        }
+
+        private bool ShouldShowLogEntry(LogEntry entry, string filter, string search)
+        {
+            if (entry == null || IsActivityUiNoise(entry.Text)) return false;
+            if (!MatchesLogSearch(entry.Text, search)) return false;
+            filter = string.IsNullOrEmpty(filter) ? "all" : filter.Trim().ToLowerInvariant();
+            if (filter == "keyreader")
             {
                 var t = entry.Text ?? "";
                 return t.StartsWith("KeyReader:", StringComparison.OrdinalIgnoreCase);
             }
-            if (_logFilter == "registration")
+            if (filter == "registration")
                 return IsRegistrationFilterMatch(entry.Text);
             if (entry.Level == LogLevel.Verbose)
-                return _settings != null && _settings.LogVerbose && _logFilter == "all";
-            if (_logFilter == "all") return true;
-            if (_logFilter == "info") return entry.Level == LogLevel.Info;
-            if (_logFilter == "success") return entry.Level == LogLevel.Success;
-            if (_logFilter == "warning") return entry.Level == LogLevel.Warning;
-            if (_logFilter == "error") return entry.Level == LogLevel.Error;
+                return _settings != null && _settings.LogVerbose && filter == "all";
+            if (filter == "all") return true;
+            if (filter == "info") return entry.Level == LogLevel.Info;
+            if (filter == "success") return entry.Level == LogLevel.Success;
+            if (filter == "warning") return entry.Level == LogLevel.Warning;
+            if (filter == "error") return entry.Level == LogLevel.Error;
             return true;
         }
 
         private void RefreshLogView()
         {
             _uiOp = "RefreshLogView";
-            _activityRows.Clear();
-            var start = Math.Max(0, _logEntries.Count - MaxLogBlocks * 2);
-            for (var i = start; i < _logEntries.Count; i++)
+            TrimLogEntriesToRetention();
+            if (string.IsNullOrEmpty(_logFilter) || string.Equals(_logFilter, "all", StringComparison.OrdinalIgnoreCase))
             {
-                if (ShouldShowLogEntry(_logEntries[i]))
-                    _activityRows.Add(_logEntries[i]);
+                _activityFilterScanGen++;
+                if (_activityFilterScanTimer != null) _activityFilterScanTimer.Stop();
+                _activityRows.Clear();
+                for (var i = 0; i < _logEntries.Count; i++)
+                {
+                    var e = _logEntries[i];
+                    if (e == null || !IsWithinLogRetention(e.Time)) continue;
+                    if (ShouldShowLogEntry(e))
+                        _activityRows.Add(e);
+                }
+                while (_activityRows.Count > MaxLogBlocks)
+                    _activityRows.RemoveAt(0);
+                FinishRefreshLogViewHints();
             }
-            while (_activityRows.Count > MaxLogBlocks)
-                _activityRows.RemoveAt(0);
+            else
+            {
+                EnsureActivityFilterScanTimer();
+                _activityFilterScanTimer.Stop();
+                _activityFilterScanTimer.Start();
+            }
+        }
+
+        private void EnsureActivityFilterScanTimer()
+        {
+            if (_activityFilterScanTimer != null) return;
+            _activityFilterScanTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _activityFilterScanTimer.Tick += ActivityFilterScanTimer_Tick;
+        }
+
+        private void ActivityFilterScanTimer_Tick(object sender, EventArgs e)
+        {
+            if (_activityFilterScanTimer != null) _activityFilterScanTimer.Stop();
+            var filter = _logFilter;
+            var search = _activitySearchText;
+            var gen = ++_activityFilterScanGen;
+            Task.Run(() =>
+            {
+                var rows = new List<LogEntry>();
+                try { CollectFilteredActivityFromDisk(rows, ActivityFilteredMax, filter, search); }
+                catch { }
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (gen != _activityFilterScanGen) return;
+                    if (!string.Equals(_logFilter, filter, StringComparison.OrdinalIgnoreCase)) return;
+                    _activityRows.Clear();
+                    for (var i = 0; i < rows.Count; i++)
+                    {
+                        if (rows[i] != null) _activityRows.Add(rows[i]);
+                    }
+                    FinishRefreshLogViewHints();
+                }));
+            });
+        }
+
+        private void FinishRefreshLogViewHints()
+        {
             UpdateEmptyHint(ActivityEmptyHint, _logEntries == null || _logEntries.Count == 0);
-            UpdateNoMatchesHint(ActivityNoMatchesHint, _logEntries != null && _logEntries.Count > 0, _activityRows.Count);
+            UpdateNoMatchesHint(ActivityNoMatchesHint,
+                (_logEntries != null && _logEntries.Count > 0) || _activityRows.Count > 0,
+                _activityRows.Count);
             UpdateClearButtonsEnabled();
             if (TabActivity != null && TabActivity.IsSelected)
                 ScrollActivityLogToEnd();
         }
 
+        /// <summary>Fill dest with filtered Activity lines from LogPath + .1 within retention.</summary>
+        private void CollectFilteredActivityFromDisk(IList<LogEntry> dest, int maxRows)
+        {
+            CollectFilteredActivityFromDisk(dest, maxRows, _logFilter, _activitySearchText);
+        }
+
+        private void CollectFilteredActivityFromDisk(IList<LogEntry> dest, int maxRows, string filter, string search)
+        {
+            if (dest == null) return;
+            try
+            {
+                var cutoff = LogRetentionCutoffLocal();
+                var paths = new[] { AppSettings.LogPath + ".1", AppSettings.LogPath };
+                var ring = new List<LogEntry>(Math.Max(16, maxRows + 1));
+                for (var p = 0; p < paths.Length; p++)
+                {
+                    if (!File.Exists(paths[p])) continue;
+                    foreach (var line in File.ReadLines(paths[p]))
+                    {
+                        if (line == null || line.Length < 21) continue;
+                        DateTime local;
+                        if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
+                            CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
+                            continue;
+                        if (local < cutoff) continue;
+                        var text = line.Substring(19).TrimStart();
+                        if (string.IsNullOrEmpty(text) || IsActivityUiNoise(text)) continue;
+                        var entry = new LogEntry
+                        {
+                            Time = local,
+                            Level = InferLogLevel(text, false),
+                            Text = text
+                        };
+                        if (!ShouldShowLogEntry(entry, filter, search)) continue;
+                        ring.Add(entry);
+                        if (ring.Count > maxRows)
+                            ring.RemoveAt(0);
+                    }
+                }
+                for (var i = 0; i < ring.Count; i++)
+                    dest.Add(ring[i]);
+            }
+            catch { }
+        }
+
+        private const int MaxLogEntriesMemory = 500;
         private const int MaxLogBlocks = 500;
         private const int ActivitySyncMax = 500;
+        private const int ActivityFilteredMax = 2000;
 
         private static string LogLevelWireName(LogLevel level)
         {

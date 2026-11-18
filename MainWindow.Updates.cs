@@ -311,11 +311,6 @@ namespace KaiAosRenew
             _pendingUpdate = update;
             if (update == null)
             {
-                if (_debugMode)
-                {
-                    ShowForcedDebugUpdateUi();
-                    return;
-                }
                 if (UpdateAvailableText != null)
                     UpdateAvailableText.Visibility = Visibility.Collapsed;
                 if (FooterUpdateBtn != null)
@@ -327,24 +322,6 @@ namespace KaiAosRenew
                 return;
             }
             var ver = UpdateService.FormatUpdateVersion(update);
-            if (UpdateAvailableText != null)
-            {
-                UpdateAvailableText.Text = "";
-                UpdateAvailableText.Visibility = Visibility.Collapsed;
-            }
-            if (FooterUpdateBtn != null)
-            {
-                FooterUpdateBtn.Content = string.Format(UiStrings.T("UpdateServerBtn"), ver);
-                FooterUpdateBtn.ToolTip = string.Format(UiStrings.T("UpdateChannelTooltip"), UpdateService.ServerChannel);
-                FooterUpdateBtn.Visibility = Visibility.Visible;
-                FooterUpdateBtn.IsEnabled = true;
-            }
-            RefreshTrayIcon();
-        }
-
-        private void ShowForcedDebugUpdateUi()
-        {
-            var ver = !string.IsNullOrEmpty(_feedServerVer) ? _feedServerVer : AppVersionDisplay;
             if (UpdateAvailableText != null)
             {
                 UpdateAvailableText.Text = "";
@@ -386,8 +363,7 @@ namespace KaiAosRenew
             }
             finally
             {
-                if (FooterUpdateBtn != null && !_remoteServerUpdateBusy
-                    && (_pendingUpdate != null || _debugMode))
+                if (FooterUpdateBtn != null && !_remoteServerUpdateBusy && _pendingUpdate != null)
                     FooterUpdateBtn.IsEnabled = true;
             }
         }

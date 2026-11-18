@@ -151,7 +151,7 @@
                     <DataTemplate>
                       <StackPanel Orientation="Horizontal">
                         <Button Padding="0" Margin="0,0,4,0" Width="18" Height="18"
-                                FontSize="11" Content="" Tag="{DynamicResource IconCopy}"
+                                FontFamily="Segoe MDL2 Assets" FontSize="11" Content="&#xE8C8;"
                                 Cursor="Hand" Focusable="False"
                                 Background="Transparent" BorderThickness="0"
                                 Loaded="KeysVinCopyIcon_Loaded"
@@ -187,7 +187,7 @@
                     <DataTemplate>
                       <StackPanel Orientation="Horizontal">
                         <Button Padding="0" Margin="0,0,4,0" Width="18" Height="18"
-                                FontSize="11" Content="" Tag="{DynamicResource IconCopy}"
+                                FontFamily="Segoe MDL2 Assets" FontSize="11" Content="&#xE8C8;"
                                 Cursor="Hand" Focusable="False"
                                 Background="Transparent" BorderThickness="0"
                                 Loaded="KeysKmCopyIcon_Loaded"
@@ -449,6 +449,12 @@
                         Style="{DynamicResource KaiComboBox}"
                         DisplayMemberPath="Name" SelectedValuePath="Code"
                         SelectionChanged="LogFilter_SelectionChanged" />
+              <TextBlock x:Name="ActivitySearchLabel" Text="Search:" VerticalAlignment="Center" Margin="0,0,6,0"
+                         Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
+              <TextBox x:Name="ActivitySearchBox" Width="140" Margin="0,0,10,0" VerticalAlignment="Center"
+                       Style="{DynamicResource KaiTextBox}"
+                       ToolTip="Message text"
+                       TextChanged="ActivitySearchBox_TextChanged" />
               <Button x:Name="CheckTokenBtn" Content="Check token" Style="{DynamicResource BeigeButton}"
                       Click="CheckToken_Click" Margin="0,0,8,0" MinWidth="110" Padding="10,2,12,2"  Tag="{DynamicResource IconCheck}" />
               <Button x:Name="SaveActivityLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
@@ -528,6 +534,12 @@
                         Style="{DynamicResource KaiComboBox}"
                         DisplayMemberPath="Name" SelectedValuePath="Code"
                         SelectionChanged="RegisterFilter_SelectionChanged" />
+              <TextBlock x:Name="RegisterSearchLabel" Text="Search:" VerticalAlignment="Center" Margin="0,0,6,0"
+                         Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
+              <TextBox x:Name="RegisterSearchBox" Width="140" Margin="0,0,10,0" VerticalAlignment="Center"
+                       Style="{DynamicResource KaiTextBox}"
+                       ToolTip="Message text"
+                       TextChanged="RegisterSearchBox_TextChanged" />
               <Button x:Name="SaveRegisterLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
                       Click="SaveRegisterLog_Click" Margin="0,0,8,0" MinWidth="88" Padding="10,2,12,2"  Tag="{DynamicResource IconSave}" />
               <Button x:Name="ClearRegisterLogBtn" Content="Clear" Style="{DynamicResource BeigeButton}"

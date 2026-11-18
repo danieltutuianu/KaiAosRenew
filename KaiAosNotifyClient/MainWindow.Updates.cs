@@ -97,7 +97,7 @@ namespace KaiAosNotifyClient
                 {
                     _clientUpdateBusy = false;
                     UpdateAosControlsEnabled();
-                    if (FooterUpdateBtn != null && (_pendingUpdate != null || _debugMode))
+                    if (FooterUpdateBtn != null && _pendingUpdate != null)
                         FooterUpdateBtn.IsEnabled = true;
                 }
             }
@@ -149,11 +149,6 @@ namespace KaiAosNotifyClient
             _pendingUpdate = update;
             if (update == null)
             {
-                if (_debugMode)
-                {
-                    ShowForcedDebugClientUpdateUi();
-                    return;
-                }
                 if (UpdateAvailableText != null)
                     UpdateAvailableText.Visibility = Visibility.Collapsed;
                 if (FooterUpdateBtn != null)
@@ -165,24 +160,6 @@ namespace KaiAosNotifyClient
                 return;
             }
             var ver = UpdateService.FormatUpdateVersion(update);
-            if (UpdateAvailableText != null)
-            {
-                UpdateAvailableText.Text = "";
-                UpdateAvailableText.Visibility = Visibility.Collapsed;
-            }
-            if (FooterUpdateBtn != null)
-            {
-                FooterUpdateBtn.Content = string.Format(ClientUiStrings.T("UpdateClientBtn"), ver);
-                FooterUpdateBtn.ToolTip = string.Format(ClientUiStrings.T("UpdateChannelTooltip"), UpdateService.ClientChannel);
-                FooterUpdateBtn.Visibility = Visibility.Visible;
-                FooterUpdateBtn.IsEnabled = !_clientUpdateBusy;
-            }
-            RefreshTrayOutdatedIcon();
-        }
-
-        private void ShowForcedDebugClientUpdateUi()
-        {
-            var ver = !string.IsNullOrEmpty(_feedClientVer) ? _feedClientVer : VersionDisplay;
             if (UpdateAvailableText != null)
             {
                 UpdateAvailableText.Text = "";
@@ -249,7 +226,7 @@ namespace KaiAosNotifyClient
             {
                 _clientUpdateBusy = false;
                 UpdateAosControlsEnabled();
-                if (FooterUpdateBtn != null && (_pendingUpdate != null || _debugMode))
+                if (FooterUpdateBtn != null && _pendingUpdate != null)
                     FooterUpdateBtn.IsEnabled = true;
                 if (CheckForUpdatesBtn != null) CheckForUpdatesBtn.IsEnabled = true;
             }
@@ -412,11 +389,6 @@ namespace KaiAosNotifyClient
 
         private void RefreshServerUpdateUi()
         {
-            if (_debugMode && !_awaitingServerUpdateReconnect)
-            {
-                ShowForcedDebugServerUpdateUi();
-                return;
-            }
             var show = !_awaitingServerUpdateReconnect
                 && !string.IsNullOrEmpty(_latestServerReleaseVer)
                 && !string.IsNullOrEmpty(_serverVersionFromFooter)
@@ -435,29 +407,6 @@ namespace KaiAosNotifyClient
                     ? string.Format(ClientUiStrings.T("UpdateChannelTooltip"), UpdateService.ServerChannel)
                     : null;
                 FooterServerUpdateBtn.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-            }
-            UpdateAosControlsEnabled();
-            RefreshTrayOutdatedIcon();
-        }
-
-        private void ShowForcedDebugServerUpdateUi()
-        {
-            var ver = !string.IsNullOrEmpty(_feedServerVer)
-                ? _feedServerVer
-                : (!string.IsNullOrEmpty(_latestServerReleaseVer)
-                    ? _latestServerReleaseVer
-                    : (!string.IsNullOrEmpty(_serverVersionFromFooter) ? _serverVersionFromFooter : "?"));
-            if (string.IsNullOrEmpty(_latestServerReleaseVer) && !string.IsNullOrEmpty(ver) && ver != "?")
-                _latestServerReleaseVer = ver;
-            if (ServerUpdateAvailableText != null)
-            {
-                ServerUpdateAvailableText.Text = "";
-                ServerUpdateAvailableText.Visibility = Visibility.Collapsed;
-            }
-            if (FooterServerUpdateBtn != null)
-            {
-                FooterServerUpdateBtn.Content = string.Format(ClientUiStrings.T("UpdateServerBtn"), ver);
-                FooterServerUpdateBtn.Visibility = Visibility.Visible;
             }
             UpdateAosControlsEnabled();
             RefreshTrayOutdatedIcon();

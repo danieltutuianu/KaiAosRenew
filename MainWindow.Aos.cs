@@ -67,6 +67,8 @@ namespace KaiAosRenew
         {
             if (RegisterHistoryLabel != null) RegisterHistoryLabel.Text = UiStrings.T("RegisterHistory");
             if (RegisterFilterLabel != null) RegisterFilterLabel.Text = UiStrings.T("RegisterFilter");
+            if (RegisterSearchLabel != null) RegisterSearchLabel.Text = UiStrings.T("RegisterSearch");
+            if (RegisterSearchBox != null) RegisterSearchBox.ToolTip = UiStrings.T("RegisterSearchTip");
             if (RegisterColTime != null) RegisterColTime.Header = UiStrings.T("RegisterColTime");
             if (RegisterColResult != null) RegisterColResult.Header = UiStrings.T("RegisterColResult");
             if (RegisterColAge != null) RegisterColAge.Header = UiStrings.T("RegisterColAge");
@@ -87,7 +89,8 @@ namespace KaiAosRenew
             {
                 new LangItem { Code = "all", Name = UiStrings.T("RegisterFilterAll") },
                 new LangItem { Code = "ok", Name = UiStrings.T("RegisterFilterOk") },
-                new LangItem { Code = "fail", Name = UiStrings.T("RegisterFilterFail") }
+                new LangItem { Code = "fail", Name = UiStrings.T("RegisterFilterFail") },
+                new LangItem { Code = "info", Name = UiStrings.T("RegisterFilterInfo") }
             };
             RegisterFilterCombo.SelectedValue = string.IsNullOrEmpty(prev) ? "all" : prev;
             if (RegisterFilterCombo.SelectedValue == null)
@@ -540,6 +543,34 @@ namespace KaiAosRenew
             var sb = new StringBuilder();
             var dayStart = day.Date;
             var dayEnd = dayStart.AddDays(1);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            try
+            {
+                var paths = new[] { AppSettings.LogPath + ".1", AppSettings.LogPath };
+                for (var p = 0; p < paths.Length; p++)
+                {
+                    if (!File.Exists(paths[p])) continue;
+                    foreach (var line in File.ReadLines(paths[p]))
+                    {
+                        if (line == null || line.Length < 21) continue;
+                        DateTime local;
+                        if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
+                            CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
+                            continue;
+                        if (local < dayStart || local >= dayEnd) continue;
+                        var text = line.Substring(19).TrimStart();
+                        int kind;
+                        if (!TryClassifyRegisterHistory(text, out kind)) continue;
+                        var key = local.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + kind + "\t" + text;
+                        if (!seen.Add(key)) continue;
+                        sb.Append(local.ToString("yyyy-MM-dd HH:mm:ss"));
+                        sb.Append('\t').Append(RegisterResultTextForKind(kind));
+                        sb.Append('\t').AppendLine(text);
+                    }
+                }
+            }
+            catch { }
+            if (sb.Length > 0) return sb.ToString();
             for (var i = 0; i < _registerHistory.Count; i++)
             {
                 var r = _registerHistory[i];
@@ -1263,119 +1294,92 @@ namespace KaiAosRenew
             catch { }
         }
 
-        private void SeedRegisterActivityFromRenewLog()
+        private static DateTime LogRetentionCutoffLocal()
+        {
+            return ActivityRegisterLogic.LogRetentionCutoffLocal();
+        }
+
+        private static bool IsWithinLogRetention(DateTime local)
+        {
+            return ActivityRegisterLogic.IsWithinLogRetention(local);
+        }
+
+        private static bool IsActivityUiNoise(string text)
+        {
+            return ActivityRegisterLogic.IsActivityUiNoise(text);
+        }
+
+        /// <summary>Seed Activity with the last MaxLogBlocks in-window lines (not a full 3-day dump).</summary>
+        private void SeedActivityHistoryFromLog()
         {
             try
             {
-                var path = AppSettings.LogPath;
-                if (!File.Exists(path)) return;
-                var lines = new List<string>();
-                foreach (var line in File.ReadLines(path))
+                var cutoff = LogRetentionCutoffLocal();
+                var paths = new[] { AppSettings.LogPath + ".1", AppSettings.LogPath };
+                // Ring buffer of the newest eligible lines while scanning files in order.
+                var ring = new List<LogEntry>(MaxLogBlocks + 1);
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                for (var p = 0; p < paths.Length; p++)
                 {
-                    lines.Add(line);
-                    if (lines.Count > 300)
-                        lines.RemoveAt(0);
-                }
-                var existing = new HashSet<string>(StringComparer.Ordinal);
-                for (var i = 0; i < _logEntries.Count; i++)
-                {
-                    var e = _logEntries[i];
-                    if (e == null) continue;
-                    existing.Add(e.Time.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + (e.Text ?? ""));
-                }
-                var seeded = new List<LogEntry>();
-                for (var i = 0; i < lines.Count; i++)
-                {
-                    var line = lines[i];
-                    if (line == null || line.Length < 21) continue;
-                    DateTime local;
-                    if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
-                        CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
-                        continue;
-                    var text = line.Substring(19).TrimStart();
-                    if (!IsRegisterActivitySeedText(text)) continue;
-                    var key = local.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + text;
-                    if (existing.Contains(key)) continue;
-                    existing.Add(key);
-                    seeded.Add(new LogEntry
+                    if (!File.Exists(paths[p])) continue;
+                    foreach (var line in File.ReadLines(paths[p]))
                     {
-                        Time = local,
-                        Level = InferRegisterActivityLevel(text),
-                        Text = text
-                    });
+                        if (line == null || line.Length < 21) continue;
+                        DateTime local;
+                        if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
+                            CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
+                            continue;
+                        if (local < cutoff) continue;
+                        var text = line.Substring(19).TrimStart();
+                        if (string.IsNullOrEmpty(text) || IsActivityUiNoise(text)) continue;
+                        var key = local.ToString("yyyy-MM-dd HH:mm:ss") + "\t" + text;
+                        if (!seen.Add(key)) continue;
+                        ring.Add(new LogEntry
+                        {
+                            Time = local,
+                            Level = InferLogLevel(text, false),
+                            Text = text
+                        });
+                        if (ring.Count > MaxLogBlocks)
+                            ring.RemoveAt(0);
+                    }
                 }
-                if (seeded.Count == 0) return;
-                _logEntries.InsertRange(0, seeded);
-                _logEntries.Sort((a, b) => a.Time.CompareTo(b.Time));
-                if (_logEntries.Count > 2000)
-                    _logEntries.RemoveRange(0, _logEntries.Count - 2000);
+                _logEntries.Clear();
+                _logEntries.AddRange(ring);
                 RefreshLogView();
             }
             catch { }
         }
 
-        private static bool IsRegisterActivitySeedText(string text)
+        private void TrimLogEntriesToRetention()
         {
-            if (string.IsNullOrEmpty(text)) return false;
-            return text.IndexOf("Registration OK", StringComparison.OrdinalIgnoreCase) >= 0
-                || text.IndexOf("Register failed", StringComparison.OrdinalIgnoreCase) >= 0
-                || text.IndexOf("Register rejected", StringComparison.OrdinalIgnoreCase) >= 0
-                || text.IndexOf("Register returned empty", StringComparison.OrdinalIgnoreCase) >= 0
-                || text.IndexOf("Force Register", StringComparison.OrdinalIgnoreCase) >= 0
-                || text.IndexOf("forcing Register", StringComparison.OrdinalIgnoreCase) >= 0;
+            var cutoff = LogRetentionCutoffLocal();
+            while (_logEntries.Count > 0)
+            {
+                var e = _logEntries[0];
+                if (e != null && e.Time >= cutoff) break;
+                _logEntries.RemoveAt(0);
+            }
+            if (_logEntries.Count > MaxLogEntriesMemory)
+                _logEntries.RemoveRange(0, _logEntries.Count - MaxLogEntriesMemory);
         }
 
-        private static LogLevel InferRegisterActivityLevel(string text)
+        private void TrimRegisterHistoryToRetention()
         {
-            if (text.IndexOf("Registration OK", StringComparison.OrdinalIgnoreCase) >= 0)
-                return LogLevel.Success;
-            if (text.IndexOf("Register failed", StringComparison.OrdinalIgnoreCase) >= 0
-                || text.IndexOf("Register rejected", StringComparison.OrdinalIgnoreCase) >= 0
-                || text.IndexOf("Register returned empty", StringComparison.OrdinalIgnoreCase) >= 0)
-                return LogLevel.Error;
-            return LogLevel.Info;
+            var cutoff = LogRetentionCutoffLocal();
+            for (var i = _registerHistory.Count - 1; i >= 0; i--)
+            {
+                var r = _registerHistory[i];
+                if (r == null || r.At < cutoff)
+                    _registerHistory.RemoveAt(i);
+            }
+            if (_registerHistory.Count > RegisterHistoryMax)
+                _registerHistory.RemoveRange(0, _registerHistory.Count - RegisterHistoryMax);
         }
 
         private static bool TryClassifyRegisterHistory(string text, out int kind)
         {
-            kind = 0;
-            if (string.IsNullOrEmpty(text)) return false;
-            var t = text.Trim();
-            if (t.StartsWith("OK:", StringComparison.OrdinalIgnoreCase))
-                t = t.Substring(3).TrimStart();
-            else if (t.StartsWith("FAIL:", StringComparison.OrdinalIgnoreCase))
-                t = t.Substring(5).TrimStart();
-
-            // Health noise — do not fill Register tab every hour.
-            if (t.IndexOf("Register not required", StringComparison.OrdinalIgnoreCase) >= 0
-                || t.IndexOf("Checking WebEAM token", StringComparison.OrdinalIgnoreCase) >= 0
-                || t.IndexOf("(no Register)", StringComparison.OrdinalIgnoreCase) >= 0
-                || t.IndexOf("no Register", StringComparison.OrdinalIgnoreCase) >= 0)
-                return false;
-
-            if (t.IndexOf("Registration OK", StringComparison.OrdinalIgnoreCase) >= 0
-                || t.IndexOf("Register OK", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                kind = 1;
-                return true;
-            }
-            if (t.IndexOf("Register failed", StringComparison.OrdinalIgnoreCase) >= 0
-                || t.IndexOf("Register rejected", StringComparison.OrdinalIgnoreCase) >= 0
-                || t.IndexOf("Register returned empty", StringComparison.OrdinalIgnoreCase) >= 0
-                || t.IndexOf("KAI_Properties.cfg was not created", StringComparison.OrdinalIgnoreCase) >= 0
-                || t.IndexOf("KAI_Properties.cfg invalid", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                kind = 0;
-                return true;
-            }
-
-            var hasRegister = t.IndexOf("Register", StringComparison.OrdinalIgnoreCase) >= 0
-                || t.IndexOf("Registration", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (!hasRegister) return false;
-
-            // Info: BMW 403 Register path, Force/queued/blocked, credentials changed Register, strikes.
-            kind = 2;
-            return true;
+            return ActivityRegisterLogic.TryClassifyRegisterHistory(text, out kind);
         }
 
         private static string RegisterResultTextForKind(int kind)
@@ -1402,6 +1406,7 @@ namespace KaiAosRenew
                         if (!DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss",
                             CultureInfo.InvariantCulture, DateTimeStyles.None, out local))
                             continue;
+                        if (!IsWithinLogRetention(local)) continue;
                         var text = line.Substring(19).TrimStart();
                         int kind;
                         if (!TryClassifyRegisterHistory(text, out kind)) continue;
@@ -1419,8 +1424,7 @@ namespace KaiAosRenew
                     }
                 }
                 _registerHistory.Sort((a, b) => a.At.CompareTo(b.At));
-                while (_registerHistory.Count > RegisterHistoryMax)
-                    _registerHistory.RemoveAt(0);
+                TrimRegisterHistoryToRetention();
                 RefreshRegisterAges();
                 ApplyRegisterFilter();
             }
@@ -1429,6 +1433,7 @@ namespace KaiAosRenew
 
         private void MaybeAppendRegisterHistory(string text, DateTime at)
         {
+            if (!IsWithinLogRetention(at)) return;
             int kind;
             if (!TryClassifyRegisterHistory(text, out kind)) return;
             var clean = text ?? "";
@@ -1446,7 +1451,7 @@ namespace KaiAosRenew
             }
             var span = DateTime.Now - at;
             if (span < TimeSpan.Zero) span = TimeSpan.Zero;
-            _registerHistory.Add(new RegisterHistoryRow
+            var added = new RegisterHistoryRow
             {
                 At = at,
                 Kind = kind,
@@ -1454,13 +1459,13 @@ namespace KaiAosRenew
                 Text = clean,
                 AgeText = string.Format(UiStrings.T("TimeAgo"), FormatAge(span)),
                 ResultText = RegisterResultTextForKind(kind)
-            });
-            while (_registerHistory.Count > RegisterHistoryMax)
-                _registerHistory.RemoveAt(0);
+            };
+            _registerHistory.Add(added);
+            TrimRegisterHistoryToRetention();
             ApplyRegisterFilter();
             if (TabRegister != null && TabRegister.IsSelected)
                 ScrollRegisterHistoryToEnd();
-            BroadcastRegisterSync();
+            BroadcastRegisterEntry(added);
         }
 
         private void RefreshRegisterResultTexts()
@@ -1490,32 +1495,61 @@ namespace KaiAosRenew
         private void ApplyRegisterFilter()
         {
             if (RegisterHistoryList == null) return;
-            IEnumerable<RegisterHistoryRow> src = _registerHistory;
+            List<RegisterHistoryRow> list;
             if (string.Equals(_registerFilter, "ok", StringComparison.OrdinalIgnoreCase))
             {
-                var list = new List<RegisterHistoryRow>();
+                list = new List<RegisterHistoryRow>();
                 for (var i = 0; i < _registerHistory.Count; i++)
                 {
                     var r = _registerHistory[i];
                     if (r != null && r.Kind == 1) list.Add(r);
                 }
-                src = list;
             }
             else if (string.Equals(_registerFilter, "fail", StringComparison.OrdinalIgnoreCase))
             {
-                var list = new List<RegisterHistoryRow>();
+                list = new List<RegisterHistoryRow>();
                 for (var i = 0; i < _registerHistory.Count; i++)
                 {
                     var r = _registerHistory[i];
                     if (r != null && r.Kind == 0) list.Add(r);
                 }
-                src = list;
+            }
+            else if (string.Equals(_registerFilter, "info", StringComparison.OrdinalIgnoreCase))
+            {
+                list = new List<RegisterHistoryRow>();
+                for (var i = 0; i < _registerHistory.Count; i++)
+                {
+                    var r = _registerHistory[i];
+                    if (r != null && r.Kind == 2) list.Add(r);
+                }
+            }
+            else
+            {
+                // Unfiltered: cap display to newest N (full 3-day buffer stays in memory).
+                list = new List<RegisterHistoryRow>();
+                var start = Math.Max(0, _registerHistory.Count - RegisterUnfilteredDisplayMax);
+                for (var i = start; i < _registerHistory.Count; i++)
+                {
+                    var r = _registerHistory[i];
+                    if (r != null) list.Add(r);
+                }
+            }
+            if (!string.IsNullOrEmpty(_registerSearchText))
+            {
+                var needle = _registerSearchText;
+                var filtered = new List<RegisterHistoryRow>();
+                for (var i = 0; i < list.Count; i++)
+                {
+                    var r = list[i];
+                    if (r == null) continue;
+                    if (MatchesLogSearch(r.Text, needle) || MatchesLogSearch(r.ResultText, needle))
+                        filtered.Add(r);
+                }
+                list = filtered;
             }
             RegisterHistoryList.ItemsSource = null;
-            RegisterHistoryList.ItemsSource = src;
-            var visible = 0;
-            foreach (var _ in src) visible++;
-            UpdateNoMatchesHint(RegisterNoMatchesHint, _registerHistory.Count > 0, visible);
+            RegisterHistoryList.ItemsSource = list;
+            UpdateNoMatchesHint(RegisterNoMatchesHint, _registerHistory.Count > 0, list.Count);
             UpdateClearButtonsEnabled();
         }
 
@@ -1971,19 +2005,7 @@ namespace KaiAosRenew
             if (_settings == null || !_settings.NotifyServerEnabled) return;
             try
             {
-                var list = new List<RegisterWireRow>();
-                for (var i = 0; i < _registerHistory.Count; i++)
-                {
-                    var r = _registerHistory[i];
-                    if (r == null) continue;
-                    list.Add(new RegisterWireRow
-                    {
-                        At = r.At,
-                        Kind = r.Kind,
-                        Ok = r.Kind == 1,
-                        Text = r.Text ?? ""
-                    });
-                }
+                var list = BuildRegisterSyncWireRows(RegisterUnfilteredDisplayMax);
                 var payload = NotifyMessage.EncodeRegisterSync(list);
                 NotifyServer.Instance.SendTo(clientId, new NotifyMessage
                 {

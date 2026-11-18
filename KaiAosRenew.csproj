@@ -131,6 +131,7 @@
     <Compile Include="Shared\NotifyMessage.ServerKeys.cs" />
     <Compile Include="Shared\TcpUtf8LineReader.cs" />
     <Compile Include="Shared\NotifyPairing.cs" />
+    <Compile Include="Shared\ActivityRegisterLogic.cs" />
     <Compile Include="DesktopKeyReaderReg.cs" />
     <Compile Include="ServiceMonitor.cs" />
     <Compile Include="BrowserPasswordReader.cs" />

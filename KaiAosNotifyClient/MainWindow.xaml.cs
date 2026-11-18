@@ -35,7 +35,35 @@ namespace KaiAosNotifyClient
         private readonly ObservableCollection<ActivityRow> _activityRows = new ObservableCollection<ActivityRow>();
         private readonly List<RegisterHistoryRow> _registerHistory = new List<RegisterHistoryRow>();
         private const int ActivityMaxRows = 500;
-        private const int RegisterHistoryMax = 200;
+        private const int ActivityFilteredMax = 2000;
+        private const int RegisterHistoryMax = 5000;
+        private const int RegisterUnfilteredDisplayMax = 500;
+        private readonly ObservableCollection<ActivityRow> _activityHistoryRows = new ObservableCollection<ActivityRow>();
+        private ICollectionView _activityHistoryView;
+        private bool _activityHistoryMode;
+        private int _activityHistoryReqId;
+        private int _activityHistoryPendingId;
+        private bool _activityHistoryLoading;
+        private readonly List<RegisterHistoryRow> _registerHistoryViewRows = new List<RegisterHistoryRow>();
+        private bool _registerHistoryMode;
+        private int _registerHistoryReqId;
+        private int _registerHistoryPendingId;
+        private bool _registerHistoryLoading;
+        private string _activitySearchText = "";
+        private string _registerSearchText = "";
+        private DispatcherTimer _activitySearchDebounceTimer;
+        private DispatcherTimer _registerSearchDebounceTimer;
+        private PendingLogExport _pendingLogExport;
+        private DispatcherTimer _logExportTimeoutTimer;
+        private bool _logExportLoading;
+
+        private sealed class PendingLogExport
+        {
+            public string Kind;
+            public DateTime Day;
+            public bool ToClipboard;
+            public Func<DateTime, string> LocalFallback;
+        }
         private bool _aboutVisible;
         private bool _suppressTabChange;
         private int _tabIndexBeforeAbout = -1;
@@ -258,6 +286,9 @@ namespace KaiAosNotifyClient
                 _activityView = CollectionViewSource.GetDefaultView(_activityRows);
                 if (_activityView != null)
                     _activityView.Filter = ShouldShowActivityRow;
+                _activityHistoryView = CollectionViewSource.GetDefaultView(_activityHistoryRows);
+                if (_activityHistoryView != null)
+                    _activityHistoryView.Filter = ShouldShowActivityHistoryRow;
                 InitLogFilterCombo();
                 InitRegisterFilterCombo();
                 UpdateKeysTodayBadge();
@@ -403,16 +434,8 @@ namespace KaiAosNotifyClient
                 KeysColBinPad.Width = _debugMode ? 18 : 0;
             if (SrvDownloadKeyDebugFolderBtn != null)
                 SrvDownloadKeyDebugFolderBtn.Visibility = _debugMode ? Visibility.Visible : Visibility.Collapsed;
-            if (_debugMode)
-            {
-                ShowForcedDebugClientUpdateUi();
-                ShowForcedDebugServerUpdateUi();
-            }
-            else
-            {
-                ShowPendingUpdate(_pendingUpdate);
-                RefreshServerUpdateFromFeed();
-            }
+            ShowPendingUpdate(_pendingUpdate);
+            RefreshServerUpdateFromFeed();
             RefreshTrayOutdatedIcon();
         }
 
@@ -1221,6 +1244,18 @@ namespace KaiAosNotifyClient
                 RefreshTrayStatus();
                 return;
             }
+            if (kind == "registerhistory")
+            {
+                ApplyRegisterHistory(msg);
+                RefreshTrayStatus();
+                return;
+            }
+            if (kind == "register")
+            {
+                AppendRegisterFromNotify(msg);
+                RefreshTrayStatus();
+                return;
+            }
             if (kind == "activity")
             {
                 AppendActivityRow(msg.At, msg.Level ?? "info", msg.Text ?? "");
@@ -1228,9 +1263,28 @@ namespace KaiAosNotifyClient
                 RefreshTrayStatus();
                 return;
             }
+            if (kind == "activityhistory")
+            {
+                ApplyActivityHistory(msg);
+                RefreshTrayStatus();
+                return;
+            }
+            if (kind == "activityexport")
+            {
+                HandleLogExportReply("activity", msg);
+                RefreshTrayStatus();
+                return;
+            }
+            if (kind == "registerexport")
+            {
+                HandleLogExportReply("register", msg);
+                RefreshTrayStatus();
+                return;
+            }
             if (kind == "activityclear")
             {
                 _activityRows.Clear();
+                _activityHistoryRows.Clear();
                 RefreshActivityView();
                 RefreshTrayStatus();
                 return;
@@ -1408,17 +1462,50 @@ namespace KaiAosNotifyClient
             else
                 at = DateTime.SpecifyKind(at, DateTimeKind.Local);
             var lvl = string.IsNullOrEmpty(level) ? "info" : level.Trim().ToLowerInvariant();
-            _activityRows.Add(new ActivityRow
+            var row = new ActivityRow
             {
                 At = at,
                 Level = lvl,
                 Text = text ?? ""
-            });
+            };
+            _activityRows.Add(row);
             while (_activityRows.Count > ActivityMaxRows)
                 _activityRows.RemoveAt(0);
+            if (_activityHistoryMode && ShouldShowActivityRow(row))
+            {
+                _activityHistoryRows.Add(row);
+                while (_activityHistoryRows.Count > ActivityFilteredMax)
+                    _activityHistoryRows.RemoveAt(0);
+                try { if (_activityHistoryView != null) _activityHistoryView.Refresh(); } catch { }
+            }
             ScrollActivityToEnd();
             MaybeRaiseActivityAlert(lvl);
             UpdateClearButtonsEnabled();
+        }
+
+        private void ApplyActivityHistory(NotifyMessage msg)
+        {
+            if (msg == null) return;
+            var reqIdText = (msg.Title ?? "").Trim();
+            int reqId;
+            if (!int.TryParse(reqIdText, NumberStyles.Integer, CultureInfo.InvariantCulture, out reqId))
+                reqId = 0;
+            if (reqId != 0 && reqId != _activityHistoryPendingId) return;
+            var filter = (msg.Level ?? "").Trim().ToLowerInvariant();
+            if (!string.Equals(_activityFilter, filter, StringComparison.OrdinalIgnoreCase)) return;
+            if (!_activityHistoryMode) return;
+            SetActivityLoading(false);
+            _activityHistoryRows.Clear();
+            var rows = NotifyMessage.ParseActivitySync(msg.Text);
+            foreach (var row in rows)
+            {
+                if (row == null) continue;
+                _activityHistoryRows.Add(ActivityRow.FromWire(row));
+            }
+            while (_activityHistoryRows.Count > ActivityFilteredMax)
+                _activityHistoryRows.RemoveAt(0);
+            RefreshActivityView();
+            ScrollActivityToEnd();
         }
 
         private void ScrollActivityToEnd()
@@ -1440,7 +1527,23 @@ namespace KaiAosNotifyClient
 
         private void ActivityClear_Click(object sender, RoutedEventArgs e)
         {
+            if (_client != null && _client.IsConnected)
+            {
+                try
+                {
+                    _client.Send(new NotifyMessage
+                    {
+                        Kind = "activityClearReq",
+                        Level = "info",
+                        Title = "KAI - AOS Renew - Client",
+                        Text = ""
+                    });
+                }
+                catch { }
+                return;
+            }
             _activityRows.Clear();
+            _activityHistoryRows.Clear();
             RefreshActivityView();
             UpdateClearButtonsEnabled();
         }
@@ -1487,20 +1590,18 @@ namespace KaiAosNotifyClient
 
         private void SaveActivityLog_Click(object sender, RoutedEventArgs e)
         {
-            ExportLogForDay("activity", ClientUiStrings.T("SaveLogTitleActivity"), CollectActivityLogForDay);
+            BeginLogExport("activity", ClientUiStrings.T("SaveLogTitleActivity"), CollectActivityLogForDay);
         }
-
-
-
 
         private string CollectActivityLogForDay(DateTime day)
         {
             var sb = new StringBuilder();
             var dayStart = day.Date;
             var dayEnd = dayStart.AddDays(1);
-            for (var i = 0; i < _activityRows.Count; i++)
+            var src = _activityHistoryMode ? (IList<ActivityRow>)_activityHistoryRows : _activityRows;
+            for (var i = 0; i < src.Count; i++)
             {
-                var r = _activityRows[i];
+                var r = src[i];
                 if (r == null) continue;
                 if (r.At < dayStart || r.At >= dayEnd) continue;
                 sb.Append(r.At.ToString("yyyy-MM-dd HH:mm:ss"));
@@ -1510,6 +1611,127 @@ namespace KaiAosNotifyClient
             return sb.ToString();
         }
 
+        private void BeginLogExport(string kind, string title, Func<DateTime, string> localCollector)
+        {
+            var dlg = new SaveLogDialog(title, DateTime.Today, ClientUiStrings.T) { Owner = this };
+            if (dlg.ShowDialog() != true || !dlg.Confirmed) return;
+            var day = dlg.SelectedDay.Date;
+            if (_client != null && _client.IsConnected)
+            {
+                _pendingLogExport = new PendingLogExport
+                {
+                    Kind = kind,
+                    Day = day,
+                    ToClipboard = dlg.ToClipboard,
+                    LocalFallback = localCollector
+                };
+                EnsureLogExportTimeoutTimer();
+                _logExportTimeoutTimer.Stop();
+                _logExportTimeoutTimer.Start();
+                SetExportLoading(true, kind);
+                var reqKind = string.Equals(kind, "register", StringComparison.OrdinalIgnoreCase)
+                    ? "registerExportReq"
+                    : "activityExportReq";
+                try
+                {
+                    _client.Send(new NotifyMessage
+                    {
+                        Kind = reqKind,
+                        Level = "info",
+                        Title = "KAI - AOS Renew - Client",
+                        Text = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                    });
+                }
+                catch
+                {
+                    CancelPendingLogExport(true);
+                }
+                return;
+            }
+            FinishLogExport(kind, day, dlg.ToClipboard, localCollector != null ? localCollector(day) : "");
+        }
+
+        private void EnsureLogExportTimeoutTimer()
+        {
+            if (_logExportTimeoutTimer != null) return;
+            _logExportTimeoutTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            _logExportTimeoutTimer.Tick += (s, e) => CancelPendingLogExport(true);
+        }
+
+        private void CancelPendingLogExport(bool useFallback)
+        {
+            if (_logExportTimeoutTimer != null) _logExportTimeoutTimer.Stop();
+            var pending = _pendingLogExport;
+            _pendingLogExport = null;
+            SetExportLoading(false, pending != null ? pending.Kind : null);
+            if (!useFallback || pending == null) return;
+            string body = "";
+            try
+            {
+                if (pending.LocalFallback != null)
+                    body = pending.LocalFallback(pending.Day) ?? "";
+            }
+            catch (Exception ex)
+            {
+                AppendActivityRow(null, "error", ex.Message);
+                return;
+            }
+            FinishLogExport(pending.Kind, pending.Day, pending.ToClipboard, body);
+        }
+
+        private void HandleLogExportReply(string kind, NotifyMessage msg)
+        {
+            var pending = _pendingLogExport;
+            if (pending == null || !string.Equals(pending.Kind, kind, StringComparison.OrdinalIgnoreCase))
+                return;
+            DateTime day = pending.Day;
+            if (!string.IsNullOrWhiteSpace(msg != null ? msg.At : null))
+            {
+                DateTime parsed;
+                if (DateTime.TryParseExact((msg.At ?? "").Trim(), "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+                    day = parsed.Date;
+            }
+            if (_logExportTimeoutTimer != null) _logExportTimeoutTimer.Stop();
+            _pendingLogExport = null;
+            SetExportLoading(false, kind);
+            FinishLogExport(kind, day, pending.ToClipboard, msg != null ? (msg.Text ?? "") : "");
+        }
+
+        private void FinishLogExport(string kind, DateTime day, bool toClipboard, string text)
+        {
+            var filePrefix = string.Equals(kind, "register", StringComparison.OrdinalIgnoreCase) ? "register" : "activity";
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                AppendActivityRow(null, "warning", ClientUiStrings.T("SaveLogEmpty"));
+                return;
+            }
+            if (toClipboard)
+            {
+                try
+                {
+                    Clipboard.SetText(text);
+                    AppendActivityRow(null, "success", string.Format(ClientUiStrings.T("SaveLogCopied"),
+                        SaveLogDialog.FormatDayFileName(filePrefix, day)));
+                }
+                catch (Exception ex)
+                {
+                    AppendActivityRow(null, "error", ex.Message);
+                }
+                return;
+            }
+            var path = SaveLogDialog.PromptSavePath(this, SaveLogDialog.FormatDayFileName(filePrefix, day));
+            if (string.IsNullOrEmpty(path)) return;
+            try
+            {
+                File.WriteAllText(path, text, Encoding.UTF8);
+                AppendActivityRow(null, "success", string.Format(ClientUiStrings.T("SaveLogSaved"), path));
+            }
+            catch (Exception ex)
+            {
+                AppendActivityRow(null, "error", ex.Message);
+            }
+        }
 
         // ---------- Activity filter ----------
 
@@ -1555,7 +1777,7 @@ namespace KaiAosNotifyClient
             {
                 _logFilterReady = true;
             }
-            RefreshActivityView();
+            ApplyActivityFilterMode();
         }
 
         private void LogFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1563,13 +1785,177 @@ namespace KaiAosNotifyClient
             if (!_logFilterReady || LogFilterCombo == null) return;
             var code = LogFilterCombo.SelectedValue as string;
             _activityFilter = string.IsNullOrEmpty(code) ? "all" : code;
-            RefreshActivityView();
+            ApplyActivityFilterMode();
             ScrollActivityToEnd();
         }
 
-        private bool ShouldShowActivityRow(object item)
+        private void ActivitySearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            var row = item as ActivityRow;
+            EnsureActivitySearchDebounceTimer();
+            _activitySearchDebounceTimer.Stop();
+            _activitySearchDebounceTimer.Start();
+        }
+
+        private void RegisterSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            EnsureRegisterSearchDebounceTimer();
+            _registerSearchDebounceTimer.Stop();
+            _registerSearchDebounceTimer.Start();
+        }
+
+        private void EnsureActivitySearchDebounceTimer()
+        {
+            if (_activitySearchDebounceTimer != null) return;
+            _activitySearchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _activitySearchDebounceTimer.Tick += (s, ev) =>
+            {
+                _activitySearchDebounceTimer.Stop();
+                _activitySearchText = ActivitySearchBox != null ? (ActivitySearchBox.Text ?? "").Trim() : "";
+                if (_activityHistoryMode)
+                    RequestActivityHistory();
+                else
+                    RefreshActivityView();
+            };
+        }
+
+        private void EnsureRegisterSearchDebounceTimer()
+        {
+            if (_registerSearchDebounceTimer != null) return;
+            _registerSearchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _registerSearchDebounceTimer.Tick += (s, ev) =>
+            {
+                _registerSearchDebounceTimer.Stop();
+                _registerSearchText = RegisterSearchBox != null ? (RegisterSearchBox.Text ?? "").Trim() : "";
+                if (_registerHistoryMode)
+                    RequestRegisterHistory();
+                else
+                    ApplyRegisterFilter();
+            };
+        }
+
+        private static bool MatchesLogSearch(string text, string needle)
+        {
+            return ActivityRegisterLogic.MatchesLogSearch(text, needle);
+        }
+
+        private void ApplyActivityFilterMode()
+        {
+            var wantHistory = !string.IsNullOrEmpty(_activityFilter)
+                && !string.Equals(_activityFilter, "all", StringComparison.OrdinalIgnoreCase);
+            if (!wantHistory)
+            {
+                _activityHistoryPendingId = 0;
+                _activityHistoryMode = false;
+                SetActivityLoading(false);
+                _activityHistoryRows.Clear();
+                if (ActivityList != null)
+                    ActivityList.ItemsSource = _activityRows;
+                RefreshActivityView();
+                return;
+            }
+            _activityHistoryMode = true;
+            _activityHistoryRows.Clear();
+            if (ActivityList != null)
+                ActivityList.ItemsSource = _activityHistoryRows;
+            RequestActivityHistory();
+            RefreshActivityView();
+        }
+
+        private void RequestActivityHistory()
+        {
+            if (!_activityHistoryMode) return;
+            _activityHistoryRows.Clear();
+            if (_client != null && _client.IsConnected)
+            {
+                _activityHistoryReqId++;
+                _activityHistoryPendingId = _activityHistoryReqId;
+                SetActivityLoading(true);
+                try
+                {
+                    _client.Send(new NotifyMessage
+                    {
+                        Kind = "activityHistoryReq",
+                        Level = "info",
+                        Title = _activityHistoryPendingId.ToString(CultureInfo.InvariantCulture),
+                        Text = _activityFilter,
+                        Detail = _activitySearchText ?? ""
+                    });
+                }
+                catch
+                {
+                    SetActivityLoading(false);
+                }
+            }
+            else
+            {
+                SetActivityLoading(false);
+                for (var i = 0; i < _activityRows.Count; i++)
+                {
+                    var r = _activityRows[i];
+                    if (r == null || !MatchesActivityFilterOnly(r)) continue;
+                    if (!MatchesLogSearch(r.Text, _activitySearchText)) continue;
+                    _activityHistoryRows.Add(r);
+                }
+            }
+        }
+
+        private void SetActivityLoading(bool on)
+        {
+            _activityHistoryLoading = on;
+            if (ActivityLoadingHint != null)
+            {
+                ActivityLoadingHint.Text = ClientUiStrings.T("LogsLoading");
+                ActivityLoadingHint.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (on && ActivityNoMatchesHint != null)
+                ActivityNoMatchesHint.Visibility = Visibility.Collapsed;
+            if (on && ActivityEmptyHint != null)
+                ActivityEmptyHint.Visibility = Visibility.Collapsed;
+        }
+
+        private void SetRegisterLoading(bool on)
+        {
+            _registerHistoryLoading = on;
+            if (RegisterLoadingHint != null)
+            {
+                RegisterLoadingHint.Text = ClientUiStrings.T("LogsLoading");
+                RegisterLoadingHint.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (on && RegisterNoMatchesHint != null)
+                RegisterNoMatchesHint.Visibility = Visibility.Collapsed;
+        }
+
+        private void SetExportLoading(bool on, string kind = null)
+        {
+            _logExportLoading = on;
+            var isReg = string.Equals(kind, "register", StringComparison.OrdinalIgnoreCase);
+            if (on)
+            {
+                if (isReg)
+                {
+                    if (RegisterLoadingHint != null)
+                    {
+                        RegisterLoadingHint.Text = ClientUiStrings.T("LogsLoading");
+                        RegisterLoadingHint.Visibility = Visibility.Visible;
+                    }
+                }
+                else if (ActivityLoadingHint != null && !_activityHistoryLoading)
+                {
+                    ActivityLoadingHint.Text = ClientUiStrings.T("LogsLoading");
+                    ActivityLoadingHint.Visibility = Visibility.Visible;
+                }
+            }
+            else
+            {
+                if (!_activityHistoryLoading && ActivityLoadingHint != null)
+                    ActivityLoadingHint.Visibility = Visibility.Collapsed;
+                if (!_registerHistoryLoading && RegisterLoadingHint != null)
+                    RegisterLoadingHint.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private bool MatchesActivityFilterOnly(ActivityRow row)
+        {
             if (row == null) return false;
             if (string.Equals(_activityFilter, "keyreader", StringComparison.OrdinalIgnoreCase))
             {
@@ -1586,21 +1972,56 @@ namespace KaiAosNotifyClient
             return string.Equals(row.LevelText, _activityFilter, StringComparison.OrdinalIgnoreCase);
         }
 
+        private bool ShouldShowActivityRow(object item)
+        {
+            var row = item as ActivityRow;
+            if (row == null) return false;
+            if (!MatchesLogSearch(row.Text, _activitySearchText)) return false;
+            if (_activityHistoryMode) return true;
+            return MatchesActivityFilterOnly(row);
+        }
+
+        private bool ShouldShowActivityHistoryRow(object item)
+        {
+            var row = item as ActivityRow;
+            if (row == null) return false;
+            return MatchesLogSearch(row.Text, _activitySearchText);
+        }
+
         private void RefreshActivityView()
         {
             try
             {
-                if (_activityView != null) _activityView.Refresh();
+                if (_activityHistoryMode)
+                {
+                    if (_activityHistoryView != null) _activityHistoryView.Refresh();
+                }
+                else if (_activityView != null)
+                {
+                    _activityView.Refresh();
+                }
             }
             catch { }
             var visible = 0;
-            if (_activityView != null)
+            var view = _activityHistoryMode ? _activityHistoryView : _activityView;
+            var sourceCount = _activityHistoryMode
+                ? _activityHistoryRows.Count
+                : (_activityRows != null ? _activityRows.Count : 0);
+            if (view != null)
             {
-                foreach (var _ in _activityView)
+                foreach (var _ in view)
                     visible++;
             }
-            UpdateEmptyHint(ActivityEmptyHint, _activityRows == null || _activityRows.Count == 0);
-            UpdateNoMatchesHint(ActivityNoMatchesHint, _activityRows != null && _activityRows.Count > 0, visible);
+            if (_activityHistoryLoading)
+            {
+                UpdateEmptyHint(ActivityEmptyHint, false);
+                UpdateNoMatchesHint(ActivityNoMatchesHint, false, 1);
+            }
+            else
+            {
+                UpdateEmptyHint(ActivityEmptyHint, sourceCount == 0 && !_activityHistoryMode);
+                UpdateNoMatchesHint(ActivityNoMatchesHint, sourceCount > 0 || _activityHistoryMode, visible);
+            }
             UpdateClearButtonsEnabled();
         }
 

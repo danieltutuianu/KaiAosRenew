@@ -191,6 +191,202 @@ namespace KaiAosRenew
                 BroadcastNotifyClientsList();
                 return;
             }
+            if (kind == "activityhistoryreq")
+            {
+                HandleActivityHistoryReq(clientId, msg);
+                return;
+            }
+            if (kind == "registerhistoryreq")
+            {
+                HandleRegisterHistoryReq(clientId, msg);
+                return;
+            }
+            if (kind == "activityclearreq")
+            {
+                ClearLog_Click(null, null);
+                return;
+            }
+            if (kind == "registerclearreq")
+            {
+                ClearRegisterLog_Click(null, null);
+                return;
+            }
+            if (kind == "activityexportreq")
+            {
+                HandleActivityExportReq(clientId, msg);
+                return;
+            }
+            if (kind == "registerexportreq")
+            {
+                HandleRegisterExportReq(clientId, msg);
+                return;
+            }
+        }
+
+        private void HandleActivityHistoryReq(int clientId, NotifyMessage msg)
+        {
+            var filter = (msg != null ? msg.Text : null) ?? "";
+            filter = filter.Trim().ToLowerInvariant();
+            var reqId = (msg != null ? msg.Title : null) ?? "";
+            var search = (msg != null ? msg.Detail : null) ?? "";
+            search = search.Trim();
+            if (string.IsNullOrEmpty(filter) || filter == "all")
+            {
+                try
+                {
+                    NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                    {
+                        Kind = "activityHistory",
+                        Level = "all",
+                        Title = reqId,
+                        Text = ""
+                    });
+                }
+                catch { }
+                return;
+            }
+            Task.Run(() =>
+            {
+                var rows = new List<LogEntry>();
+                try { CollectFilteredActivityFromDisk(rows, ActivityFilteredMax, filter, search); }
+                catch { }
+                var wire = new List<ActivityWireRow>(rows.Count);
+                for (var i = 0; i < rows.Count; i++)
+                {
+                    var e = rows[i];
+                    if (e == null) continue;
+                    wire.Add(new ActivityWireRow
+                    {
+                        At = e.Time,
+                        Level = LogLevelWireName(e.Level),
+                        Text = e.Text ?? ""
+                    });
+                }
+                var payload = NotifyMessage.EncodeActivitySync(wire);
+                try
+                {
+                    NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                    {
+                        Kind = "activityHistory",
+                        Level = filter,
+                        Title = reqId,
+                        Text = payload ?? ""
+                    });
+                }
+                catch { }
+            });
+        }
+
+        private void HandleRegisterHistoryReq(int clientId, NotifyMessage msg)
+        {
+            var filter = (msg != null ? msg.Text : null) ?? "";
+            filter = filter.Trim().ToLowerInvariant();
+            var reqId = (msg != null ? msg.Title : null) ?? "";
+            var search = (msg != null ? msg.Detail : null) ?? "";
+            search = search.Trim();
+            if (string.IsNullOrEmpty(filter) || filter == "all")
+            {
+                try
+                {
+                    NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                    {
+                        Kind = "registerHistory",
+                        Level = "all",
+                        Title = reqId,
+                        Text = ""
+                    });
+                }
+                catch { }
+                return;
+            }
+            var filterRows = new List<ActivityRegisterLogic.RegisterHistoryFilterRow>(_registerHistory.Count);
+            for (var i = 0; i < _registerHistory.Count; i++)
+            {
+                var r = _registerHistory[i];
+                if (r == null) continue;
+                filterRows.Add(new ActivityRegisterLogic.RegisterHistoryFilterRow
+                {
+                    At = r.At,
+                    Kind = r.Kind,
+                    Text = r.Text ?? "",
+                    ResultText = r.ResultText ?? ""
+                });
+            }
+            var list = ActivityRegisterLogic.FilterRegisterHistory(filterRows, filter, search, RegisterHistoryMax);
+            if (list == null)
+            {
+                try
+                {
+                    NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                    {
+                        Kind = "registerHistory",
+                        Level = "all",
+                        Title = reqId,
+                        Text = ""
+                    });
+                }
+                catch { }
+                return;
+            }
+            var payload = NotifyMessage.EncodeRegisterSync(list);
+            try
+            {
+                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                {
+                    Kind = "registerHistory",
+                    Level = filter,
+                    Title = reqId,
+                    Text = payload ?? ""
+                });
+            }
+            catch { }
+        }
+
+        private void HandleActivityExportReq(int clientId, NotifyMessage msg)
+        {
+            DateTime day;
+            if (!TryParseExportDay(msg != null ? msg.Text : null, out day)) return;
+            string body;
+            try { body = CollectActivityLogForDay(day) ?? ""; }
+            catch (Exception ex) { body = ex.Message ?? ""; }
+            try
+            {
+                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                {
+                    Kind = "activityExport",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    At = day.ToString("yyyy-MM-dd"),
+                    Text = body
+                });
+            }
+            catch { }
+        }
+
+        private void HandleRegisterExportReq(int clientId, NotifyMessage msg)
+        {
+            DateTime day;
+            if (!TryParseExportDay(msg != null ? msg.Text : null, out day)) return;
+            string body;
+            try { body = CollectRegisterLogForDay(day) ?? ""; }
+            catch (Exception ex) { body = ex.Message ?? ""; }
+            try
+            {
+                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                {
+                    Kind = "registerExport",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    At = day.ToString("yyyy-MM-dd"),
+                    Text = body
+                });
+            }
+            catch { }
+        }
+
+        private static bool TryParseExportDay(string text, out DateTime day)
+        {
+            return ActivityRegisterLogic.TryParseExportDay(text, out day);
         }
 
         private static string FormatNotifyClientLabel(string display, string version)
@@ -1164,24 +1360,32 @@ namespace KaiAosRenew
             catch { }
         }
 
+        private List<RegisterWireRow> BuildRegisterSyncWireRows(int maxRows)
+        {
+            var list = new List<RegisterWireRow>();
+            if (_registerHistory == null || _registerHistory.Count == 0) return list;
+            var start = Math.Max(0, _registerHistory.Count - Math.Max(1, maxRows));
+            for (var i = start; i < _registerHistory.Count; i++)
+            {
+                var r = _registerHistory[i];
+                if (r == null) continue;
+                list.Add(new RegisterWireRow
+                {
+                    At = r.At,
+                    Kind = r.Kind,
+                    Ok = r.Kind == 1,
+                    Text = r.Text ?? ""
+                });
+            }
+            return list;
+        }
+
         private void BroadcastRegisterSync()
         {
             if (_settings == null || !_settings.NotifyServerEnabled) return;
             try
             {
-                var list = new List<RegisterWireRow>();
-                for (var i = 0; i < _registerHistory.Count; i++)
-                {
-                    var r = _registerHistory[i];
-                    if (r == null) continue;
-                    list.Add(new RegisterWireRow
-                    {
-                        At = r.At,
-                        Kind = r.Kind,
-                        Ok = r.Kind == 1,
-                        Text = r.Text ?? ""
-                    });
-                }
+                var list = BuildRegisterSyncWireRows(RegisterUnfilteredDisplayMax);
                 var payload = NotifyMessage.EncodeRegisterSync(list);
                 BroadcastNotify(new NotifyMessage
                 {
@@ -1196,6 +1400,23 @@ namespace KaiAosRenew
                 try { RenewEngine.Log("Notify registerSync broadcast: " + ex.Message); }
                 catch { }
             }
+        }
+
+        private void BroadcastRegisterEntry(RegisterHistoryRow row)
+        {
+            if (row == null || _settings == null || !_settings.NotifyServerEnabled) return;
+            try
+            {
+                BroadcastNotify(new NotifyMessage
+                {
+                    Kind = "register",
+                    Level = row.Kind.ToString(CultureInfo.InvariantCulture),
+                    Title = "KAI - AOS Renew",
+                    At = row.At.ToString("yyyy-MM-ddTHH:mm:ss"),
+                    Text = row.Text ?? ""
+                });
+            }
+            catch { }
         }
 
     }

@@ -101,8 +101,6 @@ namespace KaiAosRenew
                 CheckForUpdatesBtn.Content = UiStrings.T("CheckForUpdates");
             if (_pendingUpdate != null)
                 ShowPendingUpdate(_pendingUpdate);
-            else if (_debugMode)
-                ShowForcedDebugUpdateUi();
             else if (FooterUpdateBtn != null)
                 FooterUpdateBtn.Content = UiStrings.T("Update");
             if (SectionConfigText != null) SectionConfigText.Text = UiStrings.T("SectionConfig");
@@ -321,6 +319,10 @@ namespace KaiAosRenew
             RefreshAuthCooldownBanner();
             ActivityLogLabel.Text = UiStrings.T("ActivityLog");
             if (ActivityFilterLabel != null) ActivityFilterLabel.Text = UiStrings.T("RegisterFilter");
+            if (ActivitySearchLabel != null) ActivitySearchLabel.Text = UiStrings.T("ActivitySearch");
+            if (ActivitySearchBox != null) ActivitySearchBox.ToolTip = UiStrings.T("ActivitySearchTip");
+            if (RegisterSearchLabel != null) RegisterSearchLabel.Text = UiStrings.T("RegisterSearch");
+            if (RegisterSearchBox != null) RegisterSearchBox.ToolTip = UiStrings.T("RegisterSearchTip");
             if (ActivityColTime != null) ActivityColTime.Header = UiStrings.T("KeysColTime");
             if (ActivityColLevel != null) ActivityColLevel.Header = UiStrings.T("ActivityColLevel");
             if (ActivityColText != null) ActivityColText.Header = UiStrings.T("ActivityColText");

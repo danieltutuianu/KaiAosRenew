@@ -133,7 +133,7 @@
                       <DataTemplate>
                         <StackPanel Orientation="Horizontal">
                           <Button Padding="0" Margin="0,0,4,0" Width="18" Height="18"
-                                  FontSize="11" Content="" Tag="{DynamicResource IconCopy}"
+                                  FontFamily="Segoe MDL2 Assets" FontSize="11" Content="&#xE8C8;"
                                   Cursor="Hand" Focusable="False"
                                   Background="Transparent" BorderThickness="0"
                                   Loaded="KeysVinCopyIcon_Loaded"
@@ -167,7 +167,7 @@
                       <DataTemplate>
                         <StackPanel Orientation="Horizontal">
                           <Button Padding="0" Margin="0,0,4,0" Width="18" Height="18"
-                                  FontSize="11" Content="" Tag="{DynamicResource IconCopy}"
+                                  FontFamily="Segoe MDL2 Assets" FontSize="11" Content="&#xE8C8;"
                                   Cursor="Hand" Focusable="False"
                                   Background="Transparent" BorderThickness="0"
                                   Loaded="KeysKmCopyIcon_Loaded"
@@ -400,6 +400,12 @@
                           Style="{DynamicResource KaiComboBox}"
                           DisplayMemberPath="Name" SelectedValuePath="Code"
                           SelectionChanged="LogFilter_SelectionChanged" />
+                <TextBlock x:Name="ActivitySearchLabel" Text="Search:" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
+                <TextBox x:Name="ActivitySearchBox" Width="140" Margin="0,0,10,0" VerticalAlignment="Center"
+                         Style="{DynamicResource KaiTextBox}"
+                         ToolTip="Message text"
+                         TextChanged="ActivitySearchBox_TextChanged" />
                 <Button x:Name="AosCheckTokenBtn" Content="Check token" Style="{DynamicResource BeigeButton}"
                         MinWidth="110" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="AosCheckToken_Click"  Tag="{DynamicResource IconCheck}" />
@@ -413,6 +419,9 @@
             </DockPanel>
             <StackPanel Grid.Row="1">
               <TextBlock x:Name="ActivityEmptyHint" Text="No activity yet"
+                         Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                         Margin="0,0,0,4" Visibility="Collapsed" />
+              <TextBlock x:Name="ActivityLoadingHint" Text="Loading…"
                          Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
                          Margin="0,0,0,4" Visibility="Collapsed" />
               <TextBlock x:Name="ActivityNoMatchesHint" Text="No matches — clear filter"
@@ -478,6 +487,12 @@
                           Style="{DynamicResource KaiComboBox}"
                           DisplayMemberPath="Name" SelectedValuePath="Code"
                           SelectionChanged="RegisterFilter_SelectionChanged" />
+                <TextBlock x:Name="RegisterSearchLabel" Text="Search:" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
+                <TextBox x:Name="RegisterSearchBox" Width="140" Margin="0,0,10,0" VerticalAlignment="Center"
+                         Style="{DynamicResource KaiTextBox}"
+                         ToolTip="Message text"
+                         TextChanged="RegisterSearchBox_TextChanged" />
                 <Button x:Name="SaveRegisterLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
                         MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="SaveRegisterLog_Click"  Tag="{DynamicResource IconSave}" />
@@ -486,9 +501,14 @@
                         Click="ClearRegisterLog_Click"  Tag="{DynamicResource IconClear}" />
               </StackPanel>
             </DockPanel>
-            <TextBlock x:Name="RegisterNoMatchesHint" Grid.Row="1" Text="No matches — clear filter"
-                       Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
-                       Margin="0,0,0,4" Visibility="Collapsed" />
+            <StackPanel Grid.Row="1">
+              <TextBlock x:Name="RegisterLoadingHint" Text="Loading…"
+                         Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                         Margin="0,0,0,4" Visibility="Collapsed" />
+              <TextBlock x:Name="RegisterNoMatchesHint" Text="No matches — clear filter"
+                         Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                         Margin="0,0,0,4" Visibility="Collapsed" />
+            </StackPanel>
             <ListView x:Name="RegisterHistoryList" Grid.Row="2"
                       BorderBrush="{DynamicResource FieldBorderBrush}" BorderThickness="1"
                       Background="{DynamicResource FieldBgBrush}" FontFamily="Consolas" FontSize="11"

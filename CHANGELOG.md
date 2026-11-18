@@ -4,6 +4,13 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.21] - 2026-11-18
+
+- Activity/Register: All capped at 500; filtered views show last 3 days (server disk scan; client history requests)
+- Register: Info filter; lighter `register` append + capped `registerSync`; Save Register from disk
+- Client: Loading hints; Clear/Save routed to server when connected; text search on Activity/Register
+- Tests: shared `ActivityRegisterLogic`; Protocol + Logic suites run automatically from `build.bat`
+
 ## [1.2.20] - 2026-11-18
 
 - Keys: parse paint/upholstery for `.bin` variants without `%` prefix and alphanumeric paint codes; merge BinHints; decode SQLite `KeyBinary`; backfill from archived key-bins

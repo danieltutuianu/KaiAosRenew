@@ -134,6 +134,9 @@
     <Compile Include="..\Shared\NotifyPairing.cs">
       <Link>Shared\NotifyPairing.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\ActivityRegisterLogic.cs">
+      <Link>Shared\ActivityRegisterLogic.cs</Link>
+    </Compile>
     <Compile Include="..\ChromiumCrypto.cs">
       <Link>ChromiumCrypto.cs</Link>
     </Compile>
