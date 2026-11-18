@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace KaiAosRenew
@@ -58,11 +59,44 @@ namespace KaiAosRenew
             return !string.Equals((passA ?? "").Trim(), (passB ?? "").Trim(), StringComparison.Ordinal);
         }
 
+        /// <summary>SHA-256 hex of normalized email + newline + password (for skip-identical publish).</summary>
+        public static string ComputeCredsHash(string email, string password)
+        {
+            var norm = (email ?? "").Trim().ToLowerInvariant() + "\n" + (password ?? "");
+            using (var sha = SHA256.Create())
+            {
+                var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(norm));
+                var sb = new StringBuilder(bytes.Length * 2);
+                for (var i = 0; i < bytes.Length; i++)
+                    sb.Append(bytes[i].ToString("x2", CultureInfo.InvariantCulture));
+                return sb.ToString();
+            }
+        }
+
+        public static bool CredsHashMatches(string email, string password, string storedHash)
+        {
+            if (string.IsNullOrWhiteSpace(storedHash)) return false;
+            return string.Equals(ComputeCredsHash(email, password), storedHash.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
         public static int ClampPollMinutes(int minutes)
         {
             if (minutes < 1) return 1;
             if (minutes > 1440) return 1440;
             return minutes;
+        }
+
+        public const string SyncModeOnDemand = "ondemand";
+        public const string SyncModePoll = "poll";
+        public const string SyncModeSse = "sse";
+
+        /// <summary>Normalize Firebase sync mode to ondemand / poll / sse.</summary>
+        public static string NormalizeFirebasePushSyncMode(string mode)
+        {
+            var m = (mode ?? "").Trim().ToLowerInvariant();
+            if (m == SyncModePoll || m == SyncModeSse || m == SyncModeOnDemand)
+                return m;
+            return SyncModeOnDemand;
         }
 
         public static bool ShouldProcessInboundCreds(

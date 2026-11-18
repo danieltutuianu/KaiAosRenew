@@ -1514,6 +1514,8 @@ namespace KaiAosRenew
             try { map["notifyIps"] = NotifyServer.GetLocalIpv4Summary() ?? ""; }
             catch { map["notifyIps"] = ""; }
             map["firebasePushEnabled"] = _settings.FirebasePushEnabled ? "1" : "0";
+            map["firebasePushSyncMode"] = PeerSyncLogic.NormalizeFirebasePushSyncMode(_settings.FirebasePushSyncMode);
+            map["firebasePushPollMinutes"] = _settings.FirebasePushPollMinutes.ToString();
             map["firebasePushUrl"] = _settings.FirebasePushUrl ?? "";
             try { map["firebasePushSecret"] = _settings.GetFirebasePushSecret() ?? ""; }
             catch { map["firebasePushSecret"] = ""; }

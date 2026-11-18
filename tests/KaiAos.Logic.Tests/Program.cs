@@ -329,6 +329,48 @@ namespace KaiAos.Logic.Tests
             AssertTrue(PeerSyncFirebaseParse.SsePathNeedsSnapshot(path), "sse needs snapshot");
             AssertTrue(!PeerSyncFirebaseParse.SsePathNeedsSnapshot("other/x"), "sse ignore other");
             AssertTrue(PeerSyncFirebaseParse.SsePathNeedsSnapshot(""), "sse root");
+            AssertTrue(!PeerSyncFirebaseParse.SsePathNeedsSnapshot("peers/s1"), "sse ignore peers");
+            AssertTrue(!PeerSyncFirebaseParse.SsePathNeedsSnapshot("acks/a1"), "sse ignore acks");
+            AssertTrue(!PeerSyncFirebaseParse.SsePathNeedsSnapshot("latestCommand"), "sse ignore commands");
+            AssertTrue(PeerSyncFirebaseParse.SsePathNeedsSnapshot("meta/seq"), "sse meta.seq");
+
+            PeerCredsEvent sseCreds;
+            bool needsSnap;
+            AssertTrue(PeerSyncFirebaseParse.TryInterpretLatestCredsSse(
+                "{\"path\":\"/\",\"data\":{\"seq\":5,\"eventId\":\"e2\",\"originServerId\":\"s1\"," +
+                "\"originName\":\"A\",\"createdUtc\":\"2020-01-01T00:00:00Z\",\"payloadEnc\":\"blob\"}}",
+                out sseCreds, out needsSnap), "sse full creds");
+            AssertTrue(sseCreds != null && sseCreds.EventId == "e2" && !needsSnap, "sse direct apply");
+            AssertTrue(PeerSyncFirebaseParse.TryInterpretLatestCredsSse(
+                "{\"path\":\"/seq\",\"data\":6}", out sseCreds, out needsSnap), "sse partial");
+            AssertTrue(sseCreds == null && needsSnap, "sse partial needs snapshot");
+            AssertTrue(!PeerSyncFirebaseParse.TryInterpretLatestCredsSse(
+                "{\"path\":\"/\",\"data\":null}", out sseCreds, out needsSnap), "sse null ignore");
+
+            AssertEqual(5, (int)PeerSyncFirebaseParse.ParseSeqJson("5"), "seq bare");
+            AssertEqual(7, (int)PeerSyncFirebaseParse.ParseSeqJson("\"7\""), "seq quoted");
+            AssertEqual(0, (int)PeerSyncFirebaseParse.ParseSeqJson("null"), "seq null");
+            AssertEqual(0, (int)PeerSyncFirebaseParse.ParseSeqJson(""), "seq empty");
+            AssertEqual(9, (int)PeerSyncFirebaseParse.ParseSeqJson("9\n"), "seq newline");
+
+            AssertEqual(1, PeerSyncLogic.ClampPollMinutes(0), "poll clamp low");
+            AssertEqual(360, PeerSyncLogic.ClampPollMinutes(360), "poll clamp mid");
+            AssertEqual(1440, PeerSyncLogic.ClampPollMinutes(9999), "poll clamp high");
+
+            AssertEqual(PeerSyncLogic.SyncModeOnDemand, PeerSyncLogic.NormalizeFirebasePushSyncMode(""), "mode empty");
+            AssertEqual(PeerSyncLogic.SyncModeOnDemand, PeerSyncLogic.NormalizeFirebasePushSyncMode("bogus"), "mode invalid");
+            AssertEqual(PeerSyncLogic.SyncModePoll, PeerSyncLogic.NormalizeFirebasePushSyncMode("POLL"), "mode poll");
+            AssertEqual(PeerSyncLogic.SyncModeSse, PeerSyncLogic.NormalizeFirebasePushSyncMode("sse"), "mode sse");
+            AssertEqual(PeerSyncLogic.SyncModeOnDemand, PeerSyncLogic.NormalizeFirebasePushSyncMode("ondemand"), "mode ondemand");
+
+            var h1 = PeerSyncLogic.ComputeCredsHash("A@B.com", "secret");
+            var h2 = PeerSyncLogic.ComputeCredsHash("a@b.com", "secret");
+            var h3 = PeerSyncLogic.ComputeCredsHash("a@b.com", "other");
+            AssertTrue(!string.IsNullOrEmpty(h1) && h1.Length == 64, "hash length");
+            AssertEqual(h1, h2, "hash email case");
+            AssertTrue(h1 != h3, "hash password differs");
+            AssertTrue(PeerSyncLogic.CredsHashMatches("a@b.com", "secret", h1), "hash match");
+            AssertTrue(!PeerSyncLogic.CredsHashMatches("a@b.com", "secret", ""), "hash empty no match");
         }
     }
 }

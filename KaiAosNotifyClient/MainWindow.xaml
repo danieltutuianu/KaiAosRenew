@@ -878,6 +878,24 @@
                   <CheckBox x:Name="SrvFirebasePushEnableCheck" Content="Enable Firebase push (Realtime Database)"
                             Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
                             Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SrvFirebasePushSyncModeLabel" Text="Sync mode:" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <ComboBox x:Name="SrvFirebasePushSyncModeCombo" Grid.Column="1" Width="160" HorizontalAlignment="Left"
+                              Style="{DynamicResource KaiComboBox}" DisplayMemberPath="Name" SelectedValuePath="Code"
+                              SelectionChanged="SrvSettings_Changed" />
+                    <TextBox x:Name="SrvFirebasePushPollMinutesBox" Grid.Column="2" Width="48" Margin="12,0,4,0"
+                             Style="{DynamicResource KaiTextBox}" VerticalAlignment="Center"
+                             LostFocus="SrvSettingsField_LostFocus" TextChanged="SrvSettings_Changed" Text="360" />
+                    <TextBlock x:Name="SrvFirebasePushPollMinutesSuffix" Grid.Column="3" Text="min"
+                               Style="{DynamicResource FieldLabel}" VerticalAlignment="Center" Width="Auto" />
+                  </Grid>
                   <StackPanel Grid.IsSharedSizeScope="True">
                     <Grid Margin="0,0,0,8">
                       <Grid.ColumnDefinitions>
@@ -896,6 +914,12 @@
                                 Content=""
                                 Click="SrvFirebasePushUrlCopy_Click"
                                 Tag="{DynamicResource IconCopy}" />
+                        <Button x:Name="SrvFirebasePushUrlPasteBtn"
+                                Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                                MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                                Content=""
+                                Click="SrvFirebasePushUrlPaste_Click"
+                                Tag="{DynamicResource IconPaste}" />
                       </StackPanel>
                     </Grid>
                     <Grid Margin="0,0,0,8">
@@ -920,6 +944,12 @@
                                 Content=""
                                 Click="SrvFirebasePushCopy_Click"
                                 Tag="{DynamicResource IconCopy}" />
+                        <Button x:Name="SrvFirebasePushSecretPasteBtn"
+                                Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                                MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                                Content=""
+                                Click="SrvFirebasePushSecretPaste_Click"
+                                Tag="{DynamicResource IconPaste}" />
                       </StackPanel>
                     </Grid>
                     <Grid Margin="0,0,0,8">
@@ -941,37 +971,12 @@
                     <Button x:Name="SrvFirebasePushPushBtn" Content="Push now" Style="{DynamicResource BeigeButton}"
                             Margin="0,0,8,6" Padding="10,4" Click="SrvFirebasePushPush_Click"
                             Tag="{DynamicResource IconUpdate}" />
-                    <Button x:Name="SrvFirebasePushUpdateAllBtn" Content="Update all peers" Style="{DynamicResource BeigeButton}"
-                            Margin="0,0,8,6" Padding="10,4" Click="SrvFirebasePushUpdateAll_Click"
-                            Tag="{DynamicResource IconUpdate}" />
                     <Button x:Name="SrvFirebasePushTestBtn" Content="Test connection" Style="{DynamicResource BeigeButton}"
                             Margin="0,0,8,6" Padding="10,4" Click="SrvFirebasePushTest_Click"
                             Tag="{DynamicResource IconInfo}" />
                   </WrapPanel>
                   <TextBlock x:Name="SrvFirebasePushStatusText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
                              Foreground="{DynamicResource TextMutedBrush}" Text="" />
-                  <TextBlock x:Name="SrvFirebasePushPeersLabel" Text="Peer servers:" Style="{DynamicResource SectionText}"
-                             Margin="0,8,0,6" />
-                  <ListView x:Name="SrvFirebasePushPeersList" Height="120" Margin="0,0,0,4">
-                    <ListView.View>
-                      <GridView>
-                        <GridViewColumn x:Name="SrvFirebasePushColServer" Header="Server" Width="120"
-                                        DisplayMemberBinding="{Binding ServerName}" />
-                        <GridViewColumn x:Name="SrvFirebasePushColHealth" Header="Status" Width="70"
-                                        DisplayMemberBinding="{Binding Health}" />
-                        <GridViewColumn x:Name="SrvFirebasePushColToken" Header="Token" Width="70"
-                                        DisplayMemberBinding="{Binding TokenStatus}" />
-                        <GridViewColumn x:Name="SrvFirebasePushColVersion" Header="Version" Width="70"
-                                        DisplayMemberBinding="{Binding AppVersion}" />
-                        <GridViewColumn x:Name="SrvFirebasePushColClients" Header="Clients" Width="55"
-                                        DisplayMemberBinding="{Binding ClientCount}" />
-                        <GridViewColumn x:Name="SrvFirebasePushColSeen" Header="Last seen" Width="120"
-                                        DisplayMemberBinding="{Binding LastSeen}" />
-                      </GridView>
-                    </ListView.View>
-                  </ListView>
-                  <TextBlock x:Name="SrvFirebasePushPeersEmptyHint" TextWrapping="Wrap" FontSize="12"
-                             Foreground="{DynamicResource TextMutedBrush}" Text="" Visibility="Collapsed" />
                 </StackPanel>
               </GroupBox>
               <GroupBox x:Name="SrvPathsGroup" Header="Paths" Style="{DynamicResource KaiGroupBox}">
@@ -1114,9 +1119,18 @@
                                Margin="0,0,8,0" Style="{DynamicResource FieldLabel}"
                                Width="Auto" HorizontalAlignment="Left"
                                ToolTip="Must match the server pairing code when the server requires one" />
-                    <TextBox x:Name="PairingCodeBox" Grid.Column="1" Width="160" HorizontalAlignment="Left"
-                             Style="{DynamicResource KaiTextBox}" LostFocus="HostPort_LostFocus"
-                             ToolTip="Leave empty if the server has no pairing code" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                      <TextBox x:Name="PairingCodeBox" Width="160" HorizontalAlignment="Left"
+                               Style="{DynamicResource KaiTextBox}" LostFocus="HostPort_LostFocus"
+                               ToolTip="Leave empty if the server has no pairing code" />
+                      <Button x:Name="PairingCodePasteBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                              Content=""
+                              Click="PairingCodePaste_Click"
+                              ToolTip="Paste pairing code"
+                              Tag="{DynamicResource IconPaste}" />
+                    </StackPanel>
                   </Grid>
                   <StackPanel Orientation="Horizontal" Margin="0,0,0,8" HorizontalAlignment="Left">
                     <Button x:Name="ConnectBtn" Content="Connect" Style="{DynamicResource BeigeButton}"

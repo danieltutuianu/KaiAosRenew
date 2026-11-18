@@ -317,7 +317,7 @@ namespace KaiAosRenew
                 }
                 if (c == "firebasepushupdateall")
                 {
-                    Forget(TriggerPeerUpdateAllAsync(clientId), "FirebasePushUpdateAll");
+                    SendAosAck(clientId, false, "Firebase update-all removed");
                     return;
                 }
                 SendAosAck(clientId, false, "Unknown command");
@@ -1711,6 +1711,40 @@ namespace KaiAosRenew
             }
 
             RenewEngine.Log(result.Message);
+
+            // Rare password change on another site: pull Firebase once (also when already in cooldown/block).
+            if (result != null
+                && IsFirebasePushActive()
+                && (!allowRegister
+                    || (result.Ok && result.RegisterAuthRejected)
+                    || (!result.Ok && LooksLikeAuthFailure(result.Message ?? ""))))
+            {
+                var emailTry = settings != null ? (settings.Email ?? "") : (_settings != null ? (_settings.Email ?? "") : "");
+                var passTry = password ?? "";
+                if (string.IsNullOrEmpty(passTry) && _settings != null)
+                {
+                    try { passTry = _settings.GetPassword() ?? ""; }
+                    catch { passTry = ""; }
+                }
+                try
+                {
+                    if (await TryPullNewerPeerCredsOnAuthFailAsync(emailTry, passTry).ConfigureAwait(true))
+                    {
+                        result = new RenewResult
+                        {
+                            Ok = true,
+                            RegisterAttempted = true,
+                            RegisterAuthRejected = false,
+                            SkippedRegister = false,
+                            Message = "OK (Firebase credentials applied)"
+                        };
+                        try { password = _settings != null ? (_settings.GetPassword() ?? password) : password; }
+                        catch { }
+                    }
+                }
+                catch { }
+            }
+
             if (result.Ok)
             {
                 if (result.RegisterAuthRejected)

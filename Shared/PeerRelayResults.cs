@@ -15,6 +15,7 @@ namespace KaiAosRenew
         public PeerCommandEvent LatestCommand;
         public List<PeerAckEvent> Acks = new List<PeerAckEvent>();
         public List<PeerRecord> Peers = new List<PeerRecord>();
+        public string ETag;
         public string Error;
     }
 

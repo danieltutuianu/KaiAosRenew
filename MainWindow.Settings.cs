@@ -253,6 +253,8 @@ namespace KaiAosRenew
             }
             if (NotifyPairingCopyBtn != null)
                 NotifyPairingCopyBtn.ToolTip = UiStrings.T("NotifyPairingCopyTip");
+            if (NotifyPairingPasteBtn != null)
+                NotifyPairingPasteBtn.ToolTip = UiStrings.T("NotifyPairingPasteTip");
             if (NotifyServerIpLabel != null)
                 NotifyServerIpLabel.Text = UiStrings.T("NotifyServerIpLabel");
             if (NotifyServerIpCopyBtn != null)

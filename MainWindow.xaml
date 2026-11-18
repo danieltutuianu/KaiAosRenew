@@ -978,6 +978,13 @@
                               Click="NotifyPairingCopy_Click"
                               ToolTip="Copy pairing code"
                               Tag="{DynamicResource IconCopy}" />
+                      <Button x:Name="NotifyPairingPasteBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                              Content=""
+                              Click="NotifyPairingPaste_Click"
+                              ToolTip="Paste pairing code"
+                              Tag="{DynamicResource IconPaste}" />
                     </StackPanel>
                   </Grid>
                 </StackPanel>
@@ -1039,6 +1046,25 @@
                           Style="{DynamicResource KaiCheckBox}" Margin="0,0,0,8"
                           Checked="FirebasePush_Changed" Unchecked="FirebasePush_Changed"
                           ToolTip="Near real-time AOS credential sync via Firebase Realtime Database" />
+                <Grid Margin="0,0,0,8">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock x:Name="FirebasePushSyncModeLabel" Text="Sync mode:" Style="{DynamicResource FieldLabel}"
+                             Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
+                  <ComboBox x:Name="FirebasePushSyncModeCombo" Grid.Column="1" Width="160" HorizontalAlignment="Left"
+                            Style="{DynamicResource KaiComboBox}" DisplayMemberPath="Name" SelectedValuePath="Code"
+                            SelectionChanged="FirebasePush_Changed"
+                            ToolTip="On-demand = zero idle traffic; Poll = check every X min; SSE = instant stream" />
+                  <TextBox x:Name="FirebasePushPollMinutesBox" Grid.Column="2" Width="48" Margin="12,0,4,0"
+                           Style="{DynamicResource KaiTextBox}" VerticalAlignment="Center"
+                           LostFocus="FirebasePushField_LostFocus" Text="360" />
+                  <TextBlock x:Name="FirebasePushPollMinutesSuffix" Grid.Column="3" Text="min"
+                             Style="{DynamicResource FieldLabel}" VerticalAlignment="Center" Width="Auto" />
+                </Grid>
                 <StackPanel Grid.IsSharedSizeScope="True">
                   <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
@@ -1059,6 +1085,13 @@
                               Click="FirebasePushUrlCopy_Click"
                               ToolTip="Copy database URL"
                               Tag="{DynamicResource IconCopy}" />
+                      <Button x:Name="FirebasePushUrlPasteBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                              Content=""
+                              Click="FirebasePushUrlPaste_Click"
+                              ToolTip="Paste database URL"
+                              Tag="{DynamicResource IconPaste}" />
                     </StackPanel>
                   </Grid>
                   <Grid Margin="0,0,0,8">
@@ -1087,6 +1120,13 @@
                               Click="FirebasePushCopy_Click"
                               ToolTip="Copy shared secret"
                               Tag="{DynamicResource IconCopy}" />
+                      <Button x:Name="FirebasePushSecretPasteBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                              Content=""
+                              Click="FirebasePushSecretPaste_Click"
+                              ToolTip="Paste shared secret"
+                              Tag="{DynamicResource IconPaste}" />
                     </StackPanel>
                   </Grid>
                   <Grid Margin="0,0,0,8">
@@ -1109,38 +1149,12 @@
                           Margin="0,0,8,6" Padding="10,4" Click="FirebasePushPush_Click"
                           ToolTip="Publish current AOS credentials without changing the password"
                           Tag="{DynamicResource IconUpdate}" />
-                  <Button x:Name="FirebasePushUpdateAllBtn" Content="Update all peers" Style="{DynamicResource BeigeButton}"
-                          Margin="0,0,8,6" Padding="10,4" Click="FirebasePushUpdateAll_Click"
-                          ToolTip="Tell other sites to install the latest server update"
-                          Tag="{DynamicResource IconUpdate}" />
                   <Button x:Name="FirebasePushTestBtn" Content="Test connection" Style="{DynamicResource BeigeButton}"
                           Margin="0,0,8,6" Padding="10,4" Click="FirebasePushTest_Click"
                           ToolTip="Ping the Firebase Realtime Database" Tag="{DynamicResource IconInfo}" />
                 </WrapPanel>
                 <TextBlock x:Name="FirebasePushStatusText" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4"
                            Foreground="{DynamicResource TextMutedBrush}" Text="" />
-                <TextBlock x:Name="FirebasePushPeersLabel" Text="Peer servers:" Style="{DynamicResource SectionText}"
-                           Margin="0,8,0,6" />
-                <ListView x:Name="FirebasePushPeersList" Height="120" Margin="0,0,0,4">
-                  <ListView.View>
-                    <GridView>
-                      <GridViewColumn x:Name="FirebasePushColServer" Header="Server" Width="120"
-                                      DisplayMemberBinding="{Binding ServerName}" />
-                      <GridViewColumn x:Name="FirebasePushColHealth" Header="Status" Width="70"
-                                      DisplayMemberBinding="{Binding Health}" />
-                      <GridViewColumn x:Name="FirebasePushColToken" Header="Token" Width="70"
-                                      DisplayMemberBinding="{Binding TokenStatus}" />
-                      <GridViewColumn x:Name="FirebasePushColVersion" Header="Version" Width="70"
-                                      DisplayMemberBinding="{Binding AppVersion}" />
-                      <GridViewColumn x:Name="FirebasePushColClients" Header="Clients" Width="55"
-                                      DisplayMemberBinding="{Binding ClientCount}" />
-                      <GridViewColumn x:Name="FirebasePushColSeen" Header="Last seen" Width="120"
-                                      DisplayMemberBinding="{Binding LastSeen}" />
-                    </GridView>
-                  </ListView.View>
-                </ListView>
-                <TextBlock x:Name="FirebasePushPeersEmptyHint" TextWrapping="Wrap" FontSize="12"
-                           Foreground="{DynamicResource TextMutedBrush}" Text="" Visibility="Collapsed" />
               </StackPanel>
             </GroupBox>
 

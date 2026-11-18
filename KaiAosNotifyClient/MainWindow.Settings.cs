@@ -29,6 +29,38 @@ namespace KaiAosNotifyClient
     public partial class MainWindow : Window
     {
 
+        private sealed class FirebaseSyncModeItem
+        {
+            public string Code { get; set; }
+            public string Name { get; set; }
+        }
+
+        private void EnsureSrvFirebaseSyncModeComboItems()
+        {
+            if (SrvFirebasePushSyncModeCombo == null) return;
+            var prev = SrvFirebasePushSyncModeCombo.SelectedValue as string;
+            SrvFirebasePushSyncModeCombo.ItemsSource = new[]
+            {
+                new FirebaseSyncModeItem { Code = "ondemand", Name = ClientUiStrings.T("FirebasePushSyncModeOnDemand") },
+                new FirebaseSyncModeItem { Code = "poll", Name = ClientUiStrings.T("FirebasePushSyncModePoll") },
+                new FirebaseSyncModeItem { Code = "sse", Name = ClientUiStrings.T("FirebasePushSyncModeSse") }
+            };
+            if (!string.IsNullOrEmpty(prev))
+                SrvFirebasePushSyncModeCombo.SelectedValue = prev;
+            else if (SrvFirebasePushSyncModeCombo.SelectedValue == null)
+                SrvFirebasePushSyncModeCombo.SelectedValue = "ondemand";
+            UpdateSrvFirebasePollMinutesVisibility();
+        }
+
+        private void UpdateSrvFirebasePollMinutesVisibility()
+        {
+            var poll = SrvFirebasePushSyncModeCombo != null
+                && string.Equals(SrvFirebasePushSyncModeCombo.SelectedValue as string, "poll", StringComparison.OrdinalIgnoreCase);
+            var vis = poll ? Visibility.Visible : Visibility.Collapsed;
+            if (SrvFirebasePushPollMinutesBox != null) SrvFirebasePushPollMinutesBox.Visibility = vis;
+            if (SrvFirebasePushPollMinutesSuffix != null) SrvFirebasePushPollMinutesSuffix.Visibility = vis;
+        }
+
         private void ApplyLanguageToUi()
         {
             Title = ClientUiStrings.T("AppTitle");
@@ -42,6 +74,8 @@ namespace KaiAosNotifyClient
             }
             if (PairingCodeBox != null)
                 PairingCodeBox.ToolTip = ClientUiStrings.T("PairingCodeTip");
+            if (PairingCodePasteBtn != null)
+                PairingCodePasteBtn.ToolTip = ClientUiStrings.T("NotifyPairingPasteTip");
             if (ScanLanBtn != null) ScanLanBtn.Content = ClientUiStrings.T("ScanLan");
             UpdateConnectButtonLabel();
             if (DisconnectBtn != null) DisconnectBtn.Content = ClientUiStrings.T("Disconnect");
@@ -759,9 +793,18 @@ namespace KaiAosNotifyClient
             if (SrvNotifyIpLabel != null) SrvNotifyIpLabel.Text = ClientUiStrings.T("NotifyServerIpLabel");
             if (SrvFirebasePushGroup != null) SrvFirebasePushGroup.Header = ClientUiStrings.T("SettingsFirebasePushGroup");
             if (SrvFirebasePushEnableCheck != null) SrvFirebasePushEnableCheck.Content = ClientUiStrings.T("FirebasePushEnable");
+            if (SrvFirebasePushSyncModeLabel != null)
+                SrvFirebasePushSyncModeLabel.Text = ClientUiStrings.T("FirebasePushSyncMode");
+            if (SrvFirebasePushSyncModeCombo != null)
+                SrvFirebasePushSyncModeCombo.ToolTip = ClientUiStrings.T("FirebasePushSyncModeTip");
+            EnsureSrvFirebaseSyncModeComboItems();
+            if (SrvFirebasePushPollMinutesSuffix != null)
+                SrvFirebasePushPollMinutesSuffix.Text = ClientUiStrings.T("FirebasePushPollMinutesSuffix");
             if (SrvFirebasePushUrlLabel != null) SrvFirebasePushUrlLabel.Text = ClientUiStrings.T("FirebasePushUrl");
             if (SrvFirebasePushUrlCopyBtn != null)
                 SrvFirebasePushUrlCopyBtn.ToolTip = ClientUiStrings.T("FirebasePushUrlCopyTip");
+            if (SrvFirebasePushUrlPasteBtn != null)
+                SrvFirebasePushUrlPasteBtn.ToolTip = ClientUiStrings.T("FirebasePushUrlPasteTip");
             if (SrvFirebasePushSecretLabel != null)
             {
                 SrvFirebasePushSecretLabel.Text = ClientUiStrings.T("FirebasePushSecret");
@@ -776,6 +819,8 @@ namespace KaiAosNotifyClient
             }
             if (SrvFirebasePushCopyBtn != null)
                 SrvFirebasePushCopyBtn.ToolTip = ClientUiStrings.T("FirebasePushCopyTip");
+            if (SrvFirebasePushSecretPasteBtn != null)
+                SrvFirebasePushSecretPasteBtn.ToolTip = ClientUiStrings.T("FirebasePushSecretPasteTip");
             if (SrvFirebasePushServerNameLabel != null)
                 SrvFirebasePushServerNameLabel.Text = ClientUiStrings.T("FirebasePushServerName");
             if (SrvFirebasePushNowBtn != null) SrvFirebasePushNowBtn.Content = ClientUiStrings.T("FirebasePushNow");
@@ -784,25 +829,7 @@ namespace KaiAosNotifyClient
                 SrvFirebasePushPushBtn.Content = ClientUiStrings.T("FirebasePushPush");
                 SrvFirebasePushPushBtn.ToolTip = ClientUiStrings.T("FirebasePushPushTip");
             }
-            if (SrvFirebasePushUpdateAllBtn != null)
-            {
-                SrvFirebasePushUpdateAllBtn.Content = ClientUiStrings.T("FirebasePushUpdateAll");
-                SrvFirebasePushUpdateAllBtn.ToolTip = ClientUiStrings.T("FirebasePushUpdateAllTip");
-            }
             if (SrvFirebasePushTestBtn != null) SrvFirebasePushTestBtn.Content = ClientUiStrings.T("FirebasePushTest");
-            if (SrvFirebasePushPeersLabel != null) SrvFirebasePushPeersLabel.Text = ClientUiStrings.T("FirebasePushPeers");
-            if (SrvFirebasePushColServer != null) SrvFirebasePushColServer.Header = ClientUiStrings.T("PeerSyncColServer");
-            if (SrvFirebasePushColHealth != null) SrvFirebasePushColHealth.Header = ClientUiStrings.T("PeerSyncColHealth");
-            if (SrvFirebasePushColToken != null) SrvFirebasePushColToken.Header = ClientUiStrings.T("PeerSyncColToken");
-            if (SrvFirebasePushColVersion != null) SrvFirebasePushColVersion.Header = ClientUiStrings.T("PeerSyncColVersion");
-            if (SrvFirebasePushColClients != null) SrvFirebasePushColClients.Header = ClientUiStrings.T("PeerSyncColClients");
-            if (SrvFirebasePushColSeen != null) SrvFirebasePushColSeen.Header = ClientUiStrings.T("PeerSyncColSeen");
-            if (SrvFirebasePushPeersEmptyHint != null)
-            {
-                SrvFirebasePushPeersEmptyHint.Text = ClientUiStrings.T("FirebasePushPeersEmpty");
-                if (SrvFirebasePushPeersList != null && SrvFirebasePushPeersList.ItemsSource == null)
-                    SrvFirebasePushPeersEmptyHint.Visibility = Visibility.Visible;
-            }
             if (SrvPathsKaiConfig != null) SrvPathsKaiConfig.Text = ClientUiStrings.T("SectionConfig");
             if (SrvConfigPathLabel != null) SrvConfigPathLabel.Text = ClientUiStrings.T("ConfigPath");
             if (SrvPathsKeyReader != null) SrvPathsKeyReader.Text = ClientUiStrings.T("SettingsKeyReader");
@@ -926,6 +953,17 @@ namespace KaiAosNotifyClient
                     SizeTextBoxToContent(SrvNotifyIpBox);
                 }
                 if (SrvFirebasePushEnableCheck != null) SrvFirebasePushEnableCheck.IsChecked = KvFlag(map, "firebasePushEnabled", false);
+                EnsureSrvFirebaseSyncModeComboItems();
+                if (SrvFirebasePushSyncModeCombo != null)
+                {
+                    var mode = KvStr(map, "firebasePushSyncMode", "");
+                    if (string.IsNullOrEmpty(mode) && KvFlag(map, "firebasePushUsePolling", false))
+                        mode = "poll";
+                    if (string.IsNullOrEmpty(mode)) mode = "ondemand";
+                    SrvFirebasePushSyncModeCombo.SelectedValue = mode;
+                }
+                if (SrvFirebasePushPollMinutesBox != null) SrvFirebasePushPollMinutesBox.Text = KvStr(map, "firebasePushPollMinutes", "360");
+                UpdateSrvFirebasePollMinutesVisibility();
                 if (SrvFirebasePushUrlBox != null) SrvFirebasePushUrlBox.Text = KvStr(map, "firebasePushUrl", "");
                 if (SrvFirebasePushSecretBox != null) SrvFirebasePushSecretBox.Text = KvStr(map, "firebasePushSecret", "");
                 if (SrvFirebasePushServerNameBox != null) SrvFirebasePushServerNameBox.Text = KvStr(map, "firebasePushServerName", "");
@@ -1134,6 +1172,8 @@ namespace KaiAosNotifyClient
         private void SrvSettings_Changed(object sender, RoutedEventArgs e)
         {
             if (_loadingSrvSettings) return;
+            if (sender == SrvFirebasePushSyncModeCombo)
+                UpdateSrvFirebasePollMinutesVisibility();
             MarkSrvSettingsDirty(true);
             SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
         }

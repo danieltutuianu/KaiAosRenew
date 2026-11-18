@@ -152,7 +152,6 @@ namespace KaiAosRenew
             if (kind == "settingssyncreq")
             {
                 SendServerSettingsTo(clientId);
-                SendPeerStatusSyncTo(clientId);
                 return;
             }
             if (kind == "settingsexportreq")
@@ -718,11 +717,20 @@ namespace KaiAosRenew
                     _settings.AuthCooldownMinutes = MapInt(map, "authCooldownMinutes", _settings.AuthCooldownMinutes, 5, 240);
                     _settings.AuthRegisterBlockAfter = MapInt(map, "authRegisterBlockAfter", GetAuthRegisterBlockAfter(), 1, 10);
                     if (map.ContainsKey("firebasePushEnabled")
+                        || map.ContainsKey("firebasePushSyncMode")
+                        || map.ContainsKey("firebasePushUsePolling")
+                        || map.ContainsKey("firebasePushPollMinutes")
                         || map.ContainsKey("firebasePushUrl")
                         || map.ContainsKey("firebasePushSecret")
                         || map.ContainsKey("firebasePushServerName"))
                     {
                         _settings.FirebasePushEnabled = MapFlag(map, "firebasePushEnabled", _settings.FirebasePushEnabled);
+                        if (map.ContainsKey("firebasePushSyncMode"))
+                            _settings.FirebasePushSyncMode = PeerSyncLogic.NormalizeFirebasePushSyncMode(
+                                MapStr(map, "firebasePushSyncMode", _settings.FirebasePushSyncMode ?? ""));
+                        else if (map.ContainsKey("firebasePushUsePolling") && MapFlag(map, "firebasePushUsePolling", false))
+                            _settings.FirebasePushSyncMode = PeerSyncLogic.SyncModePoll;
+                        _settings.FirebasePushPollMinutes = MapInt(map, "firebasePushPollMinutes", _settings.FirebasePushPollMinutes, 1, 1440);
                         _settings.FirebasePushUrl = MapStr(map, "firebasePushUrl", _settings.FirebasePushUrl ?? "");
                         if (map.ContainsKey("firebasePushSecret"))
                             _settings.SetFirebasePushSecret(MapStr(map, "firebasePushSecret", ""));
@@ -964,7 +972,6 @@ namespace KaiAosRenew
                 _clientsUpdating.Remove(idCopy);
                 RefreshNotifyClientsCombo();
                 BroadcastNotifyClientsList();
-                SchedulePeerHeartbeat();
             }));
         }
 
@@ -978,14 +985,12 @@ namespace KaiAosRenew
                 SendRegisterSyncTo(idCopy);
                 SendAosSyncTo(idCopy);
                 SendServerSettingsTo(idCopy);
-                SendPeerStatusSyncTo(idCopy);
                 SendKaiSyncTo(idCopy);
                 SendUpdateFeedTo(idCopy);
                 // Always push (including empty clear) so offline clients drop a stale banner.
                 BroadcastKeysReaderWarn(idCopy);
                 RefreshNotifyClientsCombo();
                 BroadcastNotifyClientsList();
-                SchedulePeerHeartbeat();
             }));
             try
             {
@@ -1121,6 +1126,10 @@ namespace KaiAosRenew
         private void NotifyPairingGenerate_Click(object sender, RoutedEventArgs e)
         {
             if (_settings == null) return;
+            var ask = UiStrings.T("NotifyPairingGenerateConfirm");
+            var result = MessageBox.Show(this, ask, UiStrings.T("NotifyPairingGenerate"),
+                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+            if (result != MessageBoxResult.Yes) return;
             var code = NotifyPairing.GenerateCode();
             _settings.NotifyPairingCode = code;
             if (NotifyPairingCodeBox != null)
@@ -1139,6 +1148,23 @@ namespace KaiAosRenew
                     : (_settings != null ? (_settings.NotifyPairingCode ?? "") : "");
                 if (string.IsNullOrEmpty(code)) return;
                 NativeMethods.TrySetClipboardText(code);
+            }
+            catch { }
+        }
+
+        private void NotifyPairingPaste_Click(object sender, RoutedEventArgs e)
+        {
+            if (_loadingUi || _settings == null) return;
+            try
+            {
+                var clip = Clipboard.GetText();
+                if (string.IsNullOrWhiteSpace(clip)) return;
+                if (NotifyPairingCodeBox != null)
+                    NotifyPairingCodeBox.Text = clip.Trim();
+                ParseAndSetNotifyPairingCode();
+                try { _settings.Save(); }
+                catch { }
+                ApplyNotifyServerFromSettings();
             }
             catch { }
         }

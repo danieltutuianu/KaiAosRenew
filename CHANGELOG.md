@@ -4,6 +4,14 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.25] - 2026-11-18
+
+- Firebase push: Sync mode ComboBox — On-demand (default, zero idle traffic), Poll, or SSE
+- Firebase push: Publish uses `?print=silent` (204, zero-byte download response)
+- Firebase push: persistent ETags across restart for seq/creds GETs (304 Not Modified)
+- Firebase push: auth-fail / cooldown pull is seq-gated before downloading `latestCreds`
+- Firebase push: removed Receive only — any successful AOS login publishes credentials to peers
+
 ## [1.2.24] - 2026-11-18
 
 - Firebase push: near real-time multi-site AOS credential sync via Realtime Database (REST + SSE); Settings + Server Settings UI; encrypted payloads unchanged

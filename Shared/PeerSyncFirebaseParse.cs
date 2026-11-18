@@ -144,6 +144,23 @@ namespace KaiAosRenew
             }
         }
 
+        /// <summary>Parse Firebase leaf JSON for a number (e.g. latestCreds/seq.json → "5" or 5).</summary>
+        public static long ParseSeqJson(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json) || json.Trim() == "null") return 0;
+            try
+            {
+                var t = JToken.Parse(json);
+                return ParseLong(t);
+            }
+            catch
+            {
+                long n;
+                if (long.TryParse(json.Trim().Trim('"'), out n)) return n;
+                return 0;
+            }
+        }
+
         public static string NormalizeSsePath(string path)
         {
             if (string.IsNullOrWhiteSpace(path) || path == "/") return "";
@@ -152,15 +169,67 @@ namespace KaiAosRenew
             return p.TrimEnd('/');
         }
 
-        /// <summary>True when an SSE put/patch may affect creds/acks/commands/peers/meta.</summary>
+        /// <summary>True when an SSE put/patch may affect email/password credentials (latestCreds / meta.seq).</summary>
         public static bool SsePathNeedsSnapshot(string relativePath)
         {
             if (string.IsNullOrEmpty(relativePath)) return true;
-            return relativePath.StartsWith("meta", StringComparison.OrdinalIgnoreCase)
-                   || relativePath.StartsWith("latestCreds", StringComparison.OrdinalIgnoreCase)
-                   || relativePath.StartsWith("latestCommand", StringComparison.OrdinalIgnoreCase)
-                   || relativePath.StartsWith("acks", StringComparison.OrdinalIgnoreCase)
-                   || relativePath.StartsWith("peers", StringComparison.OrdinalIgnoreCase);
+            if (relativePath.StartsWith("latestCreds", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (string.Equals(relativePath, "meta", StringComparison.OrdinalIgnoreCase)
+                || relativePath.StartsWith("meta/seq", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(relativePath, "seq", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Parse an SSE event while listening on latestCreds.json (or root).
+        /// Returns false if the event should be ignored (keepalive / delete / unparsable).
+        /// When true: either <paramref name="creds"/> is set (apply directly) or <paramref name="needsSnapshot"/> is true.
+        /// </summary>
+        public static bool TryInterpretLatestCredsSse(
+            string dataJson, out PeerCredsEvent creds, out bool needsSnapshot)
+        {
+            creds = null;
+            needsSnapshot = false;
+            string path;
+            JToken data;
+            if (!TryParseSseData(dataJson, out path, out data))
+                return false;
+            if (data == null || data.Type == JTokenType.Null)
+                return false;
+
+            // Child field update under latestCreds (e.g. path "seq") — need full GET.
+            if (!string.IsNullOrEmpty(path)
+                && !string.Equals(path, "latestCreds", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("latestCreds/", StringComparison.OrdinalIgnoreCase))
+            {
+                needsSnapshot = true;
+                return true;
+            }
+
+            JObject obj = null;
+            if (string.Equals(path, "latestCreds", StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrEmpty(path))
+            {
+                obj = data as JObject;
+            }
+            else if (path.StartsWith("latestCreds/", StringComparison.OrdinalIgnoreCase))
+            {
+                needsSnapshot = true;
+                return true;
+            }
+
+            if (obj == null)
+            {
+                needsSnapshot = true;
+                return true;
+            }
+
+            creds = ParseCreds(obj);
+            if (creds != null) return true;
+            needsSnapshot = true;
+            return true;
         }
 
         private static PeerCredsEvent ParseCreds(JObject latest)

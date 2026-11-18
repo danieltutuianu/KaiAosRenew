@@ -2788,6 +2788,10 @@ namespace KaiAosNotifyClient
             map["authRegisterBlockAfter"] = SrvAuthBlockAfterBox != null ? (SrvAuthBlockAfterBox.Text ?? "3").Trim() : "3";
             map["keyReaderLogLevel"] = (SrvKrLogLevelCombo != null ? SrvKrLogLevelCombo.SelectedValue as string : null) ?? "4";
             map["firebasePushEnabled"] = SrvFirebasePushEnableCheck != null && SrvFirebasePushEnableCheck.IsChecked == true ? "1" : "0";
+            map["firebasePushSyncMode"] = SrvFirebasePushSyncModeCombo != null && SrvFirebasePushSyncModeCombo.SelectedValue != null
+                ? (SrvFirebasePushSyncModeCombo.SelectedValue as string ?? "ondemand")
+                : "ondemand";
+            map["firebasePushPollMinutes"] = SrvFirebasePushPollMinutesBox != null ? (SrvFirebasePushPollMinutesBox.Text ?? "360").Trim() : "360";
             map["firebasePushUrl"] = SrvFirebasePushUrlBox != null ? (SrvFirebasePushUrlBox.Text ?? "").Trim() : "";
             map["firebasePushSecret"] = SrvFirebasePushSecretBox != null ? (SrvFirebasePushSecretBox.Text ?? "").Trim() : "";
             map["firebasePushServerName"] = SrvFirebasePushServerNameBox != null ? (SrvFirebasePushServerNameBox.Text ?? "").Trim() : "";
@@ -2796,6 +2800,10 @@ namespace KaiAosNotifyClient
 
         private void SrvFirebasePushGenerate_Click(object sender, RoutedEventArgs e)
         {
+            var ask = ClientUiStrings.T("FirebasePushGenerateConfirm");
+            var result = MessageBox.Show(this, ask, ClientUiStrings.T("FirebasePushGenerate"),
+                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+            if (result != MessageBoxResult.Yes) return;
             var secret = NotifyPairing.GenerateCode() + NotifyPairing.GenerateCode();
             if (SrvFirebasePushSecretBox != null)
                 SrvFirebasePushSecretBox.Text = secret;
@@ -2814,6 +2822,20 @@ namespace KaiAosNotifyClient
             catch { }
         }
 
+        private void SrvFirebasePushUrlPaste_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var clip = Clipboard.GetText();
+                if (string.IsNullOrWhiteSpace(clip)) return;
+                if (SrvFirebasePushUrlBox != null)
+                    SrvFirebasePushUrlBox.Text = clip.Trim();
+                MarkSrvSettingsDirty(true);
+                SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
+            }
+            catch { }
+        }
+
         private void SrvFirebasePushCopy_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -2821,6 +2843,38 @@ namespace KaiAosNotifyClient
                 var secret = SrvFirebasePushSecretBox != null ? (SrvFirebasePushSecretBox.Text ?? "").Trim() : "";
                 if (string.IsNullOrEmpty(secret)) return;
                 Clipboard.SetText(secret);
+            }
+            catch { }
+        }
+
+        private void SrvFirebasePushSecretPaste_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var clip = Clipboard.GetText();
+                if (string.IsNullOrWhiteSpace(clip)) return;
+                if (SrvFirebasePushSecretBox != null)
+                    SrvFirebasePushSecretBox.Text = clip.Trim();
+                MarkSrvSettingsDirty(true);
+                SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
+            }
+            catch { }
+        }
+
+        private void PairingCodePaste_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var clip = Clipboard.GetText();
+                if (string.IsNullOrWhiteSpace(clip)) return;
+                if (PairingCodeBox != null)
+                    PairingCodeBox.Text = clip.Trim();
+                if (_settings != null)
+                {
+                    _settings.PairingCode = PairingCodeBox != null ? (PairingCodeBox.Text ?? "").Trim() : "";
+                    try { _settings.Save(); }
+                    catch { }
+                }
             }
             catch { }
         }
@@ -2839,17 +2893,6 @@ namespace KaiAosNotifyClient
                 SrvFirebasePushStatusText.Text = ClientUiStrings.T("FirebasePushPush");
         }
 
-        private void SrvFirebasePushUpdateAll_Click(object sender, RoutedEventArgs e)
-        {
-            var ask = ClientUiStrings.T("FirebasePushUpdateAllConfirm");
-            var result = MessageBox.Show(this, ask, ClientUiStrings.T("FirebasePushUpdateAll"),
-                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
-            if (result != MessageBoxResult.Yes) return;
-            SendAosCmd("firebasePushUpdateAll");
-            if (SrvFirebasePushStatusText != null)
-                SrvFirebasePushStatusText.Text = ClientUiStrings.T("FirebasePushUpdateAll");
-        }
-
         private void SrvFirebasePushTest_Click(object sender, RoutedEventArgs e)
         {
             SendAosCmd("firebasePushTest");
@@ -2859,16 +2902,7 @@ namespace KaiAosNotifyClient
 
         private void ApplyPeerStatusSync(string text)
         {
-            var rows = PeerDashboardWire.Parse(text);
-            if (SrvFirebasePushPeersList != null)
-                SrvFirebasePushPeersList.ItemsSource = rows;
-            if (SrvFirebasePushPeersEmptyHint != null)
-            {
-                SrvFirebasePushPeersEmptyHint.Text = ClientUiStrings.T("FirebasePushPeersEmpty");
-                SrvFirebasePushPeersEmptyHint.Visibility = (rows == null || rows.Count == 0)
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
-            }
+            // Peer servers dashboard removed — ignore legacy peerStatusSync payloads.
         }
 
 

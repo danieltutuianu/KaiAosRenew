@@ -100,6 +100,22 @@ namespace KaiAosRenew
         public string PeerSyncLastCmdId { get; set; }
         /// <summary>Sync AOS credentials with peer servers via Firebase Realtime Database (push).</summary>
         public bool FirebasePushEnabled { get; set; }
+        /// <summary>Legacy pull-only flag (ignored — every site publishes on successful login).</summary>
+        public bool FirebasePushPullOnly { get; set; }
+        /// <summary>Legacy poll flag; migrated into FirebasePushSyncMode.</summary>
+        public bool FirebasePushUsePolling { get; set; }
+        /// <summary>ondemand (default, zero idle) / poll / sse.</summary>
+        public string FirebasePushSyncMode { get; set; }
+        /// <summary>Poll interval in minutes when sync mode is poll (default 360 = 6h).</summary>
+        public int FirebasePushPollMinutes { get; set; }
+        /// <summary>SHA-256 hex of last published/applied email+password (skip identical republish).</summary>
+        public string PeerSyncLastCredsHash { get; set; }
+        /// <summary>Persisted ETag for latestCreds.json (304 after restart).</summary>
+        public string FirebasePushCredsEtag { get; set; }
+        /// <summary>Persisted ETag for latestCreds/seq.json.</summary>
+        public string FirebasePushSeqEtag { get; set; }
+        /// <summary>Scope key (url+secret) that the persisted ETags belong to.</summary>
+        public string FirebasePushEtagScope { get; set; }
         /// <summary>Firebase Realtime Database URL (https://….firebasedatabase.app or ….firebaseio.com).</summary>
         public string FirebasePushUrl { get; set; }
         /// <summary>Shared Firebase push secret (DPAPI-protected).</summary>
@@ -150,6 +166,14 @@ namespace KaiAosRenew
             PeerSyncLastCmdSeq = 0;
             PeerSyncLastCmdId = "";
             FirebasePushEnabled = false;
+            FirebasePushPullOnly = false;
+            FirebasePushUsePolling = false;
+            FirebasePushSyncMode = PeerSyncLogic.SyncModeOnDemand;
+            FirebasePushPollMinutes = 360;
+            PeerSyncLastCredsHash = "";
+            FirebasePushCredsEtag = "";
+            FirebasePushSeqEtag = "";
+            FirebasePushEtagScope = "";
             FirebasePushUrl = "";
             FirebasePushSecretProtectedBase64 = null;
             FirebasePushServerName = "";
@@ -258,6 +282,20 @@ namespace KaiAosRenew
             if (PeerSyncLastCmdSeq < 0) PeerSyncLastCmdSeq = 0;
             if (PeerSyncLastEventId == null) PeerSyncLastEventId = "";
             if (PeerSyncLastCmdId == null) PeerSyncLastCmdId = "";
+            if (PeerSyncLastCredsHash == null) PeerSyncLastCredsHash = "";
+            if (FirebasePushCredsEtag == null) FirebasePushCredsEtag = "";
+            if (FirebasePushSeqEtag == null) FirebasePushSeqEtag = "";
+            if (FirebasePushEtagScope == null) FirebasePushEtagScope = "";
+            if (string.IsNullOrWhiteSpace(FirebasePushSyncMode))
+                FirebasePushSyncMode = FirebasePushUsePolling
+                    ? PeerSyncLogic.SyncModePoll
+                    : PeerSyncLogic.SyncModeOnDemand;
+            FirebasePushSyncMode = PeerSyncLogic.NormalizeFirebasePushSyncMode(FirebasePushSyncMode);
+            FirebasePushUsePolling = string.Equals(
+                FirebasePushSyncMode, PeerSyncLogic.SyncModePoll, StringComparison.OrdinalIgnoreCase);
+            FirebasePushPullOnly = false;
+            FirebasePushPollMinutes = PeerSyncLogic.ClampPollMinutes(
+                FirebasePushPollMinutes < 1 ? 360 : FirebasePushPollMinutes);
             if (FirebasePushUrl == null) FirebasePushUrl = "";
             FirebasePushUrl = FirebasePushUrl.Trim();
             if (FirebasePushServerName == null) FirebasePushServerName = "";
@@ -339,6 +377,12 @@ namespace KaiAosRenew
         private static void ApplyLegacyDefaults(AppSettings loaded, string xml)
         {
             if (loaded == null || string.IsNullOrEmpty(xml)) return;
+            if (xml.IndexOf("FirebasePushSyncMode", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                loaded.FirebasePushSyncMode = loaded.FirebasePushUsePolling
+                    ? PeerSyncLogic.SyncModePoll
+                    : PeerSyncLogic.SyncModeOnDemand;
+            }
             if (xml.IndexOf("BrowserPasswordHintOnAuthFail", StringComparison.OrdinalIgnoreCase) < 0)
                 loaded.BrowserPasswordHintOnAuthFail = true;
             if (xml.IndexOf("PasswordRotateRemindHours", StringComparison.OrdinalIgnoreCase) < 0
@@ -461,6 +505,10 @@ namespace KaiAosRenew
             portable.NotifyServerPort = NotifyServerPort;
             portable.NotifyPairingCode = NotifyPairingCode;
             portable.FirebasePushEnabled = FirebasePushEnabled;
+            portable.FirebasePushSyncMode = FirebasePushSyncMode;
+            portable.FirebasePushUsePolling = string.Equals(
+                FirebasePushSyncMode, PeerSyncLogic.SyncModePoll, StringComparison.OrdinalIgnoreCase);
+            portable.FirebasePushPollMinutes = FirebasePushPollMinutes;
             portable.FirebasePushUrl = FirebasePushUrl;
             portable.FirebasePushServerName = FirebasePushServerName;
             // Secrets stay DPAPI-local (same as AOS password) — not in portable export.
@@ -535,6 +583,12 @@ namespace KaiAosRenew
             if (imported.NotifyPairingCode != null)
                 NotifyPairingCode = imported.NotifyPairingCode.Trim();
             FirebasePushEnabled = imported.FirebasePushEnabled;
+            if (!string.IsNullOrWhiteSpace(imported.FirebasePushSyncMode))
+                FirebasePushSyncMode = imported.FirebasePushSyncMode;
+            else if (imported.FirebasePushUsePolling)
+                FirebasePushSyncMode = PeerSyncLogic.SyncModePoll;
+            if (imported.FirebasePushPollMinutes >= 1)
+                FirebasePushPollMinutes = imported.FirebasePushPollMinutes;
             if (imported.FirebasePushUrl != null)
                 FirebasePushUrl = imported.FirebasePushUrl.Trim();
             if (!string.IsNullOrWhiteSpace(imported.FirebasePushServerName))
