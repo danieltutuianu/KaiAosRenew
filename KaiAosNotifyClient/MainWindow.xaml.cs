@@ -162,6 +162,8 @@ namespace KaiAosNotifyClient
         private bool _awaitingSettingsApply;
         private bool _awaitingSettingsImport;
         private Dictionary<string, string> _lastServerSettingsMap;
+        /// <summary>Capture-shaped baseline for dirty compare (editable keys only).</summary>
+        private Dictionary<string, string> _lastServerSettingsCapture;
         private Dictionary<string, string> _conflictServerSettingsMap;
         private bool _startedHiddenToTray;
         private bool _wantConnectUi;
@@ -789,7 +791,7 @@ namespace KaiAosNotifyClient
                     }
                 }
             }
-            if (leftServerSettings && _srvSettingsDirty && !TryResolveUnsavedServerSettings())
+            if (leftServerSettings && !TryResolveUnsavedServerSettings())
             {
                 try
                 {
@@ -2383,7 +2385,11 @@ namespace KaiAosNotifyClient
             var seconds = msg.Seconds;
             if (string.Equals(msg.Kind, "vin", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(msg.Vin))
                 seconds = _settings.VinTipSeconds;
-            if (seconds <= 0) seconds = 8;
+            if (seconds == 0
+                && (string.Equals(msg.Kind, "vin", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(msg.Vin)))
+                seconds = -1;
+            else if (seconds <= 0)
+                seconds = 8;
             var kind = (msg.Kind ?? "").Trim().ToLowerInvariant();
             var lvl = (level ?? "").Trim().ToLowerInvariant();
             var isVin = kind == "vin" || !string.IsNullOrEmpty(msg.Vin);
@@ -2772,7 +2778,7 @@ namespace KaiAosNotifyClient
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             if (_exitRequested) return;
-            if (_srvSettingsDirty && !TryResolveUnsavedServerSettings())
+            if (!TryResolveUnsavedServerSettings())
             {
                 e.Cancel = true;
                 return;
@@ -3043,6 +3049,28 @@ namespace KaiAosNotifyClient
             SetSrvFirebaseSecretUi(secret);
             MarkSrvSettingsDirty(true);
             SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
+        }
+
+        private void SrvNotifyIpCopy_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var text = SrvNotifyIpBox != null ? (SrvNotifyIpBox.Text ?? "").Trim() : "";
+                if (string.IsNullOrEmpty(text)) return;
+                Clipboard.SetText(text);
+            }
+            catch { }
+        }
+
+        private void SrvNotifyPortCopy_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var text = SrvNotifyPortBox != null ? (SrvNotifyPortBox.Text ?? "").Trim() : "";
+                if (string.IsNullOrEmpty(text)) return;
+                Clipboard.SetText(text);
+            }
+            catch { }
         }
 
         private void SrvFirebasePushUrlCopy_Click(object sender, RoutedEventArgs e)

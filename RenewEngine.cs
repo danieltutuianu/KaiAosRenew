@@ -180,6 +180,11 @@ namespace KaiAosRenew
                         ? "Auth cooldown — Register skipped; Health failed."
                         : "Auth cooldown — Register skipped. " + healthMsg);
                 }
+                if (!forceRegister && IsTransientDnsFailure(healthMsg))
+                {
+                    Log("Health DNS/network unresolved — Register skipped: " + healthMsg);
+                    return Fail("Health failed (DNS/network): " + healthMsg);
+                }
                 if (forceRegister)
                     Log("Credentials changed — forcing Register (skip Health short-circuit)...");
                 else
@@ -327,114 +332,147 @@ namespace KaiAosRenew
             return fromConfig;
         }
 
+        /// <summary>
+        /// True when health failed only because DNS/name resolution (or similar) could not reach WebEAM.
+        /// </summary>
+        public static bool IsTransientDnsFailure(string message)
+        {
+            if (string.IsNullOrEmpty(message)) return false;
+            var m = message;
+            return m.IndexOf("remote name could not be resolved", StringComparison.OrdinalIgnoreCase) >= 0
+                || m.IndexOf("NameResolutionFailure", StringComparison.OrdinalIgnoreCase) >= 0
+                || m.IndexOf("No such host is known", StringComparison.OrdinalIgnoreCase) >= 0
+                || m.IndexOf("unknown host", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsTransientNetworkStatus(WebExceptionStatus status)
+        {
+            return status == WebExceptionStatus.NameResolutionFailure
+                || status == WebExceptionStatus.ProxyNameResolutionFailure
+                || status == WebExceptionStatus.ConnectFailure
+                || status == WebExceptionStatus.Timeout;
+        }
+
         private static bool TryHealthToken(AppSettings settings, string propsPath, string tokenUrl, out string message, out int expiresInSeconds)
         {
             message = null;
             expiresInSeconds = 0;
-            try
+            const int maxAttempts = 3;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                if (!File.Exists(propsPath))
-                {
-                    message = "KAI_Properties.cfg missing";
-                    return false;
-                }
-                var lines = File.ReadAllLines(propsPath);
-                if (lines.Length < 4)
-                {
-                    message = "KAI_Properties.cfg invalid";
-                    return false;
-                }
-
-                var clientId = BmwDecrypt(lines[2].Trim());
-                var clientSecret = BmwDecrypt(lines[3].Trim());
-                if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
-                {
-                    message = "Decrypt ClientId/Secret failed";
-                    return false;
-                }
-
-                if (string.IsNullOrWhiteSpace(tokenUrl))
-                    tokenUrl = "https://auth.bmwgroup.com/auth/oauth2/realms/root/realms/machine2machine/access_token";
-
-                var requestDump = BmwHttpLog.FormatWebEamRequest(tokenUrl, clientId);
-                // Same as KaiZentralProxyUserRegistration.GetM2mAccessToken
-                const string body = "grant_type=client_credentials&scope=machine2machine";
-                var req = (HttpWebRequest)WebRequest.Create(tokenUrl);
-                req.Method = "POST";
-                req.Accept = "application/json";
-                req.ContentType = "application/x-www-form-urlencoded";
-                req.Timeout = 20000;
-                req.Proxy = KaiDiag.ResolveProxy(settings != null && settings.UseSystemProxy);
-                var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes(clientId + ":" + clientSecret));
-                req.Headers[HttpRequestHeader.Authorization] = "Basic " + basic;
-                var bytes = Encoding.UTF8.GetBytes(body);
-                req.ContentLength = bytes.Length;
-                using (var s = req.GetRequestStream())
-                    s.Write(bytes, 0, bytes.Length);
-
-                using (var resp = (HttpWebResponse)req.GetResponse())
-                using (var sr = new StreamReader(resp.GetResponseStream()))
-                {
-                    var json = sr.ReadToEnd() ?? "";
-                    var status = (int)resp.StatusCode;
-                    if (status >= 200 && status < 300
-                        && json.IndexOf("access_token", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        expiresInSeconds = ParseExpiresIn(json);
-                        message = "Health OK (WebEAM token). Register not required. ClientId=" + clientId;
-                        if (expiresInSeconds > 0)
-                            message += " expires_in=" + expiresInSeconds + "s";
-                        BmwHttpLog.LogExchange("WebEAM", status, tokenUrl, requestDump, json);
-                        return true;
-                    }
-                    message = "Token response without access_token HTTP " + status;
-                    if (status != 200)
-                        BmwHttpLog.LogNon200("WebEAM", status, tokenUrl, requestDump, json);
-                    else
-                        BmwHttpLog.LogExchange("WebEAM", status, tokenUrl, requestDump, json);
-                    return false;
-                }
-            }
-            catch (WebException we)
-            {
-                int status = 0;
-                string respBody = "";
-                string url = tokenUrl;
-                string clientIdForDump = null;
                 try
                 {
-                    if (File.Exists(propsPath))
+                    if (!File.Exists(propsPath))
                     {
-                        var lines = File.ReadAllLines(propsPath);
-                        if (lines.Length >= 3)
-                            clientIdForDump = BmwDecrypt(lines[2].Trim());
+                        message = "KAI_Properties.cfg missing";
+                        return false;
+                    }
+                    var lines = File.ReadAllLines(propsPath);
+                    if (lines.Length < 4)
+                    {
+                        message = "KAI_Properties.cfg invalid";
+                        return false;
+                    }
+
+                    var clientId = BmwDecrypt(lines[2].Trim());
+                    var clientSecret = BmwDecrypt(lines[3].Trim());
+                    if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+                    {
+                        message = "Decrypt ClientId/Secret failed";
+                        return false;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(tokenUrl))
+                        tokenUrl = "https://auth.bmwgroup.com/auth/oauth2/realms/root/realms/machine2machine/access_token";
+
+                    var requestDump = BmwHttpLog.FormatWebEamRequest(tokenUrl, clientId);
+                    // Same as KaiZentralProxyUserRegistration.GetM2mAccessToken
+                    const string body = "grant_type=client_credentials&scope=machine2machine";
+                    var req = (HttpWebRequest)WebRequest.Create(tokenUrl);
+                    req.Method = "POST";
+                    req.Accept = "application/json";
+                    req.ContentType = "application/x-www-form-urlencoded";
+                    req.Timeout = 20000;
+                    req.Proxy = KaiDiag.ResolveProxy(settings != null && settings.UseSystemProxy);
+                    var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes(clientId + ":" + clientSecret));
+                    req.Headers[HttpRequestHeader.Authorization] = "Basic " + basic;
+                    var bytes = Encoding.UTF8.GetBytes(body);
+                    req.ContentLength = bytes.Length;
+                    using (var s = req.GetRequestStream())
+                        s.Write(bytes, 0, bytes.Length);
+
+                    using (var resp = (HttpWebResponse)req.GetResponse())
+                    using (var sr = new StreamReader(resp.GetResponseStream()))
+                    {
+                        var json = sr.ReadToEnd() ?? "";
+                        var status = (int)resp.StatusCode;
+                        if (status >= 200 && status < 300
+                            && json.IndexOf("access_token", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            expiresInSeconds = ParseExpiresIn(json);
+                            message = "Health OK (WebEAM token). Register not required. ClientId=" + clientId;
+                            if (expiresInSeconds > 0)
+                                message += " expires_in=" + expiresInSeconds + "s";
+                            BmwHttpLog.LogExchange("WebEAM", status, tokenUrl, requestDump, json);
+                            return true;
+                        }
+                        message = "Token response without access_token HTTP " + status;
+                        if (status != 200)
+                            BmwHttpLog.LogNon200("WebEAM", status, tokenUrl, requestDump, json);
+                        else
+                            BmwHttpLog.LogExchange("WebEAM", status, tokenUrl, requestDump, json);
+                        return false;
                     }
                 }
-                catch { }
-                try
+                catch (WebException we)
                 {
-                    var resp = we.Response as HttpWebResponse;
-                    if (resp != null)
+                    int status = 0;
+                    string respBody = "";
+                    string url = tokenUrl;
+                    string clientIdForDump = null;
+                    try
                     {
-                        status = (int)resp.StatusCode;
-                        using (var sr = new StreamReader(resp.GetResponseStream() ?? Stream.Null))
-                            respBody = sr.ReadToEnd() ?? "";
+                        if (File.Exists(propsPath))
+                        {
+                            var lines = File.ReadAllLines(propsPath);
+                            if (lines.Length >= 3)
+                                clientIdForDump = BmwDecrypt(lines[2].Trim());
+                        }
                     }
+                    catch { }
+                    try
+                    {
+                        var resp = we.Response as HttpWebResponse;
+                        if (resp != null)
+                        {
+                            status = (int)resp.StatusCode;
+                            using (var sr = new StreamReader(resp.GetResponseStream() ?? Stream.Null))
+                                respBody = sr.ReadToEnd() ?? "";
+                        }
+                    }
+                    catch { }
+                    message = Unwrap(we);
+                    if (status != 0 && status != 200)
+                    {
+                        BmwHttpLog.LogNon200("WebEAM", status, url,
+                            BmwHttpLog.FormatWebEamRequest(url, clientIdForDump), respBody);
+                    }
+                    if (IsTransientNetworkStatus(we.Status) && attempt < maxAttempts)
+                    {
+                        Log("Health transient network error — retry " + (attempt + 1) + "/" + maxAttempts
+                            + ": " + message);
+                        Thread.Sleep(1500);
+                        continue;
+                    }
+                    return false;
                 }
-                catch { }
-                message = Unwrap(we);
-                if (status != 0 && status != 200)
+                catch (Exception ex)
                 {
-                    BmwHttpLog.LogNon200("WebEAM", status, url,
-                        BmwHttpLog.FormatWebEamRequest(url, clientIdForDump), respBody);
+                    message = Unwrap(ex);
+                    return false;
                 }
-                return false;
             }
-            catch (Exception ex)
-            {
-                message = Unwrap(ex);
-                return false;
-            }
+            return false;
         }
 
         private static int ParseExpiresIn(string json)

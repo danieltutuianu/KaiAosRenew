@@ -1177,8 +1177,10 @@ namespace KaiAosRenew
                 _settings.KeysVinTipBmwFailOnly = false;
             if (KeysStallAlertCheck != null)
                 _settings.KeysStallAlertEnabled = KeysStallAlertCheck.IsChecked == true;
-            if (KeysAutoCopyVinCheck != null)
+            if (KeysAutoCopyVinCheck != null && KeysAutoCopyVinCheck.IsEnabled)
                 _settings.KeysAutoCopyVin = KeysAutoCopyVinCheck.IsChecked == true;
+            else
+                _settings.KeysAutoCopyVin = false;
             if (NotifyServerEnableCheck != null)
                 _settings.NotifyServerEnabled = NotifyServerEnableCheck.IsChecked == true;
             ParseAndSetNotifyServerPort();

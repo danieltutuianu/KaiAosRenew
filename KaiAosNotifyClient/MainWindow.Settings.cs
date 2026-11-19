@@ -515,15 +515,21 @@ namespace KaiAosNotifyClient
                 _settings.ShowVinTipsBmwFailOnly = ShowVinTipsBmwFailOnlyCheck.IsChecked == true;
             else
                 _settings.ShowVinTipsBmwFailOnly = false;
-            if (AutoCopyVinCheck != null)
+            if (AutoCopyVinCheck != null && AutoCopyVinCheck.IsEnabled)
                 _settings.AutoCopyVin = AutoCopyVinCheck.IsChecked == true;
+            else
+                _settings.AutoCopyVin = false;
             if (ShowAlertTipsCheck != null)
                 _settings.ShowAlertTips = ShowAlertTipsCheck.IsChecked == true;
             if (BrowserPassHintCheck != null)
                 _settings.BrowserPasswordHintOnAuthFail = BrowserPassHintCheck.IsChecked == true;
             int sec = 10;
-            if (VinTipSecondsBox == null || !int.TryParse((VinTipSecondsBox.Text ?? "").Trim(), out sec))
+            if (VinTipSecondsBox == null || !int.TryParse((VinTipSecondsBox.Text ?? "").Trim(), out sec)
+                || (sec != 0 && sec < 3))
                 sec = 10;
+            if (sec > 60) sec = 60;
+            if (VinTipSecondsBox != null)
+                VinTipSecondsBox.Text = sec.ToString();
             _settings.VinTipSeconds = sec;
             int off = 2;
             if (OfflineMinutesBox == null || !int.TryParse((OfflineMinutesBox.Text ?? "").Trim(), out off))
@@ -688,15 +694,37 @@ namespace KaiAosNotifyClient
         }
 
         /// <summary>
-        /// If Server Settings has unsaved edits, prompt Save / Discard / Cancel.
+        /// If Server Settings has unsaved edits, prompt Save / Discard.
         /// Returns true when the caller may continue (tab leave / window close).
+        /// Always recomputes dirty from Capture vs Capture-shaped baseline (not the dirty flag alone).
         /// </summary>
         private bool TryResolveUnsavedServerSettings()
         {
-            if (!_srvSettingsDirty) return true;
-            var leave = UnsavedServerSettingsDialog.Show(this, BuildServerSettingsDiff());
-            if (leave == UnsavedSettingsChoice.Cancel)
-                return false;
+            var current = CaptureServerSettingsMap();
+            var differs = _lastServerSettingsCapture != null
+                && !ServerSettingsCaptureMatchesBaseline(_lastServerSettingsCapture, current);
+            if (!differs)
+            {
+                MarkSrvSettingsDirty(false);
+                return true;
+            }
+            MarkSrvSettingsDirty(true);
+            var diff = BuildServerSettingsDiff();
+            if (diff == null || diff.Count == 0)
+            {
+                // Capture differs but no displayable rows — still treat as dirty for safety.
+                diff = new List<ServerSettingsDiffRow>
+                {
+                    new ServerSettingsDiffRow
+                    {
+                        Key = "settings",
+                        Label = ClientUiStrings.T("TabSettings"),
+                        OldDisplay = "",
+                        NewDisplay = ClientUiStrings.T("ServerSettingsDirty")
+                    }
+                };
+            }
+            var leave = UnsavedServerSettingsDialog.Show(this, diff);
             if (leave == UnsavedSettingsChoice.Save)
             {
                 SrvSettingsSaveCore(skipConfirm: true);
@@ -806,6 +834,7 @@ namespace KaiAosNotifyClient
             if (SrvKeysVinBmwFailOnlyCheck != null) SrvKeysVinBmwFailOnlyCheck.Content = ClientUiStrings.T("KeysVinBmwFailOnly");
             if (SrvKeysAutoCopyCheck != null) SrvKeysAutoCopyCheck.Content = ClientUiStrings.T("KeysAutoCopyVin");
             if (SrvKeysStallAlertCheck != null) SrvKeysStallAlertCheck.Content = ClientUiStrings.T("KeysStallAlert");
+            SyncSrvKeysVinTipUi();
             if (SrvBrowserPassHintCheck != null) SrvBrowserPassHintCheck.Content = ClientUiStrings.T("BrowserPassHintOption");
             if (SrvUseSystemProxyCheck != null) SrvUseSystemProxyCheck.Content = ClientUiStrings.T("UseSystemProxy");
             if (SrvAuthCooldownLabel != null) SrvAuthCooldownLabel.Text = ClientUiStrings.T("AuthCooldownMinutes");
@@ -967,6 +996,7 @@ namespace KaiAosNotifyClient
                 if (SrvKeysVinBmwFailOnlyCheck != null) SrvKeysVinBmwFailOnlyCheck.IsChecked = KvFlag(map, "keysVinBmwFailOnly", false);
                 if (SrvKeysAutoCopyCheck != null) SrvKeysAutoCopyCheck.IsChecked = KvFlag(map, "keysAutoCopyVin", false);
                 if (SrvKeysStallAlertCheck != null) SrvKeysStallAlertCheck.IsChecked = KvFlag(map, "keysStallAlert", true);
+                SyncSrvKeysVinTipUi();
                 if (SrvBrowserPassHintCheck != null) SrvBrowserPassHintCheck.IsChecked = KvFlag(map, "browserPassHint", true);
                 if (SrvUseSystemProxyCheck != null) SrvUseSystemProxyCheck.IsChecked = KvFlag(map, "useSystemProxy", false);
                 if (SrvAuthCooldownBox != null) SrvAuthCooldownBox.Text = KvStr(map, "authCooldownMinutes", "60");
@@ -1034,6 +1064,8 @@ namespace KaiAosNotifyClient
             finally
             {
                 _loadingSrvSettings = false;
+                // Capture-shaped baseline so dirty compare matches editable UI keys/formatting.
+                _lastServerSettingsCapture = CaptureServerSettingsMap();
             }
         }
 
@@ -1060,7 +1092,9 @@ namespace KaiAosNotifyClient
 
         private List<ServerSettingsDiffRow> BuildServerSettingsDiff()
         {
-            var baseline = _lastServerSettingsMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var baseline = _lastServerSettingsCapture
+                ?? _lastServerSettingsMap
+                ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var current = CaptureServerSettingsMap() ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             // Only editable UI keys (Capture). Baseline-only keys (paths, notify, etc.) are read-only
@@ -1381,18 +1415,71 @@ namespace KaiAosNotifyClient
             finally { _srvSecretSyncing = prev; }
         }
 
+        private void SyncSrvKeysVinTipUi()
+        {
+            var parentOn = SrvKeysBalloonCheck != null && SrvKeysBalloonCheck.IsChecked == true;
+            if (SrvKeysVinTipLabel != null)
+                SrvKeysVinTipLabel.IsEnabled = parentOn;
+            if (SrvKeysVinTipBox != null)
+                SrvKeysVinTipBox.IsEnabled = parentOn;
+            if (SrvKeysVinBmwFailOnlyCheck != null)
+            {
+                SrvKeysVinBmwFailOnlyCheck.IsEnabled = parentOn;
+                if (!parentOn)
+                    SrvKeysVinBmwFailOnlyCheck.IsChecked = false;
+            }
+            if (SrvKeysAutoCopyCheck != null)
+            {
+                SrvKeysAutoCopyCheck.IsEnabled = parentOn;
+                if (!parentOn)
+                    SrvKeysAutoCopyCheck.IsChecked = false;
+            }
+        }
+
         private void SrvSettings_Changed(object sender, RoutedEventArgs e)
         {
             if (_loadingSrvSettings || _srvSecretSyncing) return;
             if (sender == SrvFirebasePushSyncModeCombo)
                 UpdateSrvFirebasePollMinutesVisibility();
+            if (sender == SrvKeysBalloonCheck
+                || sender == SrvKeysVinBmwFailOnlyCheck
+                || sender == SrvKeysAutoCopyCheck)
+                SyncSrvKeysVinTipUi();
             if (sender == SrvFirebasePushEnableCheck
                 || sender == SrvFirebasePushUrlBox
                 || sender == SrvFirebasePushSecretBox
                 || sender == SrvFirebasePushSecretPlainBox)
                 UpdateAosPullCloudButtonVisibility();
+            var current = CaptureServerSettingsMap();
+            if (_lastServerSettingsCapture != null
+                && ServerSettingsCaptureMatchesBaseline(_lastServerSettingsCapture, current))
+            {
+                MarkSrvSettingsDirty(false);
+                return;
+            }
             MarkSrvSettingsDirty(true);
             SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
+        }
+
+        /// <summary>
+        /// Compare only Capture (editable) keys against baseline.
+        /// Baseline may include read-only keys that Capture omits — those must not mark dirty.
+        /// </summary>
+        private static bool ServerSettingsCaptureMatchesBaseline(
+            Dictionary<string, string> baseline, Dictionary<string, string> capture)
+        {
+            if (capture == null) return true;
+            if (baseline == null) return capture.Count == 0;
+            foreach (var kv in capture)
+            {
+                if (string.Equals(kv.Key, "notifyIps", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                string oldVal;
+                baseline.TryGetValue(kv.Key, out oldVal);
+                if (!string.Equals(oldVal ?? "", kv.Value ?? "", StringComparison.Ordinal))
+                    return false;
+            }
+            return true;
         }
 
         private void SrvSettingsField_LostFocus(object sender, RoutedEventArgs e)

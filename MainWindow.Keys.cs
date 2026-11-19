@@ -616,8 +616,10 @@ namespace KaiAosRenew
                 _settings.KeysVinTipBmwFailOnly = false;
             if (KeysStallAlertCheck != null)
                 _settings.KeysStallAlertEnabled = KeysStallAlertCheck.IsChecked == true;
-            if (KeysAutoCopyVinCheck != null)
+            if (KeysAutoCopyVinCheck != null && KeysAutoCopyVinCheck.IsEnabled)
                 _settings.KeysAutoCopyVin = KeysAutoCopyVinCheck.IsChecked == true;
+            else
+                _settings.KeysAutoCopyVin = false;
             try { _settings.Save(); }
             catch { }
             UpdateKeysAlertFromCache();
@@ -626,14 +628,30 @@ namespace KaiAosRenew
 
         private void SyncKeysVinBmwFailOnlyUi()
         {
-            if (KeysVinBmwFailOnlyCheck == null) return;
             var parentOn = KeysBalloonCheck != null && KeysBalloonCheck.IsChecked == true;
-            KeysVinBmwFailOnlyCheck.IsEnabled = parentOn;
-            if (!parentOn)
+            if (KeysVinTipSecondsLabel != null)
+                KeysVinTipSecondsLabel.IsEnabled = parentOn;
+            if (KeysVinTipSecondsBox != null)
+                KeysVinTipSecondsBox.IsEnabled = parentOn;
+            if (KeysVinBmwFailOnlyCheck != null)
             {
-                KeysVinBmwFailOnlyCheck.IsChecked = false;
-                if (_settings != null)
-                    _settings.KeysVinTipBmwFailOnly = false;
+                KeysVinBmwFailOnlyCheck.IsEnabled = parentOn;
+                if (!parentOn)
+                {
+                    KeysVinBmwFailOnlyCheck.IsChecked = false;
+                    if (_settings != null)
+                        _settings.KeysVinTipBmwFailOnly = false;
+                }
+            }
+            if (KeysAutoCopyVinCheck != null)
+            {
+                KeysAutoCopyVinCheck.IsEnabled = parentOn;
+                if (!parentOn)
+                {
+                    KeysAutoCopyVinCheck.IsChecked = false;
+                    if (_settings != null)
+                        _settings.KeysAutoCopyVin = false;
+                }
             }
         }
 
@@ -730,12 +748,6 @@ namespace KaiAosRenew
             _keysRefreshTimer.Interval = TimeSpan.FromSeconds(sec);
         }
 
-        private void KeysStallMinutes_LostFocus(object sender, RoutedEventArgs e)
-        {
-            if (_loadingUi) return;
-            SaveKeysPathSettings();
-        }
-
         private void SaveKeysPathSettings()
         {
             if (_settings == null || _loadingUi) return;
@@ -770,6 +782,12 @@ namespace KaiAosRenew
             ApplyKeysMonitorSettings();
             UpdateKeysAlertFromCache();
             BroadcastServerSettings();
+        }
+
+        private void KeysStallMinutes_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (_loadingUi) return;
+            SaveKeysPathSettings();
         }
 
         private void LoadKeyReaderPathsToUi()
@@ -1111,7 +1129,8 @@ namespace KaiAosRenew
             if (KeysVinTipSecondsBox != null)
             {
                 int parsed;
-                if (!int.TryParse(KeysVinTipSecondsBox.Text.Trim(), out parsed) || parsed < 3)
+                if (!int.TryParse(KeysVinTipSecondsBox.Text.Trim(), out parsed)
+                    || (parsed != 0 && parsed < 3))
                     parsed = 10;
                 if (parsed > 60) parsed = 60;
                 sec = parsed;
@@ -1890,8 +1909,14 @@ namespace KaiAosRenew
             }
             var text = TruncateBalloon(message);
             var tipSec = _settings != null ? _settings.KeysVinTipSeconds : 10;
-            if (tipSec < 3) tipSec = 3;
-            if (tipSec > 60) tipSec = 60;
+            var showSec = tipSec;
+            if (tipSec == 0)
+                showSec = -1;
+            else
+            {
+                if (showSec < 3) showSec = 3;
+                if (showSec > 60) showSec = 60;
+            }
             var capture = vin;
             if (showLocalTip)
             {
@@ -1902,7 +1927,7 @@ namespace KaiAosRenew
                     TrayTipLevel.Info,
                     UiStrings.T("KeysCopyVin"),
                     () => CopyVinToClipboard(capture),
-                    tipSec,
+                    showSec,
                     () => ShowKeysTabAndSelectVin(capture));
             }
             var msg = new NotifyMessage
@@ -2286,7 +2311,11 @@ namespace KaiAosRenew
         {
             SetNotifyTestResult(UiStrings.T("NotifyTestSending"), false);
             var tipSec = _settings != null ? _settings.KeysVinTipSeconds : 10;
-            if (tipSec < 3) tipSec = 3;
+            if (tipSec != 0)
+            {
+                if (tipSec < 3) tipSec = 3;
+                if (tipSec > 60) tipSec = 60;
+            }
             SendNotifyTest(new NotifyMessage
             {
                 Kind = "vin",

@@ -71,7 +71,7 @@ namespace KaiAosRenew
         public bool KeysAutoCopyVin { get; set; }
         /// <summary>Keys tab polling interval when active (1–60 seconds).</summary>
         public int KeysRefreshSeconds { get; set; }
-        /// <summary>VIN info tip display duration with Copy button (3–60 seconds).</summary>
+        /// <summary>VIN tip duration: 3–60 seconds, or 0 = until Copy VIN / Close / next VIN tip.</summary>
         public int KeysVinTipSeconds { get; set; }
         public string KeysUploaderLogDir { get; set; }
         public string KeysKaiLogDir { get; set; }
@@ -282,8 +282,11 @@ namespace KaiAosRenew
             if (AuthRegisterStrikeCount < 0) AuthRegisterStrikeCount = 0;
             if (KeysRefreshSeconds < 1) KeysRefreshSeconds = 1;
             if (KeysRefreshSeconds > 60) KeysRefreshSeconds = 60;
-            if (KeysVinTipSeconds < 3) KeysVinTipSeconds = 3;
-            if (KeysVinTipSeconds > 60) KeysVinTipSeconds = 60;
+            if (KeysVinTipSeconds != 0)
+            {
+                if (KeysVinTipSeconds < 3) KeysVinTipSeconds = 3;
+                if (KeysVinTipSeconds > 60) KeysVinTipSeconds = 60;
+            }
             if (NotifyServerPort < 1024 || NotifyServerPort > 65535)
                 NotifyServerPort = 17890;
             // Migrate legacy plaintext pairing code -> DPAPI, then clear the plaintext.
@@ -508,8 +511,7 @@ namespace KaiAosRenew
             if (xml.IndexOf("KeysRefreshSeconds", StringComparison.OrdinalIgnoreCase) < 0
                 || loaded.KeysRefreshSeconds < 1)
                 loaded.KeysRefreshSeconds = 3;
-            if (xml.IndexOf("KeysVinTipSeconds", StringComparison.OrdinalIgnoreCase) < 0
-                || loaded.KeysVinTipSeconds < 3)
+            if (xml.IndexOf("KeysVinTipSeconds", StringComparison.OrdinalIgnoreCase) < 0)
                 loaded.KeysVinTipSeconds = 10;
             if (xml.IndexOf("KeysUploaderLogDir", StringComparison.OrdinalIgnoreCase) < 0
                 || string.IsNullOrWhiteSpace(loaded.KeysUploaderLogDir))

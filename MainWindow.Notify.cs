@@ -770,6 +770,7 @@ namespace KaiAosRenew
                     if (KeysStallMinutesBox != null) KeysStallMinutesBox.Text = _settings.KeysStallMinutes.ToString();
                     if (KeysBalloonCheck != null) KeysBalloonCheck.IsChecked = _settings.KeysBalloonEnabled;
                     if (KeysVinBmwFailOnlyCheck != null) KeysVinBmwFailOnlyCheck.IsChecked = _settings.KeysVinTipBmwFailOnly;
+                    SyncKeysVinBmwFailOnlyUi();
                     if (KeysAutoCopyVinCheck != null) KeysAutoCopyVinCheck.IsChecked = _settings.KeysAutoCopyVin;
                     if (KeysStallAlertCheck != null) KeysStallAlertCheck.IsChecked = _settings.KeysStallAlertEnabled;
                     if (BrowserPassHintCheck != null) BrowserPassHintCheck.IsChecked = _settings.BrowserPasswordHintOnAuthFail;
@@ -1055,6 +1056,13 @@ namespace KaiAosRenew
             }
             if (string.IsNullOrEmpty(text)) return;
             TryCopyTextToClipboard(text, UiStrings.T("NotifyServerIpCopied"));
+        }
+
+        private void NotifyServerPortCopy_Click(object sender, RoutedEventArgs e)
+        {
+            var text = NotifyServerPortBox != null ? (NotifyServerPortBox.Text ?? "").Trim() : "";
+            if (string.IsNullOrEmpty(text)) return;
+            TryCopyTextToClipboard(text, null);
         }
 
         private void NotifyFirewallAllow_Click(object sender, RoutedEventArgs e)

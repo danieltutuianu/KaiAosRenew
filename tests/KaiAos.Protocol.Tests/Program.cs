@@ -32,6 +32,7 @@ namespace KaiAos.Protocol.Tests
             Run("NotifyClient watchdog reason", TestNotifyClientWatchdogReason);
             Run("NotifyClient empty pairing stops", TestLoopbackPairingRequiredStops);
             Run("NotifyServer InstanceGuid replace", TestServerInstanceGuidReplacesOld);
+            Run("NotifyServer RemoteIp replace", TestServerRemoteIpReplacesOld);
             Run("NotifyClient rapid reconnect race", TestClientRapidReconnectRace);
             Run("TcpUtf8LineReader chunks + limit", TestTcpUtf8LineReader);
             Run("UpdateFeedHelper version + timeout", TestUpdateFeedHelperTimeout);
@@ -729,6 +730,71 @@ namespace KaiAos.Protocol.Tests
                 });
 
                 AssertTrue(c1Disc.WaitOne(5000), "old duplicate client should be disconnected");
+                AssertTrue(WaitUntil(() => server.ClientCount == 1, 3000), "server should keep exactly 1 client");
+            }
+            finally
+            {
+                server.MessageFromClient -= onMsg;
+                if (c1 != null) { try { c1.Disconnect(); } catch { } try { c1.Dispose(); } catch { } }
+                if (c2 != null) { try { c2.Disconnect(); } catch { } try { c2.Dispose(); } catch { } }
+                try { server.Stop(); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// c1 hello with empty InstanceGuid, c2 hello with a guid from same loopback IP
+        /// must dispose c1 (RemoteIp dedupe), not leave two sockets.
+        /// </summary>
+        private static void TestServerRemoteIpReplacesOld()
+        {
+            var server = NotifyServer.Instance;
+            var port = FreePort();
+            NotifyClient c1 = null;
+            NotifyClient c2 = null;
+            var c1Conn = new ManualResetEvent(false);
+            var c2Conn = new ManualResetEvent(false);
+            var c1Disc = new ManualResetEvent(false);
+            Action<int, NotifyMessage> onMsg = (id, msg) =>
+            {
+                if (msg != null && string.Equals(msg.Kind, "clientHello", StringComparison.OrdinalIgnoreCase))
+                    server.ApplyClientHello(id, msg.Text, msg.Detail);
+            };
+            try
+            {
+                server.Stop();
+                server.PairingCode = "";
+                server.MessageFromClient += onMsg;
+                server.Start(port);
+
+                c1 = new NotifyClient();
+                c1.Connected += () => c1Conn.Set();
+                c1.Disconnected += () => c1Disc.Set();
+                c1.Connect("127.0.0.1", port, "");
+                AssertTrue(WaitUntil(() => server.ClientCount >= 1, 5000), "c1 accepted");
+                server.Broadcast(new NotifyMessage { Kind = "ping", Text = "" });
+                AssertTrue(c1Conn.WaitOne(5000), "c1 connected");
+                c1.Send(new NotifyMessage
+                {
+                    Kind = "clientHello",
+                    Text = "1.2.27",
+                    Detail = ""
+                });
+                Thread.Sleep(150);
+
+                c2 = new NotifyClient();
+                c2.Connected += () => c2Conn.Set();
+                c2.Connect("127.0.0.1", port, "");
+                AssertTrue(WaitUntil(() => server.ClientCount >= 2, 5000) || c2Conn.WaitOne(5000), "c2 accepted");
+                server.Broadcast(new NotifyMessage { Kind = "ping", Text = "" });
+                AssertTrue(c2Conn.WaitOne(5000), "c2 connected");
+                c2.Send(new NotifyMessage
+                {
+                    Kind = "clientHello",
+                    Text = "1.2.28",
+                    Detail = "new-guid-ip-dedupe"
+                });
+
+                AssertTrue(c1Disc.WaitOne(5000), "old same-IP client should be disconnected");
                 AssertTrue(WaitUntil(() => server.ClientCount == 1, 3000), "server should keep exactly 1 client");
             }
             finally

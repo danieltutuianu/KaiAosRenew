@@ -120,7 +120,30 @@ namespace KaiAosRenew
             };
             Grid.SetColumn(titleBlock, 0);
             titleRow.Children.Add(titleBlock);
-            if (!_sticky)
+            if (_sticky)
+            {
+                var closeBtn = new Button
+                {
+                    Content = "\u2715",
+                    Width = 26,
+                    Height = 26,
+                    Padding = new Thickness(0),
+                    Margin = new Thickness(8, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Top,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Cursor = Cursors.Hand,
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Foreground = new SolidColorBrush(bodyFg),
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    ToolTip = "Close"
+                };
+                closeBtn.Click += StickyCloseButton_Click;
+                Grid.SetColumn(closeBtn, 1);
+                titleRow.Children.Add(closeBtn);
+            }
+            else
             {
                 _countdownText = new TextBlock
                 {
@@ -234,6 +257,12 @@ namespace KaiAosRenew
                     _action();
             }
             catch { }
+            Close();
+        }
+
+        private void StickyCloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
             Close();
         }
 
@@ -368,10 +397,10 @@ namespace KaiAosRenew
             ShowTip(title, text, ParseLevel(level), actionLabel, action, durationSeconds, onBodyActivate);
         }
 
-        /// <summary>Sticky tip: stays until the user clicks OK (no auto-close).</summary>
+        /// <summary>Sticky tip: stays until the user clicks Close (no auto-close).</summary>
         public static void ShowSticky(string title, string text, TrayTipLevel level)
         {
-            ShowTip(title, text, level, "OK", () => { }, -1, null);
+            ShowTip(title, text, level, null, null, -1, null);
         }
 
         public static void ShowSticky(string title, string text, string level)

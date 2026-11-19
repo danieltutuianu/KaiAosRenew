@@ -1134,6 +1134,12 @@ namespace KaiAos.Logic.Tests
 
         private static void TestRenewEngineEdgeCases()
         {
+            AssertTrue(RenewEngine.IsTransientDnsFailure(
+                "The remote name could not be resolved: 'auth.bmwgroup.com'"), "dns message");
+            AssertTrue(RenewEngine.IsTransientDnsFailure("No such host is known"), "no such host");
+            AssertTrue(!RenewEngine.IsTransientDnsFailure("HTTP 401 unauthorized"), "auth not dns");
+            AssertTrue(!RenewEngine.IsTransientDnsFailure(null), "null not dns");
+
             var tmpStore = NewTempDir("renew_edge_store");
             var tmpConfig = NewTempDir("renew_edge_cfg");
             var prevOverride = AppSettings.StoreDirOverride;

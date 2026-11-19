@@ -37,14 +37,30 @@ namespace KaiAosNotifyClient
 
         private void SyncShowVinTipsBmwFailOnlyUi()
         {
-            if (ShowVinTipsBmwFailOnlyCheck == null) return;
             var parentOn = ShowVinTipsCheck != null && ShowVinTipsCheck.IsChecked == true;
-            ShowVinTipsBmwFailOnlyCheck.IsEnabled = parentOn;
-            if (!parentOn)
+            if (VinTipDurationLabel != null)
+                VinTipDurationLabel.IsEnabled = parentOn;
+            if (VinTipSecondsBox != null)
+                VinTipSecondsBox.IsEnabled = parentOn;
+            if (ShowVinTipsBmwFailOnlyCheck != null)
             {
-                ShowVinTipsBmwFailOnlyCheck.IsChecked = false;
-                if (_settings != null)
-                    _settings.ShowVinTipsBmwFailOnly = false;
+                ShowVinTipsBmwFailOnlyCheck.IsEnabled = parentOn;
+                if (!parentOn)
+                {
+                    ShowVinTipsBmwFailOnlyCheck.IsChecked = false;
+                    if (_settings != null)
+                        _settings.ShowVinTipsBmwFailOnly = false;
+                }
+            }
+            if (AutoCopyVinCheck != null)
+            {
+                AutoCopyVinCheck.IsEnabled = parentOn;
+                if (!parentOn)
+                {
+                    AutoCopyVinCheck.IsChecked = false;
+                    if (_settings != null)
+                        _settings.AutoCopyVin = false;
+                }
             }
         }
 

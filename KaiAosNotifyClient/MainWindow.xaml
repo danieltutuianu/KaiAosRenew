@@ -719,31 +719,27 @@
                     <TextBox x:Name="SrvKeysRefreshBox" Grid.Column="1" Width="60" HorizontalAlignment="Left"
                              Style="{DynamicResource KaiTextBox}" LostFocus="SrvSettingsField_LostFocus" />
                   </Grid>
-                  <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="180" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="SrvKeysVinTipLabel" Text="VIN tip duration (sec):" Style="{DynamicResource FieldLabel}" Width="Auto" />
-                    <TextBox x:Name="SrvKeysVinTipBox" Grid.Column="1" Width="60" HorizontalAlignment="Left"
-                             Style="{DynamicResource KaiTextBox}" LostFocus="SrvSettingsField_LostFocus" />
-                  </Grid>
-                  <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="180" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="SrvKeysStallLabel" Text="Stall alert after (minutes):" Style="{DynamicResource FieldLabel}" Width="Auto" />
-                    <TextBox x:Name="SrvKeysStallBox" Grid.Column="1" Width="60" HorizontalAlignment="Left"
-                             Style="{DynamicResource KaiTextBox}" LostFocus="SrvSettingsField_LostFocus" />
-                  </Grid>
                   <CheckBox x:Name="SrvKeysBalloonCheck" Content="Info tip when VIN is read" Style="{DynamicResource KaiCheckBox}"
                             Margin="0,4,0,6" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
-                  <CheckBox x:Name="SrvKeysVinBmwFailOnlyCheck" Content="Info tip only when BMW upload fails" Style="{DynamicResource KaiCheckBox}"
+                  <CheckBox x:Name="SrvKeysVinBmwFailOnlyCheck" Content="and only when upload to BMW server fails" Style="{DynamicResource KaiCheckBox}"
                             Margin="18,0,0,6" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
                   <CheckBox x:Name="SrvKeysAutoCopyCheck" Content="Auto-copy VIN when read" Style="{DynamicResource KaiCheckBox}"
-                            Margin="0,0,0,6" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
-                  <CheckBox x:Name="SrvKeysStallAlertCheck" Content="Alert if Local OK but BMW Server not uploaded" Style="{DynamicResource KaiCheckBox}"
+                            Margin="18,0,0,6" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
+                  <StackPanel Orientation="Horizontal" Margin="18,0,0,8" VerticalAlignment="Center">
+                    <TextBox x:Name="SrvKeysVinTipBox" Width="40" HorizontalAlignment="Left"
+                             Style="{DynamicResource KaiTextBox}" Margin="0,0,8,0"
+                             LostFocus="SrvSettingsField_LostFocus"
+                             ToolTip="3–60 sec, or 0 = until Copy VIN / Close / next VIN tip" />
+                    <TextBlock x:Name="SrvKeysVinTipLabel" Text="VIN tip duration (sec, 0 = sticky):" Style="{DynamicResource FieldLabel}"
+                               Width="Auto" TextWrapping="Wrap" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,8" VerticalAlignment="Center">
+                    <TextBlock x:Name="SrvKeysStallLabel" Text="Stall alert after (minutes):" Style="{DynamicResource FieldLabel}"
+                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBox x:Name="SrvKeysStallBox" Width="60" HorizontalAlignment="Left"
+                             Style="{DynamicResource KaiTextBox}" LostFocus="SrvSettingsField_LostFocus" />
+                  </StackPanel>
+                  <CheckBox x:Name="SrvKeysStallAlertCheck" Content="Alert tip when VIN is read but upload to BMW server fails" Style="{DynamicResource KaiCheckBox}"
                             Margin="0,0,0,8" Checked="SrvSettings_Changed" Unchecked="SrvSettings_Changed" />
                   <Button x:Name="SrvDownloadKeyDebugFolderBtn" Content="Download key debug folder" Style="{DynamicResource BeigeButton}"
                           HorizontalAlignment="Left" MinWidth="180" Margin="0,4,0,0"
@@ -764,7 +760,7 @@
                         <ColumnDefinition SharedSizeGroup="AuthLabel" Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                       </Grid.ColumnDefinitions>
-                      <TextBlock x:Name="AosIntervalLabel" Style="{DynamicResource FieldLabel}" Text="Check health interval:"
+                      <TextBlock x:Name="AosIntervalLabel" Style="{DynamicResource FieldLabel}" Text="Check health interval (hours):"
                                  Width="Auto" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,12,0" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBox x:Name="AosIntervalBox" Width="80" HorizontalAlignment="Left"
@@ -848,9 +844,19 @@
                       <TextBlock x:Name="SrvNotifyIpLabel" Text="This PC IP (enter in client):"
                                  Style="{DynamicResource FieldLabel}" Width="Auto" VerticalAlignment="Center"
                                  Margin="0,0,12,0" />
-                      <TextBox x:Name="SrvNotifyIpBox" Grid.Column="1" Style="{DynamicResource KaiTextBox}"
-                               IsReadOnly="True" IsEnabled="False" TextWrapping="NoWrap" MinHeight="28"
-                               HorizontalAlignment="Left" VerticalAlignment="Center" />
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBox x:Name="SrvNotifyIpBox" Style="{DynamicResource KaiTextBox}"
+                                 IsReadOnly="True" IsEnabled="False" TextWrapping="NoWrap" MinHeight="28"
+                                 HorizontalAlignment="Left" VerticalAlignment="Center" />
+                        <Button x:Name="SrvNotifyIpCopyBtn"
+                                Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                                MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                                Content=""
+                                Click="SrvNotifyIpCopy_Click"
+                                ToolTip="Copy IP"
+                                Tag="{DynamicResource IconCopy}"
+                    AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}"/>
+                      </StackPanel>
                     </Grid>
                     <Grid Margin="0,0,0,8">
                       <Grid.ColumnDefinitions>
@@ -859,8 +865,18 @@
                       </Grid.ColumnDefinitions>
                       <TextBlock x:Name="SrvNotifyPortLabel" Text="Port:" Style="{DynamicResource FieldLabel}"
                                  Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
-                      <TextBox x:Name="SrvNotifyPortBox" Grid.Column="1" Width="80" HorizontalAlignment="Left"
-                               Style="{DynamicResource KaiTextBox}" IsReadOnly="True" IsEnabled="False" />
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBox x:Name="SrvNotifyPortBox" Width="80" HorizontalAlignment="Left"
+                                 Style="{DynamicResource KaiTextBox}" IsReadOnly="True" IsEnabled="False" />
+                        <Button x:Name="SrvNotifyPortCopyBtn"
+                                Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                                MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                                Content=""
+                                Click="SrvNotifyPortCopy_Click"
+                                ToolTip="Copy port"
+                                Tag="{DynamicResource IconCopy}"
+                    AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}"/>
+                      </StackPanel>
                     </Grid>
                   </StackPanel>
                   <Grid Margin="0,10,0,8">
@@ -1267,28 +1283,25 @@
 
               <GroupBox x:Name="KeysSettingsGroup" Header="Keys" Style="{DynamicResource KaiGroupBox}">
                 <StackPanel>
-                  <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="220" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="VinTipDurationLabel" Text="VIN tip duration (sec):"
-                               VerticalAlignment="Center" Style="{DynamicResource FieldLabel}"
-                               Width="Auto" HorizontalAlignment="Left" />
-                    <TextBox x:Name="VinTipSecondsBox" Grid.Column="1" Width="60"
-                             Style="{DynamicResource KaiTextBox}" Text="10"
-                             LostFocus="SettingsField_Changed" />
-                  </Grid>
                   <CheckBox x:Name="ShowVinTipsCheck" Content="Info tip when VIN is read" Margin="0,0,0,6"
                             Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
                   <CheckBox x:Name="ShowVinTipsBmwFailOnlyCheck"
-                            Content="Info tip only when VIN is read and upload to BMW server fails"
+                            Content="and only when upload to BMW server fails"
                             Margin="18,0,0,6" Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
-                  <CheckBox x:Name="AutoCopyVinCheck" Content="Auto-copy VIN when read" Margin="0,0,0,6"
+                  <CheckBox x:Name="AutoCopyVinCheck" Content="Auto-copy VIN when read" Margin="18,0,0,6"
                             Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />
+                  <StackPanel Orientation="Horizontal" Margin="18,0,0,8" VerticalAlignment="Center">
+                    <TextBox x:Name="VinTipSecondsBox" Width="40"
+                             Style="{DynamicResource KaiTextBox}" Text="10" Margin="0,0,8,0"
+                             LostFocus="SettingsField_Changed"
+                             ToolTip="3–60 sec, or 0 = until Copy VIN / Close / next VIN tip" />
+                    <TextBlock x:Name="VinTipDurationLabel" Text="VIN tip duration (sec, 0 = sticky):"
+                               Style="{DynamicResource FieldLabel}" Width="Auto" TextWrapping="Wrap"
+                               VerticalAlignment="Center" HorizontalAlignment="Left" />
+                  </StackPanel>
                   <CheckBox x:Name="ShowAlertTipsCheck" Content="Show warning/error alerts (stall / BMW upload)"
                             Margin="0,0,0,8" Style="{DynamicResource KaiCheckBox}" HorizontalAlignment="Left"
                             Checked="SettingsCheck_Changed" Unchecked="SettingsCheck_Changed" />

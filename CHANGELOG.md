@@ -4,6 +4,14 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.29] - 2026-11-19
+
+- VIN tips: sticky duration (0 = sticky) with Close ✕; nest Auto-copy + duration under Info tip; clearer BMW-fail / stall alert labels
+- Server Settings (client): Capture-shaped dirty baseline; unsaved Save/Discard prompts without field blur; restore Stall minutes UI
+- FieldLabel: Auto width + wrap (no 130px clip on long locales)
+- Notify: ghost-replace also by RemoteIp so Send-test list shows one entry per IP
+- Renew: retry WebEAM health on transient DNS/connect/timeout; skip Register on DNS-only health failure
+
 ## [1.2.28] - 2026-11-19
 
 - Keys: first `#` order column (1…n after filter/sort) on server and client

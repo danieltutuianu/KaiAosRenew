@@ -466,7 +466,7 @@ namespace KaiAosRenew
 
         /// <summary>
         /// Apply clientHello identity and dispose ghost sockets for the same InstanceGuid
-        /// (or same RemoteIp when Guid is empty — legacy clients).
+        /// and/or the same RemoteIp (one LAN PC = one notify client).
         /// </summary>
         public void ApplyClientHello(int clientId, string version, string instanceGuid)
         {
@@ -493,16 +493,11 @@ namespace KaiAosRenew
                 {
                     var old = _clients[i];
                     if (old == null || old.Id == clientId) continue;
-                    var match = false;
-                    if (!string.IsNullOrEmpty(guid))
-                    {
-                        match = string.Equals(old.InstanceGuid, guid, StringComparison.OrdinalIgnoreCase);
-                    }
-                    else if (!string.IsNullOrEmpty(self.RemoteIp))
-                    {
-                        match = string.Equals(old.RemoteIp, self.RemoteIp, StringComparison.OrdinalIgnoreCase);
-                    }
-                    if (!match) continue;
+                    var matchGuid = !string.IsNullOrEmpty(guid)
+                        && string.Equals(old.InstanceGuid, guid, StringComparison.OrdinalIgnoreCase);
+                    var matchIp = !string.IsNullOrEmpty(self.RemoteIp)
+                        && string.Equals(old.RemoteIp, self.RemoteIp, StringComparison.OrdinalIgnoreCase);
+                    if (!matchGuid && !matchIp) continue;
                     _clients.RemoveAt(i);
                     if (replaced == null) replaced = new List<ClientConn>();
                     replaced.Add(old);
@@ -516,8 +511,10 @@ namespace KaiAosRenew
                 catch { }
                 try
                 {
+                    var byGuid = !string.IsNullOrEmpty(guid)
+                        && string.Equals(old.InstanceGuid, guid, StringComparison.OrdinalIgnoreCase);
                     RenewEngine.Log("Notify client replaced #" + old.Id + " (" + old.RemoteDisplay + ")"
-                        + (string.IsNullOrEmpty(guid) ? " by RemoteIp" : " by InstanceGuid"));
+                        + (byGuid ? " by InstanceGuid" : " by RemoteIp"));
                 }
                 catch { }
                 if (wasAuth)

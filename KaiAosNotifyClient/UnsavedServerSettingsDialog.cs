@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -31,14 +32,15 @@ namespace KaiAosNotifyClient
         }
     }
 
-    /// <summary>Leave Server Settings with unsaved edits: Save / Discard / Cancel + change list.</summary>
+    /// <summary>Leave Server Settings with unsaved edits: Save / Discard + change list.</summary>
     internal sealed class UnsavedServerSettingsDialog : Window
     {
         public UnsavedSettingsChoice Choice { get; private set; }
+        private bool _choseAction;
 
         public UnsavedServerSettingsDialog(IList<ServerSettingsDiffRow> rows)
         {
-            Choice = UnsavedSettingsChoice.Cancel;
+            Choice = UnsavedSettingsChoice.Discard;
             Title = ClientUiStrings.T("ServerSettingsLeaveTitle");
             Width = 520;
             MinHeight = 220;
@@ -63,6 +65,7 @@ namespace KaiAosNotifyClient
             saveBtn.Click += delegate
             {
                 Choice = UnsavedSettingsChoice.Save;
+                _choseAction = true;
                 DialogResult = true;
                 Close();
             };
@@ -71,22 +74,13 @@ namespace KaiAosNotifyClient
             discardBtn.Click += delegate
             {
                 Choice = UnsavedSettingsChoice.Discard;
+                _choseAction = true;
                 DialogResult = true;
-                Close();
-            };
-
-            var cancelBtn = MakeButton(ClientUiStrings.T("ServerSettingsLeaveCancel"), false, "IconDismiss");
-            cancelBtn.IsCancel = true;
-            cancelBtn.Click += delegate
-            {
-                Choice = UnsavedSettingsChoice.Cancel;
-                DialogResult = false;
                 Close();
             };
 
             buttons.Children.Add(saveBtn);
             buttons.Children.Add(discardBtn);
-            buttons.Children.Add(cancelBtn);
 
             var body = new StackPanel();
             body.Children.Add(new TextBlock
@@ -133,6 +127,13 @@ namespace KaiAosNotifyClient
             root.Children.Add(buttons);
             root.Children.Add(body);
             Content = root;
+        }
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            if (!_choseAction)
+                e.Cancel = true;
+            base.OnClosing(e);
         }
 
         private static Button MakeButton(string content, bool isDefault, string iconResourceKey)

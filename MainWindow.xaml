@@ -777,42 +777,36 @@
                            LostFocus="KeysRefreshSeconds_LostFocus"
                            ToolTip="How often the Keys tab polls while it is open (1–60 sec)" />
                 </Grid>
-                <Grid Margin="0,0,0,8">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="180" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock x:Name="KeysVinTipSecondsLabel" Text="VIN tip duration (sec):" Style="{DynamicResource FieldLabel}" Width="Auto" />
-                  <TextBox x:Name="KeysVinTipSecondsBox" Grid.Column="1" Width="60" HorizontalAlignment="Left"
-                           Style="{DynamicResource KaiTextBox}" Text="10"
-                           PreviewTextInput="IntervalBox_PreviewTextInput"
-                           LostFocus="KeysVinTipSeconds_LostFocus"
-                           ToolTip="How long the in-app VIN tip stays visible (3–60 sec)" />
-                </Grid>
-                <Grid Margin="0,0,0,8">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="180" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock x:Name="KeysStallMinutesLabel" Text="Stall alert after (minutes):" Style="{DynamicResource FieldLabel}" Width="Auto" />
-                  <TextBox x:Name="KeysStallMinutesBox" Grid.Column="1" Width="60" HorizontalAlignment="Left"
-                           Style="{DynamicResource KaiTextBox}" Text="2"
-                           PreviewTextInput="IntervalBox_PreviewTextInput"
-                           LostFocus="KeysStallMinutes_LostFocus"
-                           ToolTip="Alert when Local OK but BMW Server upload stalls (1–60 min)" />
-                </Grid>
                 <CheckBox x:Name="KeysBalloonCheck" Content="Info tip when VIN is read (Copy)" Style="{DynamicResource KaiCheckBox}"
                           Margin="0,4,0,6" Checked="KeysOptions_Changed" Unchecked="KeysOptions_Changed"
                           ToolTip="Show in-app tip with Copy when a new VIN is read; double-click opens Keys" />
                 <CheckBox x:Name="KeysVinBmwFailOnlyCheck"
-                          Content="Info tip only when VIN is read and upload to BMW server fails"
+                          Content="and only when upload to BMW server fails"
                           Style="{DynamicResource KaiCheckBox}"
                           Margin="18,0,0,6" Checked="KeysOptions_Changed" Unchecked="KeysOptions_Changed"
                           ToolTip="Requires VIN tip above; suppress tip on every read and show only after BMW upload fails" />
                 <CheckBox x:Name="KeysAutoCopyVinCheck" Content="Auto-copy VIN when read" Style="{DynamicResource KaiCheckBox}"
-                          Margin="0,0,0,6" Checked="KeysOptions_Changed" Unchecked="KeysOptions_Changed"
+                          Margin="18,0,0,6" Checked="KeysOptions_Changed" Unchecked="KeysOptions_Changed"
                           ToolTip="Copy VIN to clipboard automatically on each new read" />
-                <CheckBox x:Name="KeysStallAlertCheck" Content="Alert if Local OK but BMW Server not uploaded"
+                <StackPanel Orientation="Horizontal" Margin="18,0,0,8" VerticalAlignment="Center">
+                  <TextBox x:Name="KeysVinTipSecondsBox" Width="40" HorizontalAlignment="Left"
+                           Style="{DynamicResource KaiTextBox}" Text="10" Margin="0,0,8,0"
+                           PreviewTextInput="IntervalBox_PreviewTextInput"
+                           LostFocus="KeysVinTipSeconds_LostFocus"
+                           ToolTip="3–60 sec, or 0 = until Copy VIN / Close / next VIN tip" />
+                  <TextBlock x:Name="KeysVinTipSecondsLabel" Text="VIN tip duration (sec, 0 = sticky):" Style="{DynamicResource FieldLabel}"
+                             Width="Auto" TextWrapping="Wrap" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8" VerticalAlignment="Center">
+                  <TextBlock x:Name="KeysStallMinutesLabel" Text="Stall alert after (minutes):" Style="{DynamicResource FieldLabel}"
+                             VerticalAlignment="Center" Margin="0,0,8,0" />
+                  <TextBox x:Name="KeysStallMinutesBox" Width="60" HorizontalAlignment="Left"
+                           Style="{DynamicResource KaiTextBox}" Text="2"
+                           PreviewTextInput="IntervalBox_PreviewTextInput"
+                           LostFocus="KeysStallMinutes_LostFocus"
+                           ToolTip="Alert when Local OK but BMW Server upload stalls (1–60 min)" />
+                </StackPanel>
+                <CheckBox x:Name="KeysStallAlertCheck" Content="Alert tip when VIN is read but upload to BMW server fails"
                           Style="{DynamicResource KaiCheckBox}"
                           Margin="0,0,0,8" Checked="KeysOptions_Changed" Unchecked="KeysOptions_Changed"
                           ToolTip="Warn when a key stays Local OK without BMW Server upload past the stall time" />
@@ -844,7 +838,7 @@
                       <ColumnDefinition SharedSizeGroup="AuthLabel" Width="Auto" />
                       <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="IntervalLabel" Text="Check health interval:" Style="{DynamicResource FieldLabel}"
+                    <TextBlock x:Name="IntervalLabel" Text="Check health interval (hours):" Style="{DynamicResource FieldLabel}"
                                Width="Auto" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,12,0" />
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                       <TextBox x:Name="IntervalBox" Style="{DynamicResource KaiTextBox}"
@@ -964,11 +958,21 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Name="NotifyServerPortLabel" Text="Port:" Style="{DynamicResource FieldLabel}"
                                Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
-                    <TextBox x:Name="NotifyServerPortBox" Grid.Column="1" Width="80" HorizontalAlignment="Left"
-                             Style="{DynamicResource KaiTextBox}" Text="17890"
-                             PreviewTextInput="IntervalBox_PreviewTextInput"
-                             LostFocus="NotifyServerPort_LostFocus"
-                             ToolTip="TCP port for remote notify clients (1024–65535)" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                      <TextBox x:Name="NotifyServerPortBox" Width="80" HorizontalAlignment="Left"
+                               Style="{DynamicResource KaiTextBox}" Text="17890"
+                               PreviewTextInput="IntervalBox_PreviewTextInput"
+                               LostFocus="NotifyServerPort_LostFocus"
+                               ToolTip="TCP port for remote notify clients (1024–65535)" />
+                      <Button x:Name="NotifyServerPortCopyBtn"
+                              Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
+                              MinWidth="36" Padding="8,2" VerticalAlignment="Center"
+                              Content=""
+                              Click="NotifyServerPortCopy_Click"
+                              ToolTip="Copy port"
+                              Tag="{DynamicResource IconCopy}"
+                    AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}"/>
+                    </StackPanel>
                   </Grid>
                   <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>

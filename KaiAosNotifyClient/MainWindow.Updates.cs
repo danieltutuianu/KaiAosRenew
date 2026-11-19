@@ -943,6 +943,8 @@ namespace KaiAosNotifyClient
                 if (editable[i] != null)
                     editable[i].IsEnabled = online;
             }
+            if (online)
+                SyncSrvKeysVinTipUi();
             UpdateSrvSettingsActionButtons();
         }
 

@@ -113,8 +113,11 @@ namespace KaiAosNotifyClient
             if (string.IsNullOrWhiteSpace(Port)) Port = "17890";
             if (PairingCode == null) PairingCode = "";
             PairingCode = PairingCode.Trim();
-            if (VinTipSeconds < 3) VinTipSeconds = 3;
-            if (VinTipSeconds > 60) VinTipSeconds = 60;
+            if (VinTipSeconds != 0)
+            {
+                if (VinTipSeconds < 3) VinTipSeconds = 3;
+                if (VinTipSeconds > 60) VinTipSeconds = 60;
+            }
             if (OfflineMinutes < 1) OfflineMinutes = 1;
             if (OfflineMinutes > 30) OfflineMinutes = 30;
             if (AuthRegisterBlockAfter < 1) AuthRegisterBlockAfter = 1;
