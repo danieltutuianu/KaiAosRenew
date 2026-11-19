@@ -1294,18 +1294,40 @@ namespace KaiAosRenew
                     BrowserPassNewerBanner.Visibility = Visibility.Collapsed;
                     return;
                 }
+                if (!string.Equals(_browserPassFirebaseAutoEmail, email, StringComparison.OrdinalIgnoreCase))
+                {
+                    _browserPassFirebaseAutoTried = false;
+                    _browserPassFirebaseAutoEmail = email;
+                }
                 var meta = TryGetBrowserMeta(email, forceRefresh);
                 if (meta == null || !meta.Found || !meta.LastSavedLocal.HasValue)
                 {
                     BrowserPassNewerBanner.Visibility = Visibility.Collapsed;
+                    _browserPassFirebaseAutoTried = false;
                     return;
                 }
                 var lastSuccessLocal = _settings.LastSuccessUtc.Value.ToLocalTime();
                 if (meta.LastSavedLocal.Value <= lastSuccessLocal)
                 {
                     BrowserPassNewerBanner.Visibility = Visibility.Collapsed;
+                    _browserPassFirebaseAutoTried = false;
                     return;
                 }
+
+                // Browser password is newer than last renew — try Firebase once before showing.
+                if (!_browserPassFirebaseAutoTried && !_browserPassFirebaseAutoInFlight && IsPeerRelayActive())
+                {
+                    _browserPassFirebaseAutoTried = true;
+                    BrowserPassNewerBanner.Visibility = Visibility.Collapsed;
+                    Forget(TryAutoPullFirebaseForBrowserPassNewerAsync(), "BrowserPassFirebaseAuto");
+                    return;
+                }
+                if (_browserPassFirebaseAutoInFlight)
+                {
+                    BrowserPassNewerBanner.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
                 BrowserPassNewerText.Text = string.Format(UiStrings.T("BrowserPassNewer"),
                     FormatBrowserSavedWhen(meta.LastSavedLocal));
                 BrowserPassNewerBanner.Visibility = Visibility.Visible;
@@ -1314,6 +1336,37 @@ namespace KaiAosRenew
             catch
             {
                 BrowserPassNewerBanner.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private async Task TryAutoPullFirebaseForBrowserPassNewerAsync()
+        {
+            _browserPassFirebaseAutoInFlight = true;
+            try
+            {
+                if (_settings == null) return;
+                var email = EmailBox != null ? EmailBox.Text.Trim() : (_settings.Email ?? "").Trim();
+                var pass = "";
+                try { pass = GetPasswordUi() ?? ""; }
+                catch { pass = ""; }
+                if (string.IsNullOrEmpty(pass))
+                {
+                    try { pass = _settings.GetPassword() ?? ""; }
+                    catch { pass = ""; }
+                }
+                var ok = await TryPullNewerPeerCredsOnAuthFailAsync(email, pass).ConfigureAwait(true);
+                if (ok)
+                    _browserPassFirebaseAutoTried = false;
+                RefreshPasswordHintBanners(false);
+            }
+            catch
+            {
+                try { RefreshPasswordHintBanners(false); }
+                catch { }
+            }
+            finally
+            {
+                _browserPassFirebaseAutoInFlight = false;
             }
         }
 

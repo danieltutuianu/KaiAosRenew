@@ -111,7 +111,7 @@ namespace KaiAosRenew
             var kind = (msg.Kind ?? "").Trim().ToLowerInvariant();
             if (kind == "aosapply")
             {
-                ApplyAosFromClient(clientId, msg.Text);
+                Forget(ApplyAosFromClientAsync(clientId, msg.Text), "AosApplyRemote");
                 return;
             }
             if (kind == "aosinterval")
@@ -905,7 +905,7 @@ namespace KaiAosRenew
             }
         }
 
-        private void ApplyAosFromClient(int clientId, string payload)
+        private async Task ApplyAosFromClientAsync(int clientId, string payload)
         {
             if (_remoteServerUpdateBusy)
             {
@@ -974,8 +974,14 @@ namespace KaiAosRenew
                     BroadcastAosSync();
                     return;
                 }
-                Forget(RunNowAsync(true, forceRegister), "AosApplyRemote");
-                SendAosAck(clientId, true, "OK");
+                // Peers get new creds immediately; ack waits for real Register/Health result.
+                BroadcastAosSync();
+                var result = await RunNowAsync(true, forceRegister).ConfigureAwait(true);
+                var loginOk = result != null && result.Ok && !result.RegisterAuthRejected;
+                if (loginOk)
+                    SendAosAck(clientId, true, "OK");
+                else
+                    SendAosAck(clientId, false, result != null && !string.IsNullOrEmpty(result.Message) ? result.Message : "failed");
                 BroadcastAosSync();
             }
             catch (Exception ex)

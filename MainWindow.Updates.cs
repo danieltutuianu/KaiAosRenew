@@ -689,6 +689,19 @@ namespace KaiAosRenew
         private void UpdateAosDirtyStatus()
         {
             if (_aosPullCloudBusy != 0) return;
+            if (_busy)
+            {
+                if (AosDirtyStatus != null)
+                {
+                    AosDirtyStatus.Text = _busyExpectRegister
+                        ? UiStrings.T("AosSyncRegistering")
+                        : UiStrings.T("AosSyncApplying");
+                    AosDirtyStatus.Foreground = TextMuted();
+                }
+                if (AosDirtyPendingMark != null)
+                    AosDirtyPendingMark.Visibility = Visibility.Visible;
+                return;
+            }
             if (AosDirtyStatus != null)
             {
                 AosDirtyStatus.Text = _aosCredentialsDirty ? UiStrings.T("AosSyncDirty") : "";

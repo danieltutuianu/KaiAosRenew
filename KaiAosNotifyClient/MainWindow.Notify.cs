@@ -141,6 +141,15 @@ namespace KaiAosNotifyClient
             RefreshHostCombo();
             SetHostText(_settings.Host);
             _settings.Save();
+
+            // Switching notify servers must not keep Keys/Activity/AOS from the previous one.
+            if (!string.IsNullOrEmpty(_lastConnectedHost)
+                && (!string.Equals(_lastConnectedHost, host, StringComparison.OrdinalIgnoreCase)
+                    || _lastConnectedPort != port))
+            {
+                ClearServerBoundState();
+            }
+
             _wantConnectUi = true;
             _offlineAlertShown = false;
             _client.Connect(_settings.Host, port, _settings.PairingCode ?? "");
@@ -212,6 +221,11 @@ namespace KaiAosNotifyClient
                     SetHostText(_settings.Host);
                     _settings.Save();
                 }
+                int connectedPort;
+                if (!int.TryParse((_settings.Port ?? "").Trim(), out connectedPort) || connectedPort < 1)
+                    connectedPort = 17890;
+                _lastConnectedHost = (_settings.Host ?? "").Trim();
+                _lastConnectedPort = connectedPort;
                 UpdateAosControlsEnabled();
                 UpdateServerSettingsEnabled();
                 RefreshTrayStatus();
@@ -220,6 +234,101 @@ namespace KaiAosNotifyClient
                 RequestUpdateFeed();
                 SendUpdateFeed();
             }));
+        }
+
+        /// <summary>
+        /// Wipe UI + persisted keys from a previous notify server before connecting to another.
+        /// Same-host reconnect does not call this (offline key history survives).
+        /// </summary>
+        private void ClearServerBoundState()
+        {
+            // Keys
+            if (_keyAllRows != null)
+                _keyAllRows.Clear();
+            _keysSearchServerRows = new List<ClientKeyRow>();
+            _lastVin = null;
+            PersistKeysHistory();
+            ClearKeysRowHighlight();
+            ApplyKeysFilter();
+            UpdateKeysTodayBadge();
+            UpdateKeysAlert();
+            UpdateKeysRetryButton();
+            ApplyKeysReaderWarn("");
+
+            // Activity
+            _activityRows.Clear();
+            _activityHistoryRows.Clear();
+            RefreshActivityView();
+
+            // Register history
+            _registerHistory.Clear();
+            if (_registerHistoryViewRows != null)
+                _registerHistoryViewRows.Clear();
+            ApplyRegisterFilter();
+
+            // AOS Access
+            CancelAosAckWait();
+            _awaitingBrowserPassFirebaseAuto = false;
+            _browserPassFirebaseAutoInFlight = false;
+            _aosForceRegisterOverride = null;
+            _loadingAosUi = true;
+            try
+            {
+                if (AosEmailBox != null) AosEmailBox.Text = "";
+                SetAosPasswordUi("");
+                if (AosIntervalBox != null) AosIntervalBox.Text = "1";
+            }
+            finally
+            {
+                _loadingAosUi = false;
+            }
+            _lastSyncedEmail = "";
+            _lastSyncedPass = "";
+            _lastSyncedHours = 1;
+            _aosDirty = false;
+            HideClipboardPassBanner();
+            if (BrowserPassNewerBanner != null)
+                BrowserPassNewerBanner.Visibility = Visibility.Collapsed;
+            if (_settings != null)
+            {
+                _settings.LastSuccessUtc = null;
+                try { _settings.Save(); }
+                catch { }
+            }
+            UpdateAosSyncStatus();
+            UpdateAosControlsEnabled();
+            UpdateAosPullCloudButtonVisibility();
+
+            // Server Settings sync cache
+            _lastServerSettingsMap = null;
+            _lastServerSettingsCapture = null;
+            ClearSrvSettingsConflict();
+            MarkSrvSettingsDirty(false);
+            SetSrvSettingsStatus("", false);
+            UpdateServerSettingsEnabled();
+
+            // Kai services panel
+            SetKaiBusy(false);
+            if (KaiInstallText != null) KaiInstallText.Text = "—";
+            if (KaiUrlRegisterBox != null) KaiUrlRegisterBox.Text = "";
+            if (KaiUrlWebEamBox != null) KaiUrlWebEamBox.Text = "";
+            if (KaiUrlUploadBox != null) KaiUrlUploadBox.Text = "";
+            if (KaiTokenExpiryText != null) KaiTokenExpiryText.Text = "—";
+            ApplyKaiSvcRow(KaiSvc1Name, KaiSvc1Status, KaiSvc1Start, null,
+                ThemeBrush("TextPrimaryBrush", Brushes.Black),
+                ThemeBrush("StatusOkBrush", FooterOkDay),
+                ThemeBrush("StatusErrorBrush", FooterErrorDay));
+            ApplyKaiSvcRow(KaiSvc2Name, KaiSvc2Status, KaiSvc2Start, null,
+                ThemeBrush("TextPrimaryBrush", Brushes.Black),
+                ThemeBrush("StatusOkBrush", FooterOkDay),
+                ThemeBrush("StatusErrorBrush", FooterErrorDay));
+            UpdateServiceActionButtons(false, false);
+            SetKaiServiceAlert(false);
+
+            ClearNotifyClientsCombo();
+            UpdateClearButtonsEnabled();
+            RebuildTrayMenu();
+            RefreshTrayStatus();
         }
 
         private void OnClientDisconnected()

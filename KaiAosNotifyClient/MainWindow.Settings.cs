@@ -1049,8 +1049,16 @@ namespace KaiAosNotifyClient
                     if (int.TryParse(KvStr(map, "authRegisterBlockAfter", "3"), out n) && n >= 1)
                     {
                         _settings.AuthRegisterBlockAfter = n > 10 ? 10 : n;
-                        try { _settings.Save(); } catch { }
                     }
+                    var lastSuccessRaw = KvStr(map, "lastSuccessUtc", "");
+                    if (!string.IsNullOrWhiteSpace(lastSuccessRaw))
+                    {
+                        DateTime parsed;
+                        if (DateTime.TryParse(lastSuccessRaw, CultureInfo.InvariantCulture,
+                                DateTimeStyles.RoundtripKind, out parsed))
+                            _settings.LastSuccessUtc = parsed.ToUniversalTime();
+                    }
+                    try { _settings.Save(); } catch { }
                 }
                 _lastServerSettingsMap = new Dictionary<string, string>(map, StringComparer.OrdinalIgnoreCase);
                 _conflictServerSettingsMap = null;
@@ -1060,6 +1068,7 @@ namespace KaiAosNotifyClient
                     SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsSynced"), true);
                 UpdateSrvSettingsResetEnabled();
                 UpdateAosPullCloudButtonVisibility();
+                RefreshBrowserPassNewerBanner(false);
             }
             finally
             {

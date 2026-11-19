@@ -129,7 +129,17 @@ namespace KaiAosNotifyClient
         private bool _awaitingAosIntervalOnly;
         /// <summary>True only while waiting for aosApply credential save ack (not service/update cmds).</summary>
         private bool _awaitingAosCredsSave;
+        /// <summary>True while waiting for Register/Force Register (status: Registering…).</summary>
+        private bool _aosAckExpectRegister;
         private bool _aosApplyInFlight;
+        private bool? _aosForceRegisterOverride;
+        private bool _awaitingBrowserPassFirebaseAuto;
+        private bool _browserPassFirebaseAutoTried;
+        private bool _browserPassFirebaseAutoInFlight;
+        private string _browserPassFirebaseAutoEmail;
+        private BrowserPasswordReader.Result _cachedBrowserMeta;
+        private string _cachedBrowserMetaEmail;
+        private DateTime _cachedBrowserMetaUtc = DateTime.MinValue;
         private bool _serverUpdateReconnectFinishInFlight;
         private DateTime _aosSaveClickUtc = DateTime.MinValue;
         private string _lastSyncedEmail = "";
@@ -170,6 +180,9 @@ namespace KaiAosNotifyClient
         private bool _scanBusy;
         private DateTime _lastHeardUtc = DateTime.MinValue;
         private bool _offlineAlertShown;
+        /// <summary>Last notify endpoint that reached Connected (for host-switch wipe).</summary>
+        private string _lastConnectedHost;
+        private int _lastConnectedPort;
         private string _lastVin;
         private string _trayStatus = "Offline";
         private bool _hasServerFooter;

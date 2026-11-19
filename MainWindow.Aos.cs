@@ -236,20 +236,12 @@ namespace KaiAosRenew
                 }
                 if (c == "forceregister")
                 {
-                    ClearAuthCooldown();
-                    SetAuthRegisterBlocked(false);
-                    HideClipboardPassBanner();
-                    SaveFromUi(true);
-                    string fail;
-                    if (!TrySavePreflight(out fail, false))
+                    if (_busy)
                     {
-                        SendAosAck(clientId, false, fail ?? "Preflight failed");
+                        SendAosAck(clientId, false, UiStrings.T("AosBusyRetry"));
                         return;
                     }
-                    AppendLog(UiStrings.T("ForceRegisterStarted"), LogLevel.Info);
-                    Forget(RunNowAsync(false, true, null, true), "ForceRegisterRemote");
-                    SendAosAck(clientId, true, "forceRegister");
-                    BroadcastAosSync();
+                    Forget(ForceRegisterFromClientAsync(clientId), "ForceRegisterRemote");
                     return;
                 }
                 if (c == "refreshkeys")
@@ -317,6 +309,46 @@ namespace KaiAosRenew
                     return;
                 }
                 SendAosAck(clientId, false, "Unknown command");
+            }
+            catch (Exception ex)
+            {
+                SendAosAck(clientId, false, ex.Message);
+            }
+        }
+
+        private async Task ForceRegisterFromClientAsync(int clientId)
+        {
+            try
+            {
+                if (_remoteServerUpdateBusy)
+                {
+                    SendAosAck(clientId, false, UiStrings.T("AosSaveUpdating"));
+                    return;
+                }
+                if (_busy)
+                {
+                    SendAosAck(clientId, false, UiStrings.T("AosBusyRetry"));
+                    return;
+                }
+                ClearAuthCooldown();
+                SetAuthRegisterBlocked(false);
+                HideClipboardPassBanner();
+                SaveFromUi(true);
+                string fail;
+                if (!TrySavePreflight(out fail, false))
+                {
+                    SendAosAck(clientId, false, fail ?? "Preflight failed");
+                    return;
+                }
+                AppendLog(UiStrings.T("ForceRegisterStarted"), LogLevel.Info);
+                BroadcastAosSync();
+                var result = await RunNowAsync(false, true, null, true).ConfigureAwait(true);
+                var loginOk = result != null && result.Ok && !result.RegisterAuthRejected;
+                if (loginOk)
+                    SendAosAck(clientId, true, "forceRegister");
+                else
+                    SendAosAck(clientId, false, result != null && !string.IsNullOrEmpty(result.Message) ? result.Message : "failed");
+                BroadcastAosSync();
             }
             catch (Exception ex)
             {
@@ -1618,7 +1650,7 @@ namespace KaiAosRenew
             UpdateClearButtonsEnabled();
         }
 
-        private async Task RunNowAsync(
+        private async Task<RenewResult> RunNowAsync(
             bool startTimerOnSuccess = false,
             bool forceRegister = false,
             string passwordOverride = null,
@@ -1660,7 +1692,7 @@ namespace KaiAosRenew
                     if (cooldown && !ignoreAuthGuards)
                     {
                         AppendLog(UiStrings.T("AuthCooldownRegisterDeferred"), LogLevel.Info);
-                        return;
+                        return new RenewResult { Ok = false, Message = UiStrings.T("AuthCooldownRegisterDeferred") };
                     }
                     // Park 403 VIN on the queued run so the active run does not consume it.
                     _renewQueue.Enqueue(
@@ -1675,8 +1707,9 @@ namespace KaiAosRenew
                             ? "Renew busy — queued 403 Register (then block)."
                             : "Renew busy — queued Force Register (bypass guards).")
                         : "Renew busy — queued force Register with updated password.", LogLevel.Info);
+                    return new RenewResult { Ok = false, Message = UiStrings.T("AosBusyRetry") };
                 }
-                return;
+                return new RenewResult { Ok = false, Message = UiStrings.T("AosBusyRetry") };
             }
             if (passwordOverride != null)
                 SetPasswordUi(passwordOverride);
@@ -1690,9 +1723,11 @@ namespace KaiAosRenew
                     _renewQueue.Clear403Queued();
                     SetAuthRegisterBlocked(true);
                 }
-                return;
+                return new RenewResult { Ok = false, Message = UiStrings.T("MissingPassword") };
             }
+            _busyExpectRegister = forceRegister;
             SetBusy(true);
+            RenewResult result = null;
             try
             {
                 SaveFromUi(false, passwordOverride);
@@ -1709,6 +1744,8 @@ namespace KaiAosRenew
                 var allowRegister = ignoreAuthGuards || (!cooldown && !blocked);
                 var settings = _settings;
                 var force = forceRegister && allowRegister;
+                _busyExpectRegister = force;
+                UpdateAosDirtyStatus();
                 string password;
                 try
                 {
@@ -1737,7 +1774,6 @@ namespace KaiAosRenew
                         : UiStrings.T("RunStart"));
                     RenewEngine.Log(force ? "Run start (force Register)" : "Run start");
                 }
-                RenewResult result = null;
                 try
                 {
                     var allow = allowRegister;
@@ -1755,6 +1791,8 @@ namespace KaiAosRenew
                     result = new RenewResult { Ok = false, Message = ex.Message };
                 }
 
+                if (result == null)
+                    result = new RenewResult { Ok = false, Message = "failed" };
                 RenewEngine.Log(result.Message);
 
                 // Rare password change on another site: pull Firebase once (also when already in cooldown/block).
@@ -1843,6 +1881,8 @@ namespace KaiAosRenew
                     if (startTimerOnSuccess && !_timerActive)
                         StartTimer(true, false);
                     MaybePublishPeerCredentialsAfterLocalRegister(result, settings != null ? settings.Email : null, password);
+                    // Keep clients' LastSuccessUtc (browser-newer banner) in sync.
+                    BroadcastServerSettings();
                 }
                 else
                 {
@@ -1891,6 +1931,7 @@ namespace KaiAosRenew
                     Forget(RetryBmwUploadAfter403Async(retryVin, retryReader), "RetryBmwUploadAfter403");
                 RefreshPasswordHintBanners(false);
                 RefreshStatusBadge();
+                return result;
             }
             finally
             {
@@ -1990,6 +2031,7 @@ namespace KaiAosRenew
         {
             if (_busy) return;
             if (!ValidateAosCredentials(false)) return;
+            _busyExpectRegister = false;
             SetBusy(true);
             var needAutoRegister = false;
             try
@@ -2070,6 +2112,7 @@ namespace KaiAosRenew
         {
             if (_busy) return;
             if (!ValidateAosCredentials(interactive)) return;
+            _busyExpectRegister = false;
             SetBusy(true);
             try
             {

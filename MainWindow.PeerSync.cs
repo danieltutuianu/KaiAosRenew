@@ -678,6 +678,7 @@ namespace KaiAosRenew
             UpdateAosDirtyStatus();
             _aosBmw403Fail = false;
             ClearFailureAlert();
+            _browserPassFirebaseAutoTried = false;
             RefreshAuthCooldownBanner();
             UpdateTokenAgeText();
             SetTokenFooter(true);

@@ -5,5 +5,5 @@ using System.Reflection;
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("KAI - AOS Renew")]
 [assembly: AssemblyCopyright("")]
-[assembly: AssemblyVersion("1.2.29.0")]
-[assembly: AssemblyFileVersion("1.2.29.0")]
+[assembly: AssemblyVersion("1.2.30.0")]
+[assembly: AssemblyFileVersion("1.2.30.0")]

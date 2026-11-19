@@ -4,6 +4,13 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.30] - 2026-11-20
+
+- AOS: when browser password looks newer than last renew and Firebase is on, auto-pull latestCreds and force Register; hide banner on success (server + client)
+- Client: BrowserPassNewerBanner + LastSuccessUtc synced from server settings; aosApply/forceRegister ack waits for real Register result (90s)
+- Client: wipe Keys/Activity/Register/AOS/Settings/Kai when connecting to a different notify host/port
+- UX: Applying… / Registering… under Save while renew/ack is in progress (server + client)
+
 ## [1.2.29] - 2026-11-19
 
 - VIN tips: sticky duration (0 = sticky) with Close ✕; nest Auto-copy + duration under Info tip; clearer BMW-fail / stall alert labels

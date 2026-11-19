@@ -320,6 +320,13 @@
                   </StackPanel>
                 </StackPanel>
               </Border>
+              <Border x:Name="BrowserPassNewerBanner" Background="{DynamicResource WarnBannerBgBrush}"
+                      BorderBrush="{DynamicResource StatusWarnBrush}"
+                      BorderThickness="1" CornerRadius="3" Padding="8,6" Margin="130,0,0,8"
+                      Visibility="Collapsed">
+                <TextBlock x:Name="BrowserPassNewerText" TextWrapping="Wrap"
+                           Foreground="{DynamicResource WarnBannerFgBrush}" FontSize="12" />
+              </Border>
               <Grid Margin="0,4,0,0">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="130" />

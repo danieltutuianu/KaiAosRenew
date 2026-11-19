@@ -104,6 +104,8 @@ namespace KaiAosRenew
         private DateTime _nextHealthUtc = DateTime.MaxValue;
         private DateTime _nextServiceCheckUtc = DateTime.MaxValue;
         private bool _busy;
+        /// <summary>True while busy with a force-Register style run (status: Registering…).</summary>
+        private bool _busyExpectRegister;
         private bool _kaiServiceCmdBusy;
         private bool _loadingUi;
         private bool _aosCredentialsDirty;
@@ -162,6 +164,9 @@ namespace KaiAosRenew
         private DateTime _cachedBrowserMetaUtc = DateTime.MinValue;
         private DateTime _lastBrowserNewerBalloonUtc = DateTime.MinValue;
         private DateTime _lastSilentBrowserCheckUtc = DateTime.MinValue;
+        private bool _browserPassFirebaseAutoTried;
+        private bool _browserPassFirebaseAutoInFlight;
+        private string _browserPassFirebaseAutoEmail;
         private bool _hintTrayIcon;
         private bool _powerEventsHooked;
         private bool? _lastOsLight;
@@ -1568,6 +1573,9 @@ namespace KaiAosRenew
             try { map["firebasePushSecret"] = _settings.GetFirebasePushSecret() ?? ""; }
             catch { map["firebasePushSecret"] = ""; }
             map["firebasePushServerName"] = _settings.FirebasePushServerName ?? "";
+            map["lastSuccessUtc"] = _settings.LastSuccessUtc.HasValue
+                ? _settings.LastSuccessUtc.Value.ToUniversalTime().ToString("o")
+                : "";
             try
             {
                 var paths = DesktopKeyReaderReg.ReadAbsolute();
@@ -3105,6 +3113,8 @@ namespace KaiAosRenew
         private void SetBusy(bool busy)
         {
             _busy = busy;
+            if (!busy)
+                _busyExpectRegister = false;
             StartTimerBtn.IsEnabled = !busy;
             StopTimerBtn.IsEnabled = !busy;
             CheckTokenBtn.IsEnabled = !busy;
@@ -3113,6 +3123,7 @@ namespace KaiAosRenew
             if (KaiRefreshBtn != null) KaiRefreshBtn.IsEnabled = !busy;
             if (KaiFixServicesBtn != null) KaiFixServicesBtn.IsEnabled = !busy;
             if (KaiStopServicesBtn != null) KaiStopServicesBtn.IsEnabled = !busy;
+            UpdateAosDirtyStatus();
         }
 
 

@@ -763,6 +763,22 @@ namespace KaiAosNotifyClient
         private void UpdateAosSyncStatus()
         {
             if (_aosPullCloudBusy != 0) return;
+            if (_aosAwaitingAck)
+            {
+                var registering = _aosAckExpectRegister || _awaitingAosCredsSave;
+                if (AosDirtyStatus != null)
+                {
+                    AosDirtyStatus.Text = registering
+                        ? ClientUiStrings.T("AosSyncRegistering")
+                        : ClientUiStrings.T("AosSyncApplying");
+                    AosDirtyStatus.Foreground = _footerMuted
+                        ?? (TryFindResource("TextMutedBrush") as Brush)
+                        ?? CreateBrush(0x8C, 0x8C, 0x8C);
+                }
+                if (AosDirtyPendingMark != null)
+                    AosDirtyPendingMark.Visibility = Visibility.Visible;
+                return;
+            }
             if (AosDirtyStatus != null)
             {
                 AosDirtyStatus.Text = _aosDirty ? ClientUiStrings.T("AosSyncDirty") : "";

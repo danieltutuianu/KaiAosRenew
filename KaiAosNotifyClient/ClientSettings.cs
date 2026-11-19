@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -34,6 +35,8 @@ namespace KaiAosNotifyClient
         public bool ShowAlertTips { get; set; }
         /// <summary>When checking browser passwords, remind to match app password.</summary>
         public bool BrowserPasswordHintOnAuthFail { get; set; }
+        /// <summary>Last successful AOS renew/Register on the connected server (UTC).</summary>
+        public DateTime? LastSuccessUtc { get; set; }
         public int OfflineMinutes { get; set; }
         /// <summary>Synced with server AuthRegisterBlockAfter (1–10).</summary>
         public int AuthRegisterBlockAfter { get; set; }
@@ -293,6 +296,14 @@ namespace KaiAosNotifyClient
                     s.ShowAlertTips = ReadBool(key, "ShowAlertTips", true);
                     s.BrowserPasswordHintOnAuthFail = ReadBool(key, "BrowserPasswordHintOnAuthFail", true);
                     s.DebugMode = ReadBool(key, "DebugMode", false);
+                    var lastSuccess = key.GetValue("LastSuccessUtc") as string;
+                    if (!string.IsNullOrWhiteSpace(lastSuccess))
+                    {
+                        DateTime parsed;
+                        if (DateTime.TryParse(lastSuccess, CultureInfo.InvariantCulture,
+                                DateTimeStyles.RoundtripKind, out parsed))
+                            s.LastSuccessUtc = parsed.ToUniversalTime();
+                    }
                     var host = key.GetValue("Host") as string;
                     var port = key.GetValue("Port") as string;
                     if (!string.IsNullOrWhiteSpace(host)) s.Host = host.Trim();
@@ -358,6 +369,11 @@ namespace KaiAosNotifyClient
                     key.SetValue("ShowAlertTips", ShowAlertTips ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("BrowserPasswordHintOnAuthFail", BrowserPasswordHintOnAuthFail ? 1 : 0, RegistryValueKind.DWord);
                     key.SetValue("DebugMode", DebugMode ? 1 : 0, RegistryValueKind.DWord);
+                    if (LastSuccessUtc.HasValue)
+                        key.SetValue("LastSuccessUtc",
+                            LastSuccessUtc.Value.ToUniversalTime().ToString("o"), RegistryValueKind.String);
+                    else
+                        try { key.DeleteValue("LastSuccessUtc", false); } catch { }
                     key.SetValue("VinTipSeconds", VinTipSeconds, RegistryValueKind.DWord);
                     key.SetValue("OfflineMinutes", OfflineMinutes, RegistryValueKind.DWord);
                     key.SetValue("AuthRegisterBlockAfter", AuthRegisterBlockAfter, RegistryValueKind.DWord);
