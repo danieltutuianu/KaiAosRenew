@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+#if !NO_SQLITE
 using System.Data.SQLite;
+#endif
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -200,6 +202,8 @@ namespace KaiAosRenew
 
         /// <summary>When true, archive keyreader.bin + parse log under AppData (Debug Mode).</summary>
         public bool KeyDebugEnabled { get; set; }
+        /// <summary>Test hook: ignore machine-global C:\ProgramData Transferred\keyreader.bin.</summary>
+        internal bool SkipDefaultTransferredForTests { get; set; }
 
         public string ActivePickupFolder
         {
@@ -329,13 +333,18 @@ namespace KaiAosRenew
         private readonly object _vinCacheGate = new object();
         private bool _vinAnnounceSeeded;
 
+        /// <summary>Test hook: redirect key-events.xml / key-bins away from %AppData%.</summary>
+        internal static string StoreDirOverride { get; set; }
+
         public static string EventsStorePath
         {
             get
             {
-                var dir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "KaiAosRenew");
+                var dir = !string.IsNullOrWhiteSpace(StoreDirOverride)
+                    ? StoreDirOverride
+                    : Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "KaiAosRenew");
                 Directory.CreateDirectory(dir);
                 return Path.Combine(dir, "key-events.xml");
             }
@@ -895,7 +904,8 @@ namespace KaiAosRenew
             return neu;
         }
 
-        private List<KeyActivityEvent> DetectStallEvents(List<KeyActivityEvent> merged)
+        /// <summary>Test-accessible: stall detection for LocalSent without BMW upload.</summary>
+        internal List<KeyActivityEvent> DetectStallEvents(List<KeyActivityEvent> merged)
         {
             var list = new List<KeyActivityEvent>();
             if (merged == null) return list;
@@ -1033,6 +1043,7 @@ namespace KaiAosRenew
         private void CollectBinHintsFromDisk()
         {
             RememberBinFromPath(Path.Combine(_pickupFolder, "keyreader.bin"));
+            if (SkipDefaultTransferredForTests) return;
             RememberBinFromPath(TransferredBin);
             try
             {
@@ -1084,6 +1095,7 @@ namespace KaiAosRenew
 
         private void CollectBinHintsFromSqlite()
         {
+#if !NO_SQLITE
             if (!File.Exists(_sqlitePath)) return;
             try
             {
@@ -1191,6 +1203,7 @@ namespace KaiAosRenew
                 }
                 catch { }
             }
+#endif
         }
 
         private void AttachBinFields(List<KeyActivityEvent> events)
@@ -1340,9 +1353,11 @@ namespace KaiAosRenew
         {
             get
             {
-                var dir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "KaiAosRenew");
+                var dir = !string.IsNullOrWhiteSpace(StoreDirOverride)
+                    ? StoreDirOverride
+                    : Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "KaiAosRenew");
                 Directory.CreateDirectory(dir);
                 return dir;
             }
@@ -1855,6 +1870,11 @@ namespace KaiAosRenew
         private KeyReaderSnapshot ReadReaderSnapshot()
         {
             var info = new KeyReaderSnapshot();
+#if NO_SQLITE
+            info.Ok = false;
+            info.Message = "SQLite disabled in test build";
+            return info;
+#else
             if (!File.Exists(_sqlitePath))
             {
                 info.Ok = false;
@@ -1915,6 +1935,7 @@ namespace KaiAosRenew
                 info.Message = "SQLite: " + ex.Message;
             }
             return info;
+#endif
         }
 
         private static List<KeyActivityEvent> BuildEvents(
@@ -2136,8 +2157,9 @@ namespace KaiAosRenew
                     if (!string.Equals(ev.Vin, other.Vin, StringComparison.OrdinalIgnoreCase))
                         continue;
                     if (!other.LocalSent && !other.BmwUploaded && !other.Failed) continue;
+                    if (!ActivityRegisterLogic.ShouldInheritVinUploadStatus(ev.DetectedLocal, other.DetectedLocal))
+                        continue;
                     var d = Math.Abs((other.DetectedLocal - ev.DetectedLocal).TotalMinutes);
-                    if (d > 15) continue;
                     if (d < bestDelta)
                     {
                         bestDelta = d;
@@ -2157,7 +2179,7 @@ namespace KaiAosRenew
         }
 
         /// <summary>Keep one row per VIN within a 3-minute window (prefer richest status).</summary>
-        private static List<KeyActivityEvent> DeduplicateVinRows(List<KeyActivityEvent> events)
+        internal static List<KeyActivityEvent> DeduplicateVinRows(List<KeyActivityEvent> events)
         {
             if (events == null) return new List<KeyActivityEvent>();
             var result = new List<KeyActivityEvent>();
@@ -2220,7 +2242,8 @@ namespace KaiAosRenew
                 || (ContainsIgnoreCase(body, "ERROR") && ContainsIgnoreCase(body, "key"));
         }
 
-        private static bool LooksLikeKaiUploadFail(string body)
+        /// <summary>Test-accessible: KAI Central upload failure heuristics (incl. HTTP 403).</summary>
+        internal static bool LooksLikeKaiUploadFail(string body)
         {
             if (string.IsNullOrEmpty(body)) return false;
             if (ContainsIgnoreCase(body, "MAINTENANCE")) return false;

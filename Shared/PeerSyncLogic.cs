@@ -90,11 +90,11 @@ namespace KaiAosRenew
         public const string SyncModePoll = "poll";
         public const string SyncModeSse = "sse";
 
-        /// <summary>Normalize Firebase sync mode to ondemand / poll / sse.</summary>
+        /// <summary>Normalize Firebase sync mode to ondemand / poll (legacy sse maps to ondemand).</summary>
         public static string NormalizeFirebasePushSyncMode(string mode)
         {
             var m = (mode ?? "").Trim().ToLowerInvariant();
-            if (m == SyncModePoll || m == SyncModeSse || m == SyncModeOnDemand)
+            if (m == SyncModePoll || m == SyncModeOnDemand)
                 return m;
             return SyncModeOnDemand;
         }

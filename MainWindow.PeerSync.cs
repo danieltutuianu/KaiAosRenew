@@ -360,7 +360,7 @@ namespace KaiAosRenew
             RenewResult result = null;
             try
             {
-                result = await Task.Run(() => RenewEngine.Run(candidate, true, payload.Password, true)).ConfigureAwait(true);
+                result = await Task.Run(() => RenewEngine.Run(candidate, true, payload.Password, true, persistSettings: false)).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -397,7 +397,7 @@ namespace KaiAosRenew
                 RenewResult rollback = null;
                 try
                 {
-                    rollback = await Task.Run(() => RenewEngine.Run(prevCandidate, true, prevPass, true)).ConfigureAwait(true);
+                    rollback = await Task.Run(() => RenewEngine.Run(prevCandidate, true, prevPass, true, persistSettings: false)).ConfigureAwait(true);
                 }
                 catch (Exception ex)
                 {
@@ -504,6 +504,8 @@ namespace KaiAosRenew
             CaptureAosSavedCredentials();
             _aosCredentialsDirty = false;
             UpdateAosDirtyStatus();
+            _aosBmw403Fail = false;
+            ClearFailureAlert();
             RefreshAuthCooldownBanner();
             UpdateTokenAgeText();
             SetTokenFooter(true);
@@ -595,7 +597,7 @@ namespace KaiAosRenew
             RenewResult retry = null;
             try
             {
-                retry = await Task.Run(() => RenewEngine.Run(candidate, true, payload.Password, true)).ConfigureAwait(true);
+                retry = await Task.Run(() => RenewEngine.Run(candidate, true, payload.Password, true, persistSettings: false)).ConfigureAwait(true);
             }
             catch (Exception ex)
             {

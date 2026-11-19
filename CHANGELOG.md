@@ -4,6 +4,14 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.27] - 2026-11-19
+
+- Reliability: notify ReadLoop ownership + watchdog reason; pairing code rotate disconnects; AppSettings SaveGate; RenewEngine `persistSettings` for PeerSync probes
+- Client: activity/ack/update single-flight; KeySync/history + Activity live filter shared logic
+- Firebase: remove SSE sync mode from UI (saved `sse` migrates to On-demand); tip text updated
+- Tests: expanded Logic + Protocol regression coverage (KeySync, KeyActivityMonitor, RenewEngine edges, NotifyServer lifecycle, Lan discovery); unified `build.ps1`
+- Hardening: UpdateService feed timeout helper; async Task `Forget` paths; KeyActivityMonitor NO_SQLITE test build
+
 ## [1.2.26] - 2026-11-19
 
 - Balloon tips: remove circular icon glyphs (server + client); accent bar only

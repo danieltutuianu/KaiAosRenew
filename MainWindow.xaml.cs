@@ -167,11 +167,7 @@ namespace KaiAosRenew
         private readonly DispatcherTimer _clipboardWatchTimer = new DispatcherTimer();
         private DateTime _clipboardWatchUntilUtc = DateTime.MinValue;
         private string _clipboardWatchInitial;
-        private string _pendingForcePassword;
-        private bool _pendingForceRegister;
-        private bool _pendingIgnoreAuthGuards;
-        private bool _pendingLockRegisterAfter;
-        private bool _pendingStartTimerOnSuccess;
+        private readonly RenewRunQueueState _renewQueue = new RenewRunQueueState();
         private readonly KeyActivityMonitor _keyMonitor = new KeyActivityMonitor();
         private readonly KeyReaderLogTailer _keyReaderLogTailer = new KeyReaderLogTailer();
         private readonly KeyReaderLogTailer _uploaderLogTailer = new KeyReaderLogTailer();
@@ -487,7 +483,7 @@ namespace KaiAosRenew
                 AppendLog(UiStrings.T("WakeRenewDue"), LogLevel.Info);
             else
                 AppendLog(UiStrings.T("WakeHealth"), LogLevel.Info);
-            RunAutoHealthWithLimitedRegister();
+            Forget(RunAutoHealthWithLimitedRegister(), "WakeAutoHealth");
         }
 
         internal static string AppVersionDisplay
@@ -946,7 +942,7 @@ namespace KaiAosRenew
             if (!string.IsNullOrEmpty(_settings.Email) && !string.IsNullOrEmpty(_settings.GetPassword()))
             {
                 AppendLog(UiStrings.T("StartupAuto"));
-                RunAutoHealthWithLimitedRegister();
+                Forget(RunAutoHealthWithLimitedRegister(), "StartupAutoHealth");
             }
             EnsureAutoTimer(false);
             if (!_timer.IsEnabled)
@@ -1224,7 +1220,7 @@ namespace KaiAosRenew
             SaveFromUi(true, pass);
             RefreshPasswordRotateBanner(false);
             if (TrySavePreflight())
-                RunNowAsync(true, force, pass);
+                Forget(RunNowAsync(true, force, pass), "SaveRunNow");
         }
 
         /// <summary>Like CredentialsChangedInUi, but with an explicit new password (before SaveFromUi).</summary>
@@ -1647,7 +1643,7 @@ namespace KaiAosRenew
             catch { }
         }
 
-        private async void RunKaiServiceCmdFromClient(int clientId, bool fix)
+        private async Task RunKaiServiceCmdFromClient(int clientId, bool fix)
         {
             try
             {
@@ -2473,6 +2469,37 @@ namespace KaiAosRenew
 
 
 
+        /// <summary>
+        /// Read renew.log while RenewEngine may still be appending (shared read).
+        /// </summary>
+        private static IEnumerable<string> ReadSharedLogLines(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                yield break;
+            FileStream fs = null;
+            StreamReader reader = null;
+            try
+            {
+                fs = new FileStream(path, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
+                reader = new StreamReader(fs, Encoding.UTF8, true);
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                    yield return line;
+            }
+            finally
+            {
+                if (reader != null)
+                {
+                    try { reader.Dispose(); } catch { }
+                }
+                else if (fs != null)
+                {
+                    try { fs.Dispose(); } catch { }
+                }
+            }
+        }
+
         private string CollectActivityLogForDay(DateTime day)
         {
             var sb = new StringBuilder();
@@ -2483,7 +2510,7 @@ namespace KaiAosRenew
             for (var p = 0; p < paths.Length; p++)
             {
                 if (!File.Exists(paths[p])) continue;
-                foreach (var line in File.ReadLines(paths[p]))
+                foreach (var line in ReadSharedLogLines(paths[p]))
                 {
                     if (line == null || line.Length < 19) continue;
                     DateTime local;
@@ -2570,7 +2597,7 @@ namespace KaiAosRenew
                 SaveFromUi(true);
                 if (!TrySavePreflight())
                     return;
-                RunNowAsync(true, forceRegister);
+                Forget(RunNowAsync(true, forceRegister), "SaveAosRunNow");
                 BroadcastAosSync();
             }
             finally
@@ -2651,7 +2678,7 @@ namespace KaiAosRenew
 
         private void CheckToken_Click(object sender, RoutedEventArgs e)
         {
-            RunHealthOnlyAsync();
+            Forget(RunHealthOnlyAsync(), "CheckToken");
         }
 
 
@@ -3228,7 +3255,7 @@ namespace KaiAosRenew
                 {
                     if (!File.Exists(paths[p])) continue;
                     LogEntry pending = null;
-                    foreach (var line in File.ReadLines(paths[p]))
+                    foreach (var line in ReadSharedLogLines(paths[p]))
                     {
                         if (line == null) continue;
                         DateTime local;

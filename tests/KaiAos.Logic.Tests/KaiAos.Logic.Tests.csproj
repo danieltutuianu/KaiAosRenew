@@ -16,7 +16,7 @@
     <OutputPath>$(MSBuildProjectDirectory)\bin\Release\</OutputPath>
     <Optimize>true</Optimize>
     <DebugType>pdbonly</DebugType>
-    <DefineConstants>TRACE</DefineConstants>
+    <DefineConstants>TRACE;NO_SQLITE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
@@ -24,12 +24,14 @@
     <OutputPath>$(MSBuildProjectDirectory)\bin\Debug\</OutputPath>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DefineConstants>DEBUG;TRACE;NO_SQLITE</DefineConstants>
     <Optimize>false</Optimize>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Security" />
+    <Reference Include="System.Xml" />
     <Reference Include="Newtonsoft.Json">
       <HintPath>..\..\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
       <Private>True</Private>
@@ -37,8 +39,36 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="Stubs\BmwStubs.cs" />
+    <Compile Include="..\..\AppSettings.cs">
+      <Link>AppSettings.cs</Link>
+    </Compile>
+    <Compile Include="..\..\RenewEngine.cs">
+      <Link>RenewEngine.cs</Link>
+    </Compile>
+    <Compile Include="..\..\KeyActivityMonitor.cs">
+      <Link>KeyActivityMonitor.cs</Link>
+    </Compile>
+    <Compile Include="..\..\KeyReaderLogTailer.cs">
+      <Link>KeyReaderLogTailer.cs</Link>
+    </Compile>
+    <Compile Include="..\..\KeyReaderLogLocalize.cs">
+      <Link>KeyReaderLogLocalize.cs</Link>
+    </Compile>
     <Compile Include="..\..\Shared\NotifyMessage.cs">
       <Link>Shared\NotifyMessage.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\NotifyMessage.ServerKeys.cs">
+      <Link>Shared\NotifyMessage.ServerKeys.cs</Link>
+    </Compile>
+    <Compile Include="..\..\KaiAosNotifyClient\ClientSettings.cs">
+      <Link>ClientSettings.cs</Link>
+    </Compile>
+    <Compile Include="..\..\KaiAosNotifyClient\ClientKeySync.cs">
+      <Link>ClientKeySync.cs</Link>
+    </Compile>
+    <Compile Include="..\..\KaiAosNotifyClient\ClientKeyHistory.cs">
+      <Link>ClientKeyHistory.cs</Link>
     </Compile>
     <Compile Include="..\..\Shared\PeerSyncCrypto.cs">
       <Link>Shared\PeerSyncCrypto.cs</Link>
@@ -51,6 +81,9 @@
     </Compile>
     <Compile Include="..\..\Shared\ActivityRegisterLogic.cs">
       <Link>Shared\ActivityRegisterLogic.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\RenewFlowLogic.cs">
+      <Link>Shared\RenewFlowLogic.cs</Link>
     </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

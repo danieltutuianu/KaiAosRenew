@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using KaiAosNotifyClient;
 using KaiAosRenew;
@@ -27,6 +28,16 @@ namespace KaiAos.Protocol.Tests
             Run("Loopback no-pairing", TestLoopbackNoPairing);
             Run("Loopback pairing OK", TestLoopbackPairingOk);
             Run("Loopback pairing reject", TestLoopbackPairingReject);
+            Run("Loopback pairing code change", TestLoopbackPairingCodeChange);
+            Run("NotifyClient watchdog reason", TestNotifyClientWatchdogReason);
+            Run("NotifyClient empty pairing stops", TestLoopbackPairingRequiredStops);
+            Run("NotifyServer InstanceGuid replace", TestServerInstanceGuidReplacesOld);
+            Run("NotifyClient rapid reconnect race", TestClientRapidReconnectRace);
+            Run("TcpUtf8LineReader chunks + limit", TestTcpUtf8LineReader);
+            Run("UpdateFeedHelper version + timeout", TestUpdateFeedHelperTimeout);
+            Run("NotifyServer ApplySettings lifecycle", TestNotifyServerApplySettingsLifecycle);
+            Run("ServerSettings KV roundtrip", TestServerSettingsKvRoundtrip);
+            Run("LanServerDiscovery TCP verify", TestLanServerDiscoveryTcpVerify);
 
             Console.WriteLine();
             if (_failed == 0)
@@ -537,6 +548,479 @@ namespace KaiAos.Protocol.Tests
                     try { client.Disconnect(); } catch { }
                     try { client.Dispose(); } catch { }
                 }
+                try { server.Stop(); } catch { }
+                server.PairingCode = "";
+            }
+        }
+
+        private static void TestLoopbackPairingCodeChange()
+        {
+            var server = NotifyServer.Instance;
+            var port = FreePort();
+            const string codeA = "CODEAAAA";
+            const string codeB = "CODEBBBB";
+            NotifyClient client = null;
+            NotifyClient clientNew = null;
+            var connected = new ManualResetEvent(false);
+            var disconnected = new ManualResetEvent(false);
+            var authFailed = new ManualResetEvent(false);
+            var reconnected = new ManualResetEvent(false);
+            try
+            {
+                server.Stop();
+                server.PairingCode = codeA;
+                server.Start(port);
+                AssertTrue(server.IsRunning, "server not running on " + port);
+
+                client = new NotifyClient();
+                client.Connected += () => connected.Set();
+                client.Disconnected += () => disconnected.Set();
+                client.Connect("127.0.0.1", port, codeA);
+                AssertTrue(connected.WaitOne(8000), "client Connected timeout (code A)");
+                AssertTrue(WaitUntil(() => server.ClientCount >= 1, 3000), "server ClientCount < 1");
+
+                // Rotating pairing code must drop existing sessions immediately.
+                server.ApplySettings(true, port, codeB);
+                AssertTrue(disconnected.WaitOne(5000) || WaitUntil(() => server.ClientCount == 0, 5000),
+                    "client should disconnect after pairing code change");
+                AssertTrue(WaitUntil(() => server.ClientCount == 0, 3000),
+                    "server ClientCount should be 0 after pairing rotate");
+
+                // Old code must fail re-auth.
+                client.Dispose();
+                client = null;
+                clientNew = new NotifyClient();
+                clientNew.AuthFailed += _ => authFailed.Set();
+                clientNew.Connect("127.0.0.1", port, codeA);
+                AssertTrue(authFailed.WaitOne(8000), "old pairing code should AuthFailed");
+                AssertTrue(WaitUntil(() => server.ClientCount == 0, 3000),
+                    "old code must not authenticate");
+
+                // New code should succeed.
+                clientNew.Dispose();
+                clientNew = new NotifyClient();
+                clientNew.Connected += () => reconnected.Set();
+                clientNew.Connect("127.0.0.1", port, codeB);
+                AssertTrue(reconnected.WaitOne(8000), "new pairing code should connect");
+                AssertTrue(WaitUntil(() => server.ClientCount >= 1, 3000),
+                    "server ClientCount < 1 after new code");
+            }
+            finally
+            {
+                if (client != null)
+                {
+                    try { client.Disconnect(); } catch { }
+                    try { client.Dispose(); } catch { }
+                }
+                if (clientNew != null)
+                {
+                    try { clientNew.Disconnect(); } catch { }
+                    try { clientNew.Dispose(); } catch { }
+                }
+                try { server.Stop(); } catch { }
+                server.PairingCode = "";
+            }
+        }
+
+        private static void TestNotifyClientWatchdogReason()
+        {
+            var server = NotifyServer.Instance;
+            var port = FreePort();
+            NotifyClient client = null;
+            var connected = new ManualResetEvent(false);
+            var reconnected = new ManualResetEvent(false);
+            var disconnected = new ManualResetEvent(false);
+            var connectCount = 0;
+            try
+            {
+                server.Stop();
+                server.PairingCode = "";
+                server.Start(port);
+                AssertTrue(server.IsRunning, "server not running on " + port);
+
+                client = new NotifyClient();
+                client.Connected += () =>
+                {
+                    var n = Interlocked.Increment(ref connectCount);
+                    if (n == 1) connected.Set();
+                    else reconnected.Set();
+                };
+                client.Disconnected += () => disconnected.Set();
+                client.Connect("127.0.0.1", port, "");
+
+                AssertTrue(WaitUntil(() => server.ClientCount >= 1, 5000), "server ClientCount < 1");
+                server.Broadcast(new NotifyMessage
+                {
+                    Kind = "footer",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = "ok|Connected|—|—"
+                });
+                AssertTrue(connected.WaitOne(8000), "client Connected timeout");
+
+                // Ownership-safe watchdog path must preserve the reason (not overwritten by ReadLoop).
+                client.TriggerWatchdogDisconnectForTests();
+                AssertTrue(disconnected.WaitOne(5000), "watchdog Disconnected timeout");
+                AssertEqual("Server ping timeout", client.LastDisconnectReason, "watchdog reason");
+
+                // Replacing the socket (Connect again) must leave a live session —
+                // an unwinding old ReadLoop must not tear down the new TCP client.
+                disconnected.Reset();
+                client.Connect("127.0.0.1", port, "");
+                AssertTrue(WaitUntil(() => server.ClientCount >= 1, 8000), "server ClientCount after reconnect");
+                server.Broadcast(new NotifyMessage
+                {
+                    Kind = "footer",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = "ok|Connected|—|—"
+                });
+                AssertTrue(reconnected.WaitOne(8000), "client reconnected timeout");
+                Thread.Sleep(500);
+                AssertTrue(client.IsConnected, "new socket must stay connected after old ReadLoop unwind");
+                AssertTrue(server.ClientCount >= 1, "server must keep the new session");
+            }
+            finally
+            {
+                if (client != null)
+                {
+                    try { client.Disconnect(); } catch { }
+                    try { client.Dispose(); } catch { }
+                }
+                try { server.Stop(); } catch { }
+                server.PairingCode = "";
+            }
+        }
+
+        private static void TestLoopbackPairingRequiredStops()
+        {
+            var server = NotifyServer.Instance;
+            var port = FreePort();
+            NotifyClient client = null;
+            var authFailed = new ManualResetEvent(false);
+            string failReason = null;
+            try
+            {
+                server.Stop();
+                server.PairingCode = "REQCODE1";
+                server.Start(port);
+                AssertTrue(server.IsRunning, "server not running");
+
+                client = new NotifyClient();
+                client.AuthFailed += r => { failReason = r; authFailed.Set(); };
+                // Empty pairing code when server requires pairing must stop immediately with PAIRING_REQUIRED.
+                client.Connect("127.0.0.1", port, "");
+
+                AssertTrue(authFailed.WaitOne(8000), "PAIRING_REQUIRED timeout");
+                AssertEqual("PAIRING_REQUIRED", failReason, "pairing required reason");
+                AssertTrue(!client.WantConnect, "WantConnect false on PAIRING_REQUIRED");
+                AssertEqual(0, server.ClientCount, "server ClientCount 0");
+            }
+            finally
+            {
+                if (client != null)
+                {
+                    try { client.Disconnect(); } catch { }
+                    try { client.Dispose(); } catch { }
+                }
+                try { server.Stop(); } catch { }
+                server.PairingCode = "";
+            }
+        }
+
+        private static void TestServerInstanceGuidReplacesOld()
+        {
+            var server = NotifyServer.Instance;
+            var port = FreePort();
+            NotifyClient c1 = null;
+            NotifyClient c2 = null;
+            var c1Conn = new ManualResetEvent(false);
+            var c2Conn = new ManualResetEvent(false);
+            var c1Disc = new ManualResetEvent(false);
+            Action<int, NotifyMessage> onMsg = (id, msg) =>
+            {
+                if (msg != null && string.Equals(msg.Kind, "clientHello", StringComparison.OrdinalIgnoreCase))
+                    server.ApplyClientHello(id, msg.Text, msg.Detail);
+            };
+            try
+            {
+                server.Stop();
+                server.PairingCode = "";
+                server.MessageFromClient += onMsg;
+                server.Start(port);
+
+                c1 = new NotifyClient();
+                c1.Connected += () => c1Conn.Set();
+                c1.Disconnected += () => c1Disc.Set();
+                c1.Connect("127.0.0.1", port, "");
+                AssertTrue(WaitUntil(() => server.ClientCount >= 1, 5000), "c1 accepted");
+                server.Broadcast(new NotifyMessage { Kind = "ping", Text = "" });
+                AssertTrue(c1Conn.WaitOne(5000), "c1 connected");
+                c1.Send(new NotifyMessage
+                {
+                    Kind = "clientHello",
+                    Text = "1.2.21",
+                    Detail = "same-guid-123"
+                });
+                Thread.Sleep(150);
+
+                c2 = new NotifyClient();
+                c2.Connected += () => c2Conn.Set();
+                c2.Connect("127.0.0.1", port, "");
+                AssertTrue(WaitUntil(() => server.ClientCount >= 2, 5000) || c2Conn.WaitOne(5000), "c2 accepted");
+                server.Broadcast(new NotifyMessage { Kind = "ping", Text = "" });
+                AssertTrue(c2Conn.WaitOne(5000), "c2 connected");
+                c2.Send(new NotifyMessage
+                {
+                    Kind = "clientHello",
+                    Text = "1.2.21",
+                    Detail = "same-guid-123"
+                });
+
+                AssertTrue(c1Disc.WaitOne(5000), "old duplicate client should be disconnected");
+                AssertTrue(WaitUntil(() => server.ClientCount == 1, 3000), "server should keep exactly 1 client");
+            }
+            finally
+            {
+                server.MessageFromClient -= onMsg;
+                if (c1 != null) { try { c1.Disconnect(); } catch { } try { c1.Dispose(); } catch { } }
+                if (c2 != null) { try { c2.Disconnect(); } catch { } try { c2.Dispose(); } catch { } }
+                try { server.Stop(); } catch { }
+            }
+        }
+
+        private static void TestClientRapidReconnectRace()
+        {
+            var server = NotifyServer.Instance;
+            var port = FreePort();
+            NotifyClient client = null;
+            var connected = new ManualResetEvent(false);
+            try
+            {
+                server.Stop();
+                server.PairingCode = "RAPID123";
+                server.Start(port);
+
+                client = new NotifyClient();
+                client.Connect("127.0.0.1", port, "RAPID123");
+                Thread.Sleep(50);
+                // Rapidly replace socket mid-handshake — must settle connected cleanly.
+                client.Connected += () => connected.Set();
+                client.Connect("127.0.0.1", port, "RAPID123");
+
+                AssertTrue(connected.WaitOne(8000), "rapid reconnect connected timeout");
+                Thread.Sleep(300);
+                AssertTrue(client.IsConnected, "client should remain connected after rapid reconnect");
+                AssertTrue(WaitUntil(() => server.ClientCount >= 1, 3000), "server ClientCount >= 1");
+            }
+            finally
+            {
+                if (client != null) { try { client.Disconnect(); } catch { } try { client.Dispose(); } catch { } }
+                try { server.Stop(); } catch { }
+                server.PairingCode = "";
+            }
+        }
+
+        private static void TestTcpUtf8LineReader()
+        {
+            var reader = new TcpUtf8LineReader();
+            var lines = new List<string>();
+            // Multi-byte UTF-8 character split across two buffers + CRLF.
+            var payload = Encoding.UTF8.GetBytes("salut \u0219i test\r\nline2\n");
+            var split = 8;
+            AssertTrue(reader.Append(payload, 0, split, l => lines.Add(l)), "chunk 1");
+            AssertTrue(reader.Append(payload, split, payload.Length - split, l => lines.Add(l)), "chunk 2");
+            AssertEqual(2, lines.Count, "split line count");
+            AssertEqual("salut \u0219i test", lines[0], "utf8 line 1");
+            AssertEqual("line2", lines[1], "line 2");
+
+            // Oversized line exceeding DefaultMaxLineChars must return false (guard against OOM).
+            var readerMax = new TcpUtf8LineReader(1024);
+            var big = new byte[1040];
+            for (var i = 0; i < big.Length; i++) big[i] = (byte)'A';
+            AssertTrue(!readerMax.Append(big, 0, big.Length, _ => { }), "oversized line must fail");
+        }
+
+        private static void TestUpdateFeedHelperTimeout()
+        {
+            AssertTrue(UpdateFeedHelper.IsNewerVersion("1.2.23", "1.2.22"), "newer version");
+            AssertTrue(!UpdateFeedHelper.IsNewerVersion("1.2.22", "1.2.22"), "same version");
+            AssertTrue(!UpdateFeedHelper.IsNewerVersion("1.2.21", "1.2.22"), "older version");
+            AssertTrue(UpdateFeedHelper.IsNewerVersion("1.2.23-beta+1", "1.2.22"), "prerelease stripped");
+
+            // Connect to a silent TcpListener (accepts TCP, never sends HTTP response) -> TimeoutWebClient must abort near 1s.
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var accepted = new List<TcpClient>();
+            var stop = false;
+            var acceptThread = new Thread(() =>
+            {
+                while (!stop)
+                {
+                    try
+                    {
+                        if (listener.Pending())
+                            accepted.Add(listener.AcceptTcpClient());
+                        else
+                            Thread.Sleep(20);
+                    }
+                    catch { break; }
+                }
+            }) { IsBackground = true };
+            acceptThread.Start();
+
+            try
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var threw = false;
+                try
+                {
+                    using (var wc = new UpdateFeedHelper.TimeoutWebClient(1000))
+                        wc.DownloadString("http://127.0.0.1:" + port + "/releases.json");
+                }
+                catch (WebException)
+                {
+                    threw = true;
+                }
+                sw.Stop();
+                AssertTrue(threw, "TimeoutWebClient should throw WebException on hung server");
+                AssertTrue(sw.ElapsedMilliseconds < 8000, "TimeoutWebClient took too long: " + sw.ElapsedMilliseconds + "ms");
+            }
+            finally
+            {
+                stop = true;
+                try { listener.Stop(); } catch { }
+                foreach (var tcp in accepted)
+                {
+                    try { tcp.Close(); } catch { }
+                }
+            }
+        }
+
+        private static void TestNotifyServerApplySettingsLifecycle()
+        {
+            var server = NotifyServer.Instance;
+            var portA = FreePort();
+            var portB = FreePort();
+            if (portB == portA) portB = FreePort();
+            NotifyClient client = null;
+            var connected = new ManualResetEvent(false);
+            var disconnected = new ManualResetEvent(false);
+            try
+            {
+                server.Stop();
+                server.PairingCode = "";
+                server.ApplySettings(true, portA, "");
+                AssertTrue(server.IsRunning, "server running after enable");
+                AssertEqual(portA, server.Port, "bound port A");
+
+                client = new NotifyClient();
+                client.Connected += () => connected.Set();
+                client.Disconnected += () => disconnected.Set();
+                client.Connect("127.0.0.1", portA, "");
+                AssertTrue(WaitUntil(() => server.ClientCount >= 1, 5000), "client authenticated");
+                server.Broadcast(new NotifyMessage
+                {
+                    Kind = "footer",
+                    Level = "info",
+                    Title = "KAI - AOS Renew",
+                    Text = "ok|Connected|—|—"
+                });
+                AssertTrue(connected.WaitOne(8000), "client Connected");
+
+                AssertTrue(!server.SendTo(99999, new NotifyMessage { Kind = "ping", Text = "x" }),
+                    "SendTo unknown clientId returns false");
+
+                // Rebind to new port must drop clients and listen on portB
+                server.ApplySettings(true, portB, "REBIND01");
+                AssertTrue(disconnected.WaitOne(5000) || WaitUntil(() => server.ClientCount == 0, 5000),
+                    "clients disconnected on rebind");
+                AssertTrue(server.IsRunning, "still running after rebind");
+                AssertEqual(portB, server.Port, "bound port B");
+                AssertEqual(0, server.ClientCount, "no clients after rebind");
+
+                // Stop via ApplySettings(false)
+                server.ApplySettings(false, portB, "REBIND01");
+                AssertTrue(!server.IsRunning, "stopped after ApplySettings(false)");
+                AssertTrue(!server.SendTo(1, new NotifyMessage { Kind = "ping", Text = "x" }),
+                    "SendTo while stopped returns false");
+            }
+            finally
+            {
+                if (client != null)
+                {
+                    try { client.Disconnect(); } catch { }
+                    try { client.Dispose(); } catch { }
+                }
+                try { server.Stop(); } catch { }
+                server.PairingCode = "";
+            }
+        }
+
+        private static void TestServerSettingsKvRoundtrip()
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "Email", "a@b.com" },
+                { "Password", "p|a\\ss\nequals=x" },
+                { "Empty", "" },
+                { "Interval", "2" },
+                { "Note", "line1\nline2" }
+            };
+            var enc = NotifyMessage.EncodeKvMap(map);
+            var parsed = NotifyMessage.ParseKvMap(enc);
+            AssertEqual(map.Count, parsed.Count, "kv count");
+            AssertEqual(map["Email"], parsed["Email"], "email");
+            AssertEqual(map["Password"], parsed["Password"], "password specials");
+            AssertEqual("", parsed["Empty"], "empty value");
+            AssertEqual("2", parsed["Interval"], "interval");
+            AssertEqual(map["Note"], parsed["Note"], "newline value");
+
+            AssertEqual("", NotifyMessage.EncodeKvMap(null), "null map");
+            AssertEqual(0, NotifyMessage.ParseKvMap("").Count, "empty parse");
+            AssertEqual(0, NotifyMessage.ParseKvMap("no-pipe-here").Count, "malformed skipped");
+        }
+
+        private static void TestLanServerDiscoveryTcpVerify()
+        {
+            var server = NotifyServer.Instance;
+            var port = FreePort();
+            try
+            {
+                server.Stop();
+                server.PairingCode = "";
+                server.Start(port);
+                AssertTrue(server.IsRunning, "server for discovery");
+
+                bool pairingRequired;
+                AssertTrue(LanServerDiscovery.TryTcpVerify("127.0.0.1", port, out pairingRequired),
+                    "open server should verify");
+                AssertTrue(!pairingRequired, "no pairing required");
+
+                // UDP discover response from NotifyServer
+                using (var udp = new UdpClient())
+                {
+                    udp.Client.ReceiveTimeout = 1500;
+                    var payload = Encoding.ASCII.GetBytes(NotifyServer.UdpDiscoverRequest);
+                    udp.Send(payload, payload.Length, new IPEndPoint(IPAddress.Loopback, port));
+                    IPEndPoint remote = null;
+                    var data = udp.Receive(ref remote);
+                    var text = Encoding.ASCII.GetString(data ?? new byte[0]);
+                    AssertTrue(text.StartsWith(NotifyServer.UdpDiscoverResponsePrefix, StringComparison.Ordinal),
+                        "UDP discover response prefix: " + text);
+                }
+
+                server.ApplySettings(true, port, "PAIRDISC1");
+                AssertTrue(LanServerDiscovery.TryTcpVerify("127.0.0.1", port, out pairingRequired),
+                    "pairing server still verifies");
+                AssertTrue(pairingRequired, "pairing required flag");
+
+                AssertTrue(!LanServerDiscovery.TryTcpVerify("127.0.0.1", FreePort(), out pairingRequired),
+                    "closed port must fail verify");
+            }
+            finally
+            {
                 try { server.Stop(); } catch { }
                 server.PairingCode = "";
             }

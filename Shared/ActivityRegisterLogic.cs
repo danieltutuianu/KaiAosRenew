@@ -84,6 +84,17 @@ namespace KaiAosRenew
             return text.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        /// <summary>
+        /// Same ~3 min window as VIN row dedupe — do not inherit BmwUploaded/Failed
+        /// across separate key reads hours apart.
+        /// </summary>
+        public const double InheritUploadWindowMinutes = 3;
+
+        public static bool ShouldInheritVinUploadStatus(DateTime targetLocal, DateTime candidateLocal)
+        {
+            return Math.Abs((candidateLocal - targetLocal).TotalMinutes) <= InheritUploadWindowMinutes;
+        }
+
         public static bool TryParseExportDay(string text, out DateTime day)
         {
             day = DateTime.Today;
@@ -211,6 +222,29 @@ namespace KaiAosRenew
             if (maxRows > 0 && list.Count > maxRows)
                 list = list.GetRange(list.Count - maxRows, maxRows);
             return list;
+        }
+    }
+
+    /// <summary>
+    /// Client Activity live-row filter rules (filter tab + search), shared for regression tests.
+    /// </summary>
+    public static class ActivityFilterLogic
+    {
+        public static bool MatchesActivityFilterOnly(string filter, string levelText, string text)
+        {
+            if (string.Equals(filter, "keyreader", StringComparison.OrdinalIgnoreCase))
+                return ActivityRegisterLogic.IsKeyReaderFilterMatch(text);
+            if (string.Equals(filter, "registration", StringComparison.OrdinalIgnoreCase))
+                return ActivityRegisterLogic.IsRegistrationFilterMatch(text);
+            if (string.IsNullOrEmpty(filter) || string.Equals(filter, "all", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return string.Equals(levelText, filter, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool MatchesActivityRow(string filter, string levelText, string text, string search)
+        {
+            if (!ActivityRegisterLogic.MatchesLogSearch(text, search)) return false;
+            return MatchesActivityFilterOnly(filter, levelText, text);
         }
     }
 }

@@ -245,7 +245,7 @@ namespace KaiAosNotifyClient
         }
 
         /// <summary>Server pushed clientUpdate — apply only when a newer package exists.</summary>
-        private async void HandleForcedClientUpdate(NotifyMessage msg)
+        private async Task HandleForcedClientUpdateAsync(NotifyMessage msg)
         {
             if (_clientUpdateBusy) return;
             var hinted = msg != null ? (msg.Text ?? "").Trim() : "";
@@ -507,39 +507,48 @@ namespace KaiAosNotifyClient
                     ClientUiStrings.T("UpdateServer"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            BeginAosAckWait();
+            BeginAosAckWait(awaitingCredsSave: false, timeoutSeconds: 90);
         }
 
         private async Task FinishServerUpdateReconnectAsync()
         {
             if (!_awaitingServerUpdateReconnect) return;
-            SetConnStatus(ClientUiStrings.T("UpdateServerVerifying"));
-            await RefreshUpdateFeedAsync(true);
-            if (!_awaitingServerUpdateReconnect) return;
-
-            var expected = _pendingServerUpdateVer ?? "";
-            var actual = _serverVersionFromFooter ?? "";
-            _awaitingServerUpdateReconnect = false;
-            _pendingServerUpdateVer = "";
-
-            if (!string.IsNullOrEmpty(actual)
-                && (string.IsNullOrEmpty(expected)
-                    || string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)
-                    || !UpdateService.IsNewerVersion(expected, actual)))
+            if (_serverUpdateReconnectFinishInFlight) return;
+            _serverUpdateReconnectFinishInFlight = true;
+            try
             {
-                AppendActivityRow(null, "success",
-                    string.Format(ClientUiStrings.T("UpdateServerDone"), actual));
-                SetConnStatus("");
+                SetConnStatus(ClientUiStrings.T("UpdateServerVerifying"));
+                await RefreshUpdateFeedAsync(true);
+                if (!_awaitingServerUpdateReconnect) return;
+
+                var expected = _pendingServerUpdateVer ?? "";
+                var actual = _serverVersionFromFooter ?? "";
+                _awaitingServerUpdateReconnect = false;
+                _pendingServerUpdateVer = "";
+
+                if (!string.IsNullOrEmpty(actual)
+                    && (string.IsNullOrEmpty(expected)
+                        || string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)
+                        || !UpdateService.IsNewerVersion(expected, actual)))
+                {
+                    AppendActivityRow(null, "success",
+                        string.Format(ClientUiStrings.T("UpdateServerDone"), actual));
+                    SetConnStatus("");
+                }
+                else
+                {
+                    AppendActivityRow(null, "warning",
+                        string.Format(ClientUiStrings.T("UpdateServerStillOld"),
+                            string.IsNullOrEmpty(actual) ? "?" : actual));
+                    SetConnStatus("");
+                    JumpToActivityWithAlert();
+                }
+                RefreshServerUpdateUi();
             }
-            else
+            finally
             {
-                AppendActivityRow(null, "warning",
-                    string.Format(ClientUiStrings.T("UpdateServerStillOld"),
-                        string.IsNullOrEmpty(actual) ? "?" : actual));
-                SetConnStatus("");
-                JumpToActivityWithAlert();
+                _serverUpdateReconnectFinishInFlight = false;
             }
-            RefreshServerUpdateUi();
         }
 
         private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
@@ -917,7 +926,12 @@ namespace KaiAosNotifyClient
                 SrvKrLogLevelCombo,
                 SrvNotifySendToCombo, SrvNotifyRefreshBtn,
                 SrvNotifyTestVinBtn, SrvNotifyTestInfoBtn, SrvNotifyTestWarningBtn, SrvNotifyTestErrorBtn,
-                SrvUpdateAllClientsBtn
+                SrvUpdateAllClientsBtn,
+                SrvFirebasePushEnableCheck, SrvFirebasePushSyncModeCombo, SrvFirebasePushPollMinutesBox,
+                SrvFirebasePushUrlBox, SrvFirebasePushSecretBox, SrvFirebasePushServerNameBox,
+                SrvFirebasePushUrlCopyBtn, SrvFirebasePushUrlPasteBtn,
+                SrvFirebasePushGenerateBtn, SrvFirebasePushCopyBtn, SrvFirebasePushSecretPasteBtn,
+                SrvFirebasePushNowBtn, SrvFirebasePushPushBtn, SrvFirebasePushTestBtn
             };
             for (var i = 0; i < editable.Length; i++)
             {

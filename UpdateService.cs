@@ -45,7 +45,7 @@ namespace KaiAosRenew
                 ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
                 var url = RepoUrl.TrimEnd('/') + "/releases/latest/download/releases." + channel.Trim() + ".json";
                 string json;
-                using (var wc = new WebClient())
+                using (var wc = new UpdateFeedHelper.TimeoutWebClient(10000))
                 {
                     wc.Headers[HttpRequestHeader.UserAgent] = "KaiAosRenew-UpdateCheck";
                     json = await wc.DownloadStringTaskAsync(url).ConfigureAwait(true);
@@ -88,41 +88,17 @@ namespace KaiAosRenew
 
         public static bool IsNewerVersion(string candidate, string current)
         {
-            Version c;
-            Version cur;
-            if (!TryParseVersion(candidate, out c) || !TryParseVersion(current, out cur))
-                return false;
-            return c > cur;
+            return UpdateFeedHelper.IsNewerVersion(candidate, current);
         }
 
         public static bool TryParseVersion(string text, out Version version)
         {
-            version = null;
-            if (string.IsNullOrWhiteSpace(text)) return false;
-            var s = text.Trim();
-            // Strip pre-release / metadata: 1.2.5-beta+meta
-            var cut = s.IndexOfAny(new[] { '-', '+' });
-            if (cut > 0) s = s.Substring(0, cut);
-            var parts = s.Split('.');
-            if (parts.Length < 2 || parts.Length > 4) return false;
-            try
-            {
-                version = new Version(s);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            return UpdateFeedHelper.TryParseVersion(text, out version);
         }
 
         public static string FormatVersion(Version v)
         {
-            if (v == null) return "?";
-            if (v.Build < 0) return v.Major + "." + v.Minor;
-            if (v.Revision < 0 || v.Revision == 0)
-                return v.Major + "." + v.Minor + "." + v.Build;
-            return v.Major + "." + v.Minor + "." + v.Build + "." + v.Revision;
+            return UpdateFeedHelper.FormatVersion(v);
         }
 
         public static string FormatUpdateVersion(UpdateInfo update)

@@ -76,6 +76,31 @@ namespace KaiAosNotifyClient
 
         public DateTime NextRetryUtc { get { return _nextRetryUtc; } }
 
+        /// <summary>Test hook: make RX look stale so WatchdogLoop can fire promptly.</summary>
+        internal void ForceStaleRxForTests()
+        {
+            _lastRxUtc = DateTime.UtcNow.AddMinutes(-10);
+        }
+
+        /// <summary>
+        /// Test hook: run the same ownership-safe disconnect path as WatchdogLoop
+        /// without waiting for PingWatchdogMs.
+        /// </summary>
+        internal void TriggerWatchdogDisconnectForTests()
+        {
+            var closed = false;
+            lock (_gate)
+            {
+                if (_tcp == null) return;
+                NoteDisconnect("Server ping timeout");
+                DisconnectSocketUnlocked();
+                closed = true;
+            }
+            if (!closed) return;
+            RaiseStatus("Server ping timeout — reconnecting…");
+            RaiseDisconnected();
+        }
+
         public void Connect(string host, int port)
         {
             Connect(host, port, null);
@@ -196,9 +221,18 @@ namespace KaiAosNotifyClient
                 var last = _lastRxUtc;
                 if (last == DateTime.MinValue) continue;
                 if ((DateTime.UtcNow - last).TotalMilliseconds < PingWatchdogMs) continue;
-                NoteDisconnect("Server ping timeout");
+                var closed = false;
+                lock (_gate)
+                {
+                    if (_tcp == null || !_tcp.Connected) continue;
+                    // Re-check under lock so a concurrent ReadLoop close wins ownership.
+                    if ((DateTime.UtcNow - _lastRxUtc).TotalMilliseconds < PingWatchdogMs) continue;
+                    NoteDisconnect("Server ping timeout");
+                    DisconnectSocketUnlocked();
+                    closed = true;
+                }
+                if (!closed) continue;
                 RaiseStatus("Server ping timeout — reconnecting…");
-                DisconnectSocket();
                 RaiseDisconnected();
             }
         }
@@ -314,6 +348,7 @@ namespace KaiAosNotifyClient
 
         private void ReadLoop()
         {
+            TcpClient myTcp = null;
             NetworkStream stream = null;
             string failReason = null;
             var lineReader = new TcpUtf8LineReader();
@@ -321,8 +356,9 @@ namespace KaiAosNotifyClient
             {
                 lock (_gate)
                 {
-                    if (_tcp == null) return;
-                    stream = _tcp.GetStream();
+                    myTcp = _tcp;
+                    if (myTcp == null) return;
+                    stream = myTcp.GetStream();
                 }
                 var buf = new byte[4096];
                 while (_wantConnect && !_disposed && !_authFailedStop)
@@ -356,8 +392,17 @@ namespace KaiAosNotifyClient
             }
             finally
             {
-                DisconnectSocket();
-                if (_wantConnect && !_authFailedStop)
+                // Only close/notify if this loop still owns the active socket —
+                // an older ReadLoop must not tear down a newly opened connection
+                // or overwrite a watchdog "Server ping timeout" reason.
+                var owned = false;
+                lock (_gate)
+                {
+                    owned = myTcp != null && ReferenceEquals(_tcp, myTcp);
+                    if (owned)
+                        DisconnectSocketUnlocked();
+                }
+                if (owned && _wantConnect && !_authFailedStop)
                 {
                     NoteDisconnect(failReason ?? "Connection lost");
                     RaiseStatus("Connection lost — reconnecting…");

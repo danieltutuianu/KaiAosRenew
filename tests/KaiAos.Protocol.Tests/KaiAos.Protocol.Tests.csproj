@@ -56,11 +56,17 @@
     <Compile Include="..\..\Shared\TcpUtf8LineReader.cs">
       <Link>Shared\TcpUtf8LineReader.cs</Link>
     </Compile>
+    <Compile Include="..\..\Shared\RenewFlowLogic.cs">
+      <Link>Shared\RenewFlowLogic.cs</Link>
+    </Compile>
     <Compile Include="..\..\NotifyServer.cs">
       <Link>NotifyServer.cs</Link>
     </Compile>
     <Compile Include="..\..\KaiAosNotifyClient\NotifyClient.cs">
       <Link>NotifyClient.cs</Link>
+    </Compile>
+    <Compile Include="..\..\KaiAosNotifyClient\LanServerDiscovery.cs">
+      <Link>LanServerDiscovery.cs</Link>
     </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

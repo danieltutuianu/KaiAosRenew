@@ -30,9 +30,10 @@ namespace KaiAosRenew
             AppSettings settings,
             bool forceRegister = false,
             string passwordOverride = null,
-            bool allowRegister = true)
+            bool allowRegister = true,
+            bool persistSettings = true)
         {
-            return Run(settings, forceRegister, passwordOverride, allowRegister, CancellationToken.None);
+            return Run(settings, forceRegister, passwordOverride, allowRegister, CancellationToken.None, persistSettings);
         }
 
         public static RenewResult Run(
@@ -40,12 +41,13 @@ namespace KaiAosRenew
             bool forceRegister,
             string passwordOverride,
             bool allowRegister,
-            CancellationToken ct)
+            CancellationToken ct,
+            bool persistSettings = true)
         {
             if (!allowRegister)
             {
                 Log("Register disabled (auth cooldown) — Health only...");
-                return HealthOnly(settings);
+                return HealthOnly(settings, persistSettings);
             }
 
             RenewResult last = Fail("Unknown");
@@ -54,7 +56,7 @@ namespace KaiAosRenew
                 if (ct.IsCancellationRequested)
                     return Fail("Cancelled");
                 Log("Attempt " + attempt + "/3...");
-                last = RunOnce(settings, forceRegister, passwordOverride, true);
+                last = RunOnce(settings, forceRegister, passwordOverride, true, persistSettings);
                 if (last.Ok)
                     return last;
                 Log("Attempt " + attempt + " failed: " + last.Message);
@@ -92,7 +94,7 @@ namespace KaiAosRenew
         }
 
         /// <summary>WebEAM token check only — never calls Register.</summary>
-        public static RenewResult HealthOnly(AppSettings settings)
+        public static RenewResult HealthOnly(AppSettings settings, bool persistSettings = true)
         {
             try
             {
@@ -113,7 +115,7 @@ namespace KaiAosRenew
                 int expiresIn;
                 if (TryHealthToken(settings, propsPath, ResolveWebEamUrl(settings, urls.WenAccessManagerAddress), out healthMsg, out expiresIn))
                 {
-                    ApplyTokenExpiry(settings, expiresIn);
+                    ApplyTokenExpiry(settings, expiresIn, persistSettings);
                     var ok = new RenewResult();
                     ok.Ok = true;
                     ok.SkippedRegister = true;
@@ -132,7 +134,8 @@ namespace KaiAosRenew
             AppSettings settings,
             bool forceRegister = false,
             string passwordOverride = null,
-            bool allowRegister = true)
+            bool allowRegister = true,
+            bool persistSettings = true)
         {
             try
             {
@@ -163,7 +166,7 @@ namespace KaiAosRenew
                 {
                     settings.LastSuccessUtc = DateTime.UtcNow;
                     settings.LastMessage = healthMsg;
-                    ApplyTokenExpiry(settings, expiresIn);
+                    ApplyTokenExpiry(settings, expiresIn, persistSettings);
                     var ok = new RenewResult();
                     ok.Ok = true;
                     ok.SkippedRegister = true;
@@ -224,7 +227,7 @@ namespace KaiAosRenew
                             settings.LastSuccessUtc = DateTime.UtcNow;
                             settings.LastMessage = fallbackMsg;
                             settings.LastRegisterFailUtc = DateTime.UtcNow;
-                            ApplyTokenExpiry(settings, fallbackExpires);
+                            ApplyTokenExpiry(settings, fallbackExpires, persistSettings);
                             var soft = new RenewResult();
                             soft.Ok = true;
                             soft.SkippedRegister = true;
@@ -274,7 +277,8 @@ namespace KaiAosRenew
                 settings.LastRegisterOkUtc = DateTime.UtcNow;
                 settings.LastRegisterFailUtc = null;
                 settings.LastMessage = "OK ClientId=" + creds.ClientId;
-                settings.Save();
+                if (persistSettings)
+                    settings.Save();
 
                 var result = new RenewResult();
                 result.Ok = true;
@@ -290,14 +294,15 @@ namespace KaiAosRenew
             }
         }
 
-        private static void ApplyTokenExpiry(AppSettings settings, int expiresInSeconds)
+        private static void ApplyTokenExpiry(AppSettings settings, int expiresInSeconds, bool persistSettings = true)
         {
             if (expiresInSeconds > 0)
             {
                 settings.LastTokenExpiresInSeconds = expiresInSeconds;
                 settings.LastTokenExpiryUtc = DateTime.UtcNow.AddSeconds(expiresInSeconds);
             }
-            settings.Save();
+            if (persistSettings)
+                settings.Save();
         }
 
         private static WebProxy ResolveWebProxy(bool useSystemProxy)

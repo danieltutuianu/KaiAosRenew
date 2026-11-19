@@ -42,12 +42,12 @@ namespace KaiAosNotifyClient
             SrvFirebasePushSyncModeCombo.ItemsSource = new[]
             {
                 new FirebaseSyncModeItem { Code = "ondemand", Name = ClientUiStrings.T("FirebasePushSyncModeOnDemand") },
-                new FirebaseSyncModeItem { Code = "poll", Name = ClientUiStrings.T("FirebasePushSyncModePoll") },
-                new FirebaseSyncModeItem { Code = "sse", Name = ClientUiStrings.T("FirebasePushSyncModeSse") }
+                new FirebaseSyncModeItem { Code = "poll", Name = ClientUiStrings.T("FirebasePushSyncModePoll") }
             };
-            if (!string.IsNullOrEmpty(prev))
+            if (!string.IsNullOrEmpty(prev)
+                && !string.Equals(prev, "sse", StringComparison.OrdinalIgnoreCase))
                 SrvFirebasePushSyncModeCombo.SelectedValue = prev;
-            else if (SrvFirebasePushSyncModeCombo.SelectedValue == null)
+            else
                 SrvFirebasePushSyncModeCombo.SelectedValue = "ondemand";
             UpdateSrvFirebasePollMinutesVisibility();
         }
@@ -961,7 +961,12 @@ namespace KaiAosNotifyClient
                     var mode = KvStr(map, "firebasePushSyncMode", "");
                     if (string.IsNullOrEmpty(mode) && KvFlag(map, "firebasePushUsePolling", false))
                         mode = "poll";
-                    if (string.IsNullOrEmpty(mode)) mode = "ondemand";
+                    if (string.IsNullOrEmpty(mode)
+                        || string.Equals(mode, "sse", StringComparison.OrdinalIgnoreCase))
+                        mode = "ondemand";
+                    else if (!string.Equals(mode, "poll", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(mode, "ondemand", StringComparison.OrdinalIgnoreCase))
+                        mode = "ondemand";
                     SrvFirebasePushSyncModeCombo.SelectedValue = mode;
                 }
                 if (SrvFirebasePushPollMinutesBox != null) SrvFirebasePushPollMinutesBox.Text = KvStr(map, "firebasePushPollMinutes", "360");

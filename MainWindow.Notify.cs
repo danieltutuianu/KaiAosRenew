@@ -126,7 +126,7 @@ namespace KaiAosRenew
             }
             if (kind == "serverupdate")
             {
-                BeginServerUpdateFromClient(clientId);
+                Forget(BeginServerUpdateFromClient(clientId), "ServerUpdateFromClient");
                 return;
             }
             if (kind == "clientupdateallreq")
@@ -490,7 +490,7 @@ namespace KaiAosRenew
             RefreshNotifyClientsCombo();
         }
 
-        private async void BeginServerUpdateFromClient(int clientId)
+        private async Task BeginServerUpdateFromClient(int clientId)
         {
             try
             {
@@ -973,7 +973,7 @@ namespace KaiAosRenew
                     BroadcastAosSync();
                     return;
                 }
-                RunNowAsync(true, forceRegister);
+                Forget(RunNowAsync(true, forceRegister), "AosApplyRemote");
                 SendAosAck(clientId, true, "OK");
                 BroadcastAosSync();
             }

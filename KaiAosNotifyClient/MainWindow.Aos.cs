@@ -96,6 +96,7 @@ namespace KaiAosNotifyClient
             var wasSettingsApply = _awaitingSettingsApply;
             var wasSettingsImport = _awaitingSettingsImport;
             var intervalOnlyAck = _awaitingAosIntervalOnly;
+            var wasCredsSave = _awaitingAosCredsSave;
             CancelAosAckWait();
             _awaitingAosIntervalOnly = false;
             SetKaiBusy(false);
@@ -103,14 +104,7 @@ namespace KaiAosNotifyClient
             var level = (msg.Level ?? "").Trim().ToLowerInvariant();
             var text = msg.Text ?? "";
             // Download commands: status only, do not treat as AOS credential sync.
-            if (!string.IsNullOrEmpty(text)
-                && (text.StartsWith("getKeyBin", StringComparison.OrdinalIgnoreCase)
-                    || text.StartsWith("getZip", StringComparison.OrdinalIgnoreCase)
-                    || text.IndexOf("Bin not found", StringComparison.OrdinalIgnoreCase) >= 0
-                    || text.IndexOf("Zip too large", StringComparison.OrdinalIgnoreCase) >= 0
-                    || text.IndexOf("Folder missing", StringComparison.OrdinalIgnoreCase) >= 0
-                    || text.IndexOf("Folder empty", StringComparison.OrdinalIgnoreCase) >= 0
-                    || text.IndexOf("Unknown zip", StringComparison.OrdinalIgnoreCase) >= 0))
+            if (AosAckDecisionLogic.IsDownloadAckText(text))
             {
                 if (level == "error")
                 {
@@ -154,17 +148,19 @@ namespace KaiAosNotifyClient
                     _awaitingServerUpdateReconnect = false;
                     RefreshServerUpdateFromFeed();
                 }
-                if (!intervalOnlyAck)
-                    _aosDirty = true;
+                _aosDirty = AosAckDecisionLogic.ResolveDirtyOnAck(_aosDirty, true, wasCredsSave, intervalOnlyAck);
                 UpdateAosSyncStatus();
                 UpdateAosControlsEnabled();
-                AppendActivityRow(null, "error", "AOS: " + (string.IsNullOrEmpty(text) ? "failed" : text));
+                if (wasCredsSave)
+                    AppendActivityRow(null, "error", "AOS: " + (string.IsNullOrEmpty(text) ? "failed" : text));
+                else
+                    AppendActivityRow(null, "error", string.IsNullOrEmpty(text) ? "Command failed" : text);
                 JumpToActivityWithAlert();
                 return;
             }
-            if (!intervalOnlyAck)
+            if (wasCredsSave && !intervalOnlyAck)
             {
-                _aosDirty = false;
+                _aosDirty = AosAckDecisionLogic.ResolveDirtyOnAck(_aosDirty, false, true, false);
                 _lastSyncedEmail = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
                 _lastSyncedPass = (GetAosPasswordUi() ?? "").Trim();
             }
@@ -194,6 +190,7 @@ namespace KaiAosNotifyClient
             var wasSettingsApply = _awaitingSettingsApply;
             var wasSettingsImport = _awaitingSettingsImport;
             var intervalOnlyAck = _awaitingAosIntervalOnly;
+            var wasCredsSave = _awaitingAosCredsSave;
             CancelAosAckWait();
             _awaitingAosIntervalOnly = false;
             if (wasSettingsApply || wasSettingsImport)
@@ -203,18 +200,19 @@ namespace KaiAosNotifyClient
                 AppendActivityRow(null, "error", "Server Settings: " + ClientUiStrings.T("AosSyncTimeout"));
                 return;
             }
-            if (!intervalOnlyAck)
-                _aosDirty = true;
+            _aosDirty = AosAckDecisionLogic.ResolveDirtyOnTimeout(_aosDirty, wasCredsSave, intervalOnlyAck);
             if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = true;
             UpdateAosSyncStatus();
             UpdateAosControlsEnabled();
-            AppendActivityRow(null, "error", ClientUiStrings.T("AosSyncTimeout"));
+            if (wasCredsSave || !intervalOnlyAck)
+                AppendActivityRow(null, "error", ClientUiStrings.T("AosSyncTimeout"));
             JumpToActivityWithAlert();
         }
 
         private void CancelAosAckWait()
         {
             _aosAwaitingAck = false;
+            _awaitingAosCredsSave = false;
             _awaitingSettingsApply = false;
             _awaitingSettingsImport = false;
             try { _aosAckTimer.Stop(); }
@@ -222,9 +220,14 @@ namespace KaiAosNotifyClient
             UpdateAosControlsEnabled();
         }
 
-        private void BeginAosAckWait()
+        private void BeginAosAckWait(bool awaitingCredsSave = false, int timeoutSeconds = 10)
         {
             _aosAwaitingAck = true;
+            _awaitingAosCredsSave = awaitingCredsSave;
+            if (timeoutSeconds < 5) timeoutSeconds = 5;
+            if (timeoutSeconds > 180) timeoutSeconds = 180;
+            try { _aosAckTimer.Interval = TimeSpan.FromSeconds(timeoutSeconds); }
+            catch { }
             UpdateAosSyncStatus();
             UpdateAosControlsEnabled();
             try
@@ -395,7 +398,7 @@ namespace KaiAosNotifyClient
                 }
                 ClearAosFieldInvalidHighlights();
                 _awaitingAosIntervalOnly = false;
-                BeginAosAckWait();
+                BeginAosAckWait(awaitingCredsSave: true);
             }
             finally
             {
@@ -420,7 +423,7 @@ namespace KaiAosNotifyClient
                 return;
             }
             _awaitingAosIntervalOnly = false;
-            BeginAosAckWait();
+            BeginAosAckWait(awaitingCredsSave: false, timeoutSeconds: AosAckDecisionLogic.TimeoutSecondsForCmd(cmd));
         }
 
         private void RecomputeAosDirtyFromUi()

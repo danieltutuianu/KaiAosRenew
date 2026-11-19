@@ -120,7 +120,10 @@ namespace KaiAosNotifyClient
         private bool _aosDirty;
         private bool _aosAwaitingAck;
         private bool _awaitingAosIntervalOnly;
+        /// <summary>True only while waiting for aosApply credential save ack (not service/update cmds).</summary>
+        private bool _awaitingAosCredsSave;
         private bool _aosApplyInFlight;
+        private bool _serverUpdateReconnectFinishInFlight;
         private DateTime _aosSaveClickUtc = DateTime.MinValue;
         private string _lastSyncedEmail = "";
         private string _lastSyncedPass = "";
@@ -214,6 +217,24 @@ namespace KaiAosNotifyClient
         public bool PreferStartHidden
         {
             get { return _settings != null && _settings.StartWithWindows && _settings.MinimizeToTray; }
+        }
+
+        /// <summary>Observe a fire-and-forget task: log faults instead of dropping them (CS4014).</summary>
+        private void Forget(Task task, string context)
+        {
+            if (task == null) return;
+            task.ContinueWith(t =>
+            {
+                try
+                {
+                    var ex = t.Exception;
+                    if (ex == null) return;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                        AppendActivityRow(null, "warning",
+                            "Async: " + (context ?? "?") + " — " + ex.GetBaseException().Message)));
+                }
+                catch { }
+            }, TaskContinuationOptions.OnlyOnFaulted);
         }
 
         public static string VersionDisplay
@@ -1249,7 +1270,7 @@ namespace KaiAosNotifyClient
             }
             if (kind == "clientupdate")
             {
-                HandleForcedClientUpdate(msg);
+                Forget(HandleForcedClientUpdateAsync(msg), "ForcedClientUpdate");
                 RefreshTrayStatus();
                 return;
             }
@@ -1463,17 +1484,22 @@ namespace KaiAosNotifyClient
             }
             while (_activityRows.Count > ActivityMaxRows)
                 _activityRows.RemoveAt(0);
+            if (_activityHistoryMode)
+            {
+                _activityHistoryRows.Clear();
+                foreach (var row in _activityRows)
+                {
+                    if (row == null) continue;
+                    if (!MatchesActivityFilterOnly(row)) continue;
+                    if (!MatchesLogSearch(row.Text, _activitySearchText)) continue;
+                    _activityHistoryRows.Add(row);
+                }
+                while (_activityHistoryRows.Count > ActivityFilteredMax)
+                    _activityHistoryRows.RemoveAt(0);
+            }
             RefreshActivityView();
             ScrollActivityToEnd();
         }
-
-
-
-
-
-
-
-
 
         private void AppendActivityRow(string atText, string level, string text)
         {
@@ -1492,7 +1518,10 @@ namespace KaiAosNotifyClient
             _activityRows.Add(row);
             while (_activityRows.Count > ActivityMaxRows)
                 _activityRows.RemoveAt(0);
-            if (_activityHistoryMode && ShouldShowActivityRow(row))
+            // Live rows must respect the active filter even while history mode is showing.
+            if (_activityHistoryMode
+                && MatchesActivityFilterOnly(row)
+                && MatchesLogSearch(row.Text, _activitySearchText))
             {
                 _activityHistoryRows.Add(row);
                 while (_activityHistoryRows.Count > ActivityFilteredMax)
@@ -1999,25 +2028,14 @@ namespace KaiAosNotifyClient
         private bool MatchesActivityFilterOnly(ActivityRow row)
         {
             if (row == null) return false;
-            if (string.Equals(_activityFilter, "keyreader", StringComparison.OrdinalIgnoreCase))
-                return ActivityRegisterLogic.IsKeyReaderFilterMatch(row.Text);
-            if (string.Equals(_activityFilter, "registration", StringComparison.OrdinalIgnoreCase))
-            {
-                var t = row.Text ?? "";
-                return t.IndexOf("Registration", StringComparison.OrdinalIgnoreCase) >= 0
-                    || t.IndexOf("Register", StringComparison.OrdinalIgnoreCase) >= 0;
-            }
-            if (string.IsNullOrEmpty(_activityFilter) || _activityFilter == "all") return true;
-            return string.Equals(row.LevelText, _activityFilter, StringComparison.OrdinalIgnoreCase);
+            return ActivityFilterLogic.MatchesActivityFilterOnly(_activityFilter, row.LevelText, row.Text);
         }
 
         private bool ShouldShowActivityRow(object item)
         {
             var row = item as ActivityRow;
             if (row == null) return false;
-            if (!MatchesLogSearch(row.Text, _activitySearchText)) return false;
-            if (_activityHistoryMode) return true;
-            return MatchesActivityFilterOnly(row);
+            return ActivityFilterLogic.MatchesActivityRow(_activityFilter, row.LevelText, row.Text, _activitySearchText);
         }
 
         private bool ShouldShowActivityHistoryRow(object item)

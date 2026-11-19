@@ -1273,7 +1273,8 @@ namespace KaiAosRenew
                 UpdateKeysTodayBadge(CountKeysToday(_keysAllEvents));
                 HandleKeysNotifications(snap);
                 UpdateKeysReaderWarning(snap);
-                UpdateKeysAlert(snap);
+                // Use filtered cache so Clear Keys clears the alert / tray error icon.
+                UpdateKeysAlertFromCache();
                 RebuildTrayMenu();
                 MaybeBroadcastKeySync();
 
@@ -1419,8 +1420,7 @@ namespace KaiAosRenew
             foreach (var ev in src)
             {
                 if (ev == null) continue;
-                if (_keysClearedAfterLocal.HasValue
-                    && ev.DetectedLocal <= _keysClearedAfterLocal.Value)
+                if (!KeysAlertLogic.IsAfterClear(ev.DetectedLocal, _keysClearedAfterLocal))
                     continue;
                 list.Add(ev);
             }
@@ -1596,8 +1596,10 @@ namespace KaiAosRenew
                 foreach (var ev in snap.StallEvents)
                 {
                     if (ev == null) continue;
+                    if (!KeysAlertLogic.IsAfterClear(ev.DetectedLocal, _keysClearedAfterLocal))
+                        continue;
                     if (remediating
-                        || KeyActivityMonitor.VinHasBmwUploaded(snap.Events, ev.Vin))
+                        || KeyActivityMonitor.VinHasBmwUploaded(_keysAllEvents ?? snap.Events, ev.Vin))
                     {
                         // Keep pending until remediation finishes / status settles.
                         ev.StallNotified = false;
@@ -1721,7 +1723,7 @@ namespace KaiAosRenew
             // Register (bypass cooldown); lock only when strike count reaches AuthRegisterBlockAfter.
             _registerStrikeNotedThisRun = true;
             NoteAuthRegisterStrike("BMW 403");
-            RunNowAsync(false, true, null, true, willLock);
+            Forget(RunNowAsync(false, true, null, true, willLock), "KeysBmw403Register");
         }
 
         private void MaybeShowVinInfoBalloons(KeyActivitySnapshot snap)

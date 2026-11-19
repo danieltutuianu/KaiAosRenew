@@ -120,8 +120,7 @@ namespace KaiAosRenew
             var items = new List<FirebaseSyncModeItem>
             {
                 new FirebaseSyncModeItem { Code = PeerSyncLogic.SyncModeOnDemand, Name = UiStrings.T("FirebasePushSyncModeOnDemand") },
-                new FirebaseSyncModeItem { Code = PeerSyncLogic.SyncModePoll, Name = UiStrings.T("FirebasePushSyncModePoll") },
-                new FirebaseSyncModeItem { Code = PeerSyncLogic.SyncModeSse, Name = UiStrings.T("FirebasePushSyncModeSse") }
+                new FirebaseSyncModeItem { Code = PeerSyncLogic.SyncModePoll, Name = UiStrings.T("FirebasePushSyncModePoll") }
             };
             var prev = FirebasePushSyncModeCombo.SelectedValue as string;
             _firebaseSyncModeComboReady = false;

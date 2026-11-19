@@ -420,9 +420,14 @@ namespace KaiAosRenew
         {
             try
             {
-                Background = (Brush)FindResource("WindowBgBrush");
+                // Dynamic reference so theme switches update the window background.
+                SetResourceReference(BackgroundProperty, "WindowBgBrush");
             }
-            catch { }
+            catch
+            {
+                try { Background = (Brush)FindResource("WindowBgBrush"); }
+                catch { }
+            }
         }
 
         private void AboutVersionText_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -954,7 +959,7 @@ namespace KaiAosRenew
                     SetPasswordUi(pass);
                 SaveFromUi(true, pass);
                 if (TrySavePreflight())
-                    RunNowAsync(true, force, pass);
+                    Forget(RunNowAsync(true, force, pass), "IntervalSaveRunNow");
             }
         }
 

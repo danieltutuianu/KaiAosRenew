@@ -28,6 +28,20 @@ namespace KaiAosNotifyClient
             PairingRequired = 2
         }
 
+        /// <summary>Test-accessible TCP+protocol probe against a known host (loopback / LAN).</summary>
+        internal static bool TryTcpVerify(string ip, int port, out bool pairingRequired)
+        {
+            pairingRequired = false;
+            if (string.IsNullOrWhiteSpace(ip)) return false;
+            if (port < 1 || port > 65535) port = DefaultPort;
+            KaiProbe probe;
+            if (!TryConnectVerified(ip.Trim(), port, Math.Max(ConnectTimeoutMs, ProtocolVerifyMs), out probe))
+                return false;
+            if (probe == KaiProbe.Fail) return false;
+            pairingRequired = probe == KaiProbe.PairingRequired;
+            return true;
+        }
+
         public static string FindFirstOpenHost(int port, CancellationToken cancel)
         {
             bool unused;

@@ -179,13 +179,18 @@ namespace KaiAosRenew
             FirebasePushServerName = "";
         }
 
+        /// <summary>Test hook: redirect settings.xml / renew.log away from %AppData%.</summary>
+        internal static string StoreDirOverride { get; set; }
+
         private static string StoreDir
         {
             get
             {
-                var dir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "KaiAosRenew");
+                var dir = !string.IsNullOrWhiteSpace(StoreDirOverride)
+                    ? StoreDirOverride
+                    : Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "KaiAosRenew");
                 Directory.CreateDirectory(dir);
                 return dir;
             }
@@ -328,45 +333,47 @@ namespace KaiAosRenew
 
         public static AppSettings Load()
         {
-            var primary = TryLoadFromPath(SettingsPath);
-            if (primary != null)
-                return primary;
-            var bakPath = SettingsPath + ".bak";
-            var fromBak = TryLoadFromPath(bakPath);
-            if (fromBak != null)
+            lock (SaveGate)
             {
-                try
+                var primary = TryLoadFromPathUnlocked(SettingsPath);
+                if (primary != null)
+                    return primary;
+                var bakPath = SettingsPath + ".bak";
+                var fromBak = TryLoadFromPathUnlocked(bakPath);
+                if (fromBak != null)
                 {
-                    // Restore primary from intact backup so next Save has a base file.
-                    File.Copy(bakPath, SettingsPath, true);
+                    try
+                    {
+                        // Restore primary from intact backup so next Save has a base file.
+                        File.Copy(bakPath, SettingsPath, true);
+                    }
+                    catch { }
+                    return fromBak;
                 }
-                catch { }
-                return fromBak;
+                return new AppSettings();
             }
-            return new AppSettings();
         }
 
-        private static AppSettings TryLoadFromPath(string path)
+        private static AppSettings TryLoadFromPathUnlocked(string path)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
                 return null;
             try
             {
+                // Single read — avoid racing a concurrent Save between OpenRead and ReadAllText.
+                var xml = File.ReadAllText(path);
+                if (string.IsNullOrWhiteSpace(xml))
+                    return null;
                 var ser = new XmlSerializer(typeof(AppSettings));
-                using (var fs = File.OpenRead(path))
-                {
-                    var loaded = ser.Deserialize(fs) as AppSettings;
-                    if (loaded == null)
-                        return null;
-                    try
-                    {
-                        var xml = File.ReadAllText(path);
-                        ApplyLegacyDefaults(loaded, xml);
-                    }
-                    catch { }
-                    loaded.NormalizeClamps();
-                    return loaded;
-                }
+                AppSettings loaded;
+                using (var reader = new StringReader(xml))
+                    loaded = ser.Deserialize(reader) as AppSettings;
+                if (loaded == null)
+                    return null;
+                try { ApplyLegacyDefaults(loaded, xml); }
+                catch { }
+                loaded.NormalizeClamps();
+                return loaded;
             }
             catch
             {

@@ -13,13 +13,18 @@ namespace KaiAosNotifyClient
     {
         public const int MaxEvents = 100;
 
+        /// <summary>Test hook: redirect key-events.xml away from %AppData%.</summary>
+        internal static string StoreDirOverride;
+
         public static string StorePath
         {
             get
             {
-                var dir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "KaiAosNotifyClient");
+                var dir = !string.IsNullOrWhiteSpace(StoreDirOverride)
+                    ? StoreDirOverride
+                    : Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "KaiAosNotifyClient");
                 Directory.CreateDirectory(dir);
                 return Path.Combine(dir, "key-events.xml");
             }

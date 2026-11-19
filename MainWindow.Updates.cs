@@ -164,26 +164,18 @@ namespace KaiAosRenew
             var ev = snap != null ? KeyActivityMonitor.GetNewestEvent(snap.Events) : null;
             if (ev != null)
             {
-                var ageMin = (DateTime.Now - ev.DetectedLocal).TotalMinutes;
-                if (ageMin < KeysAlertMaxMinutes)
-                {
-                    if (ev.Status == KeyEventStatus.Failed
-                        || ev.Status == KeyEventStatus.Waiting)
-                    {
-                        _keysAlert = true;
-                    }
-                    else
-                    {
-                        var stallMin = _settings != null ? _settings.KeysStallMinutes : 2;
-                        if (stallMin < 1) stallMin = 1;
-                        if (stallOn
-                            && ev.LocalSent && !ev.BmwUploaded && !ev.Failed
-                            && ageMin > stallMin)
-                        {
-                            _keysAlert = true;
-                        }
-                    }
-                }
+                var stallMin = _settings != null ? _settings.KeysStallMinutes : 2;
+                _keysAlert = KeysAlertLogic.ShouldAlertNewestKey(
+                    true,
+                    (int)ev.Status,
+                    ev.LocalSent,
+                    ev.BmwUploaded,
+                    ev.Failed,
+                    ev.DetectedLocal,
+                    DateTime.Now,
+                    stallOn,
+                    stallMin,
+                    KeysAlertMaxMinutes);
             }
             if (KeysTabAlertDot != null)
                 KeysTabAlertDot.Visibility = _keysAlert ? Visibility.Visible : Visibility.Collapsed;

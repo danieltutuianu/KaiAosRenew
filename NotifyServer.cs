@@ -82,17 +82,65 @@ namespace KaiAosRenew
         {
             if (port < 1024) port = DefaultPort;
             if (port > 65535) port = DefaultPort;
+            var pairingChanged = false;
             if (pairingCode != null)
-                PairingCode = pairingCode;
+            {
+                var next = (pairingCode ?? "").Trim();
+                string prev;
+                lock (_gate)
+                    prev = _pairingCode ?? "";
+                pairingChanged = !string.Equals(prev, next, StringComparison.Ordinal);
+                PairingCode = next;
+            }
             if (!enabled)
             {
                 Stop();
                 return;
             }
             if (_running && _port == port)
+            {
+                // Enabling or rotating the pairing code must drop existing sessions
+                // so clients re-authenticate with the new code.
+                if (pairingChanged)
+                    DisconnectAllClients("Pairing code changed");
                 return;
+            }
             Stop();
             Start(port);
+        }
+
+        private void DisconnectAllClients(string reason)
+        {
+            List<ClientConn> snapshot;
+            lock (_gate)
+            {
+                snapshot = new List<ClientConn>(_clients);
+                _clients.Clear();
+            }
+            if (snapshot.Count == 0) return;
+            try
+            {
+                RenewEngine.Log("Notify disconnect all clients (" + snapshot.Count + "): "
+                    + (string.IsNullOrEmpty(reason) ? "settings" : reason));
+            }
+            catch { }
+            foreach (var c in snapshot)
+            {
+                if (c == null) continue;
+                var wasAuth = c.Authenticated;
+                var id = c.Id;
+                try { c.Dispose(); }
+                catch { }
+                if (!wasAuth) continue;
+                var handler = ClientDisconnected;
+                if (handler == null) continue;
+                try { handler(id); }
+                catch (Exception ex)
+                {
+                    try { RenewEngine.Log("Notify ClientDisconnected handler: " + ex.Message); }
+                    catch { }
+                }
+            }
         }
 
         public void Start(int port)

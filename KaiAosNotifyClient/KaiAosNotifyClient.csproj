@@ -143,6 +143,9 @@
     <Compile Include="..\Shared\PeerSyncLogic.cs">
       <Link>Shared\PeerSyncLogic.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\RenewFlowLogic.cs">
+      <Link>Shared\RenewFlowLogic.cs</Link>
+    </Compile>
     <Compile Include="..\ChromiumCrypto.cs">
       <Link>ChromiumCrypto.cs</Link>
     </Compile>

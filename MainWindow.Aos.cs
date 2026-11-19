@@ -199,7 +199,7 @@ namespace KaiAosRenew
                 }
                 if (c == "checktoken")
                 {
-                    RunHealthOnlyAsync();
+                    Forget(RunHealthOnlyAsync(), "RunHealthOnly");
                     SendAosAck(clientId, true, "checkToken");
                     return;
                 }
@@ -258,7 +258,7 @@ namespace KaiAosRenew
                         return;
                     }
                     AppendLog(UiStrings.T("ForceRegisterStarted"), LogLevel.Info);
-                    RunNowAsync(false, true, null, true);
+                    Forget(RunNowAsync(false, true, null, true), "ForceRegisterRemote");
                     SendAosAck(clientId, true, "forceRegister");
                     BroadcastAosSync();
                     return;
@@ -285,12 +285,12 @@ namespace KaiAosRenew
                 }
                 if (c == "fixservices")
                 {
-                    RunKaiServiceCmdFromClient(clientId, true);
+                    Forget(RunKaiServiceCmdFromClient(clientId, true), "FixServicesRemote");
                     return;
                 }
                 if (c == "stopservices" || c == "restartservices")
                 {
-                    RunKaiServiceCmdFromClient(clientId, false);
+                    Forget(RunKaiServiceCmdFromClient(clientId, false), "RestartServicesRemote");
                     return;
                 }
                 if (c == "refreshkai")
@@ -578,7 +578,7 @@ namespace KaiAosRenew
                 for (var p = 0; p < paths.Length; p++)
                 {
                     if (!File.Exists(paths[p])) continue;
-                    foreach (var line in File.ReadLines(paths[p]))
+                    foreach (var line in ReadSharedLogLines(paths[p]))
                     {
                         if (line == null || line.Length < 21) continue;
                         DateTime local;
@@ -668,7 +668,7 @@ namespace KaiAosRenew
                 if (!TrySavePreflight())
                     return;
                 AppendLog(UiStrings.T("ForceRegisterStarted"), LogLevel.Info);
-                RunNowAsync(false, true, null, true);
+                Forget(RunNowAsync(false, true, null, true), "ForceRegister");
                 BroadcastAosSync();
             }
             finally
@@ -956,14 +956,14 @@ namespace KaiAosRenew
             }
             if (_timerActive && now >= _nextDueUtc)
             {
-                RunAutoHealthWithLimitedRegister();
+                Forget(RunAutoHealthWithLimitedRegister(), "TimerAutoHealth");
                 ScheduleNext(true);
                 return;
             }
             if (_timerActive && now >= _nextHealthUtc)
             {
                 _nextHealthUtc = now.AddHours(1);
-                RunAutoHealthWithLimitedRegister();
+                Forget(RunAutoHealthWithLimitedRegister(), "HourlyAutoHealth");
             }
         }
 
@@ -1280,7 +1280,7 @@ namespace KaiAosRenew
                 {
                     if (!File.Exists(paths[p]))
                         continue;
-                    foreach (var line in File.ReadLines(paths[p]))
+                    foreach (var line in ReadSharedLogLines(paths[p]))
                     {
                         if (line == null || line.Length < 21)
                             continue;
@@ -1351,7 +1351,7 @@ namespace KaiAosRenew
                 {
                     if (!File.Exists(paths[p])) continue;
                     LogEntry pending = null;
-                    foreach (var line in File.ReadLines(paths[p]))
+                    foreach (var line in ReadSharedLogLines(paths[p]))
                     {
                         if (line == null) continue;
                         DateTime local;
@@ -1459,7 +1459,7 @@ namespace KaiAosRenew
                     if (!File.Exists(paths[p])) continue;
                     string pendingText = null;
                     DateTime pendingAt = DateTime.MinValue;
-                    foreach (var line in File.ReadLines(paths[p]))
+                    foreach (var line in ReadSharedLogLines(paths[p]))
                     {
                         if (line == null) continue;
                         DateTime local;
@@ -1628,21 +1628,17 @@ namespace KaiAosRenew
             UpdateClearButtonsEnabled();
         }
 
-        private async void RunNowAsync(
+        private async Task RunNowAsync(
             bool startTimerOnSuccess = false,
             bool forceRegister = false,
             string passwordOverride = null,
             bool ignoreAuthGuards = false,
             bool lockRegisterAfter = false)
         {
+            // Do not mutate auth guards here — that belongs on the non-busy execution path
+            // so a queued Force/403 Register cannot clear cooldown/block for the active run.
             if (ignoreAuthGuards)
-            {
-                ClearAuthCooldown();
-                // 403 one-shot keeps blocked until after this run; Force Register clears it.
-                if (!lockRegisterAfter)
-                    SetAuthRegisterBlocked(false);
                 forceRegister = true;
-            }
 
             var cooldown = ignoreAuthGuards ? false : IsAuthCooldownActive();
             if (cooldown && forceRegister)
@@ -1676,11 +1672,14 @@ namespace KaiAosRenew
                         AppendLog(UiStrings.T("AuthCooldownRegisterDeferred"), LogLevel.Info);
                         return;
                     }
-                    _pendingForcePassword = passwordOverride ?? (_settings != null ? _settings.GetPassword() : null);
-                    _pendingForceRegister = true;
-                    _pendingIgnoreAuthGuards = ignoreAuthGuards;
-                    _pendingLockRegisterAfter = lockRegisterAfter || _pendingLockRegisterAfter;
-                    _pendingStartTimerOnSuccess = startTimerOnSuccess || _pendingStartTimerOnSuccess;
+                    // Park 403 VIN on the queued run so the active run does not consume it.
+                    _renewQueue.Enqueue(
+                        passwordOverride ?? (_settings != null ? _settings.GetPassword() : null),
+                        ignoreAuthGuards,
+                        lockRegisterAfter,
+                        startTimerOnSuccess,
+                        ref _pending403RetryVin,
+                        ref _pending403RetryReaderId);
                     AppendLog(ignoreAuthGuards
                         ? (lockRegisterAfter
                             ? "Renew busy — queued 403 Register (then block)."
@@ -1691,231 +1690,242 @@ namespace KaiAosRenew
             }
             if (passwordOverride != null)
                 SetPasswordUi(passwordOverride);
-            if (!ValidateAosCredentials(true))
+            // Remote forceregister / ignoreAuthGuards must not pop a modal MessageBox.
+            if (!ValidateAosCredentials(!ignoreAuthGuards))
             {
                 if (lockRegisterAfter)
                 {
                     _pending403RetryVin = null;
                     _pending403RetryReaderId = null;
+                    _renewQueue.Clear403Queued();
                     SetAuthRegisterBlocked(true);
                 }
                 return;
             }
             SetBusy(true);
-            SaveFromUi(false, passwordOverride);
-            // Re-check after save (settings object may have changed / block cleared on password change).
-            if (ignoreAuthGuards)
-            {
-                ClearAuthCooldown();
-                if (!lockRegisterAfter)
-                    SetAuthRegisterBlocked(false);
-            }
-            cooldown = ignoreAuthGuards ? false : IsAuthCooldownActive();
-            var blocked = ignoreAuthGuards ? false : IsAuthRegisterBlocked();
-            var allowRegister = ignoreAuthGuards || (!cooldown && !blocked);
-            var settings = _settings;
-            var force = forceRegister && allowRegister;
-            string password;
             try
             {
-                password = !string.IsNullOrEmpty(passwordOverride)
-                    ? passwordOverride
-                    : settings.GetPassword();
-            }
-            catch
-            {
-                password = passwordOverride;
-            }
-            if (!allowRegister)
-            {
-                if (cooldown)
-                    AppendLog(UiStrings.T("AuthCooldownHealthOnly"), LogLevel.Info);
-                else
-                    AppendLog(UiStrings.T("AuthRegisterBlockedHealthOnly"), LogLevel.Info);
-                RenewEngine.Log(cooldown
-                    ? "Run start (auth cooldown — Health only)"
-                    : "Run start (auth register blocked — Health only)");
-            }
-            else
-            {
-                AppendLog(force
-                    ? UiStrings.T("RunStartForceRegister")
-                    : UiStrings.T("RunStart"));
-                RenewEngine.Log(force ? "Run start (force Register)" : "Run start");
-            }
-            if (allowRegister && !string.IsNullOrEmpty(password))
-                AppendLog("Register password length=" + password.Length, LogLevel.Info, true);
-
-            RenewResult result = null;
-            try
-            {
-                var allow = allowRegister;
-                var forceCapture = force;
-                var passCapture = password;
-                var ct = _renewCts != null ? _renewCts.Token : CancellationToken.None;
-                result = await Task.Run(() => RenewEngine.Run(settings, forceCapture, passCapture, allow, ct), ct);
-            }
-            catch (OperationCanceledException)
-            {
-                result = new RenewResult { Ok = false, Message = "Cancelled" };
-            }
-            catch (Exception ex)
-            {
-                result = new RenewResult { Ok = false, Message = ex.Message };
-            }
-
-            RenewEngine.Log(result.Message);
-
-            // Rare password change on another site: pull Firebase once (also when already in cooldown/block).
-            if (result != null
-                && IsFirebasePushActive()
-                && (!allowRegister
-                    || (result.Ok && result.RegisterAuthRejected)
-                    || (!result.Ok && LooksLikeAuthFailure(result.Message ?? ""))))
-            {
-                var emailTry = settings != null ? (settings.Email ?? "") : (_settings != null ? (_settings.Email ?? "") : "");
-                var passTry = password ?? "";
-                if (string.IsNullOrEmpty(passTry) && _settings != null)
+                SaveFromUi(false, passwordOverride);
+                // Re-check after save (settings object may have changed / block cleared on password change).
+                if (ignoreAuthGuards)
                 {
-                    try { passTry = _settings.GetPassword() ?? ""; }
-                    catch { passTry = ""; }
+                    ClearAuthCooldown();
+                    // 403 one-shot keeps blocked until after this run; Force Register clears it.
+                    if (!lockRegisterAfter)
+                        SetAuthRegisterBlocked(false);
                 }
+                cooldown = ignoreAuthGuards ? false : IsAuthCooldownActive();
+                var blocked = ignoreAuthGuards ? false : IsAuthRegisterBlocked();
+                var allowRegister = ignoreAuthGuards || (!cooldown && !blocked);
+                var settings = _settings;
+                var force = forceRegister && allowRegister;
+                string password;
                 try
                 {
-                    if (await TryPullNewerPeerCredsOnAuthFailAsync(emailTry, passTry).ConfigureAwait(true))
-                    {
-                        result = new RenewResult
-                        {
-                            Ok = true,
-                            RegisterAttempted = true,
-                            RegisterAuthRejected = false,
-                            SkippedRegister = false,
-                            Message = "OK (Firebase credentials applied)"
-                        };
-                        try { password = _settings != null ? (_settings.GetPassword() ?? password) : password; }
-                        catch { }
-                    }
+                    password = !string.IsNullOrEmpty(passwordOverride)
+                        ? passwordOverride
+                        : settings.GetPassword();
                 }
-                catch { }
-            }
-
-            // Suppress intermediate Error/Warning balloons while a key 403 remediation is pending;
-            // final tip is decided after RetryBmwUploadAfter403Async.
-            var suppressAuthBalloons = !string.IsNullOrEmpty(_pending403RetryVin);
-            if (result.Ok)
-            {
-                if (result.RegisterAuthRejected)
+                catch
                 {
-                    AppendLog(result.Message, LogLevel.Error);
-                    if (!suppressAuthBalloons)
-                        ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(result.Message));
+                    password = passwordOverride;
+                }
+                if (!allowRegister)
+                {
+                    if (cooldown)
+                        AppendLog(UiStrings.T("AuthCooldownHealthOnly"), LogLevel.Info);
+                    else
+                        AppendLog(UiStrings.T("AuthRegisterBlockedHealthOnly"), LogLevel.Info);
+                    RenewEngine.Log(cooldown
+                        ? "Run start (auth cooldown — Health only)"
+                        : "Run start (auth register blocked — Health only)");
                 }
                 else
                 {
-                    AppendLog("OK: " + result.Message, LogLevel.Success);
+                    AppendLog(force
+                        ? UiStrings.T("RunStartForceRegister")
+                        : UiStrings.T("RunStart"));
+                    RenewEngine.Log(force ? "Run start (force Register)" : "Run start");
+                }
+                if (allowRegister && !string.IsNullOrEmpty(password))
+                    AppendLog("Register password length=" + password.Length, LogLevel.Info, true);
+
+                RenewResult result = null;
+                try
+                {
+                    var allow = allowRegister;
+                    var forceCapture = force;
+                    var passCapture = password;
+                    var ct = _renewCts != null ? _renewCts.Token : CancellationToken.None;
+                    result = await Task.Run(() => RenewEngine.Run(settings, forceCapture, passCapture, allow, ct), ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    result = new RenewResult { Ok = false, Message = "Cancelled" };
+                }
+                catch (Exception ex)
+                {
+                    result = new RenewResult { Ok = false, Message = ex.Message };
+                }
+
+                RenewEngine.Log(result.Message);
+
+                // Rare password change on another site: pull Firebase once (also when already in cooldown/block).
+                if (result != null
+                    && IsFirebasePushActive()
+                    && (!allowRegister
+                        || (result.Ok && result.RegisterAuthRejected)
+                        || (!result.Ok && LooksLikeAuthFailure(result.Message ?? ""))))
+                {
+                    var emailTry = settings != null ? (settings.Email ?? "") : (_settings != null ? (_settings.Email ?? "") : "");
+                    var passTry = password ?? "";
+                    if (string.IsNullOrEmpty(passTry) && _settings != null)
+                    {
+                        try { passTry = _settings.GetPassword() ?? ""; }
+                        catch { passTry = ""; }
+                    }
+                    try
+                    {
+                        if (await TryPullNewerPeerCredsOnAuthFailAsync(emailTry, passTry).ConfigureAwait(true))
+                        {
+                            result = new RenewResult
+                            {
+                                Ok = true,
+                                RegisterAttempted = true,
+                                RegisterAuthRejected = false,
+                                SkippedRegister = false,
+                                Message = "OK (Firebase credentials applied)"
+                            };
+                            try { password = _settings != null ? (_settings.GetPassword() ?? password) : password; }
+                            catch { }
+                        }
+                    }
+                    catch { }
+                }
+
+                // Suppress intermediate Error/Warning balloons while a key 403 remediation is pending;
+                // final tip is decided after RetryBmwUploadAfter403Async.
+                var suppressAuthBalloons = !string.IsNullOrEmpty(_pending403RetryVin);
+                if (result.Ok)
+                {
+                    if (result.RegisterAuthRejected)
+                    {
+                        AppendLog(result.Message, LogLevel.Error);
+                        if (!suppressAuthBalloons)
+                            ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(result.Message));
+                    }
+                    else
+                    {
+                        AppendLog("OK: " + result.Message, LogLevel.Success);
+                        if (!suppressAuthBalloons)
+                            ShowBalloon(WinForms.ToolTipIcon.Info, TruncateBalloon(result.Message));
+                    }
+                    // Reload settings so LastTokenExpiresInSeconds / LastSuccessUtc from engine persist
+                    var cooldownUntil = _settings != null ? _settings.AuthCooldownUntilUtc : null;
+                    var registerBlocked = _settings != null && _settings.AuthRegisterBlocked;
+                    _settings = AppSettings.Load();
+                    // Keep the password we just registered if Load somehow misses it.
+                    if (!string.IsNullOrEmpty(password))
+                        _settings.SetPassword(password);
+                    // Preserve in-memory cooldown / block across Load unless cleared below.
+                    if (cooldownUntil.HasValue)
+                        _settings.AuthCooldownUntilUtc = cooldownUntil;
+                    _settings.AuthRegisterBlocked = registerBlocked;
+                    if (result.RegisterAuthRejected)
+                        _settings.AuthRegisterBlocked = true;
+                    else if (!result.SkippedRegister && !lockRegisterAfter)
+                    {
+                        _settings.AuthCooldownUntilUtc = null;
+                        _settings.AuthRegisterBlocked = false;
+                    }
+                    _settings.ConsecutiveFailures = 0;
+                    _settings.Save();
+                    ClearFailureAlert();
+                    _retrySchedule = false;
+                    ScheduleNext(true);
+                    UpdateTokenAgeText();
+                    if (result.RegisterAuthRejected)
+                    {
+                        SetTokenFooter(false);
+                    }
+                    else
+                    {
+                        _aosBmw403Fail = false;
+                        SetTokenFooter(true);
+                    }
+                    if (startTimerOnSuccess && !_timerActive)
+                        StartTimer(true, false);
+                    MaybePublishPeerCredentialsAfterLocalRegister(result, settings != null ? settings.Email : null, password);
+                }
+                else
+                {
+                    AppendLog("FAIL: " + result.Message, LogLevel.Error);
                     if (!suppressAuthBalloons)
-                        ShowBalloon(WinForms.ToolTipIcon.Info, TruncateBalloon(result.Message));
-                }
-                // Reload settings so LastTokenExpiresInSeconds / LastSuccessUtc from engine persist
-                var cooldownUntil = _settings != null ? _settings.AuthCooldownUntilUtc : null;
-                var registerBlocked = _settings != null && _settings.AuthRegisterBlocked;
-                _settings = AppSettings.Load();
-                // Keep the password we just registered if Load somehow misses it.
-                if (!string.IsNullOrEmpty(password))
-                    _settings.SetPassword(password);
-                // Preserve in-memory cooldown / block across Load unless cleared below.
-                if (cooldownUntil.HasValue)
-                    _settings.AuthCooldownUntilUtc = cooldownUntil;
-                _settings.AuthRegisterBlocked = registerBlocked;
-                if (result.RegisterAuthRejected)
-                    _settings.AuthRegisterBlocked = true;
-                else if (!result.SkippedRegister && !lockRegisterAfter)
-                {
-                    _settings.AuthCooldownUntilUtc = null;
-                    _settings.AuthRegisterBlocked = false;
-                }
-                _settings.ConsecutiveFailures = 0;
-                _settings.Save();
-                ClearFailureAlert();
-                _retrySchedule = false;
-                ScheduleNext(true);
-                UpdateTokenAgeText();
-                if (result.RegisterAuthRejected)
-                {
+                        MaybeAppendBrowserPasswordHint(result.Message);
+                    _settings.ConsecutiveFailures = _settings.ConsecutiveFailures + 1;
+                    _settings.LastMessage = result.Message;
+                    _settings.Save();
+                    ApplyFailureAlert(result.Message);
+                    if (!suppressAuthBalloons)
+                        ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(result.Message));
+                    var msg = result.Message ?? "";
+                    var skipBlockMsg = msg.IndexOf("Auth cooldown", StringComparison.OrdinalIgnoreCase) >= 0
+                        || msg.IndexOf("Auth register blocked", StringComparison.OrdinalIgnoreCase) >= 0
+                        || msg.IndexOf("Register blocked", StringComparison.OrdinalIgnoreCase) >= 0
+                        || msg.IndexOf("Health failed (no Register)", StringComparison.OrdinalIgnoreCase) >= 0
+                        || msg.IndexOf("Register skipped", StringComparison.OrdinalIgnoreCase) >= 0;
+                    // Failed Register → strike; block only at AuthRegisterBlockAfter threshold.
+                    if (result.RegisterAttempted && !skipBlockMsg)
+                    {
+                        bool shouldBlock;
+                        if (_registerStrikeNotedThisRun)
+                            shouldBlock = _settings.AuthRegisterStrikeCount >= GetAuthRegisterBlockAfter();
+                        else
+                            shouldBlock = NoteAuthRegisterStrike("Register failed");
+                        _registerStrikeNotedThisRun = false;
+                        if (shouldBlock)
+                            SetAuthRegisterBlocked(true);
+                    }
+                    if (LooksLikeAuthFailure(msg) && !skipBlockMsg)
+                        BeginAuthCooldown();
+                    // Retry schedule stays Health-only (timer never Registers).
+                    ScheduleRetryInOneHour();
                     SetTokenFooter(false);
                 }
-                else
-                {
-                    _aosBmw403Fail = false;
-                    SetTokenFooter(true);
-                }
-                if (startTimerOnSuccess && !_timerActive)
-                    StartTimer(true, false);
-                MaybePublishPeerCredentialsAfterLocalRegister(result, settings != null ? settings.Email : null, password);
+                if (lockRegisterAfter)
+                    SetAuthRegisterBlocked(true);
+                var retryVin = _pending403RetryVin;
+                var retryReader = _pending403RetryReaderId;
+                _pending403RetryVin = null;
+                _pending403RetryReaderId = null;
+                _registerStrikeNotedThisRun = false;
+                if (!string.IsNullOrEmpty(retryVin))
+                    Forget(RetryBmwUploadAfter403Async(retryVin, retryReader), "RetryBmwUploadAfter403");
+                RefreshPasswordHintBanners(false);
+                RefreshStatusBadge();
             }
-            else
+            finally
             {
-                AppendLog("FAIL: " + result.Message, LogLevel.Error);
-                if (!suppressAuthBalloons)
-                    MaybeAppendBrowserPasswordHint(result.Message);
-                _settings.ConsecutiveFailures = _settings.ConsecutiveFailures + 1;
-                _settings.LastMessage = result.Message;
-                _settings.Save();
-                ApplyFailureAlert(result.Message);
-                if (!suppressAuthBalloons)
-                    ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(result.Message));
-                var msg = result.Message ?? "";
-                var skipBlockMsg = msg.IndexOf("Auth cooldown", StringComparison.OrdinalIgnoreCase) >= 0
-                    || msg.IndexOf("Auth register blocked", StringComparison.OrdinalIgnoreCase) >= 0
-                    || msg.IndexOf("Register blocked", StringComparison.OrdinalIgnoreCase) >= 0
-                    || msg.IndexOf("Health failed (no Register)", StringComparison.OrdinalIgnoreCase) >= 0
-                    || msg.IndexOf("Register skipped", StringComparison.OrdinalIgnoreCase) >= 0;
-                // Failed Register → strike; block only at AuthRegisterBlockAfter threshold.
-                if (result.RegisterAttempted && !skipBlockMsg)
-                {
-                    bool shouldBlock;
-                    if (_registerStrikeNotedThisRun)
-                        shouldBlock = _settings.AuthRegisterStrikeCount >= GetAuthRegisterBlockAfter();
-                    else
-                        shouldBlock = NoteAuthRegisterStrike("Register failed");
-                    _registerStrikeNotedThisRun = false;
-                    if (shouldBlock)
-                        SetAuthRegisterBlocked(true);
-                }
-                if (LooksLikeAuthFailure(msg) && !skipBlockMsg)
-                    BeginAuthCooldown();
-                // Retry schedule stays Health-only (timer never Registers).
-                ScheduleRetryInOneHour();
-                SetTokenFooter(false);
+                SetBusy(false);
+                DrainPendingForceRegister();
             }
-            if (lockRegisterAfter)
-                SetAuthRegisterBlocked(true);
-            var retryVin = _pending403RetryVin;
-            var retryReader = _pending403RetryReaderId;
-            _pending403RetryVin = null;
-            _pending403RetryReaderId = null;
-            _registerStrikeNotedThisRun = false;
-            if (!string.IsNullOrEmpty(retryVin))
-                Forget(RetryBmwUploadAfter403Async(retryVin, retryReader), "RetryBmwUploadAfter403");
-            RefreshPasswordHintBanners(false);
-            RefreshStatusBadge();
-            SetBusy(false);
-            DrainPendingForceRegister();
         }
 
         private void DrainPendingForceRegister()
         {
-            if (string.IsNullOrEmpty(_pendingForcePassword) && !_pendingForceRegister)
+            PendingRenewWork work;
+            if (!_renewQueue.TryDequeue(out work) || work == null)
                 return;
-            var pass = _pendingForcePassword;
-            var startTimer = _pendingStartTimerOnSuccess;
-            var ignoreGuards = _pendingIgnoreAuthGuards;
-            var lockAfter = _pendingLockRegisterAfter;
-            _pendingForcePassword = null;
-            _pendingForceRegister = false;
-            _pendingIgnoreAuthGuards = false;
-            _pendingLockRegisterAfter = false;
-            _pendingStartTimerOnSuccess = false;
+            var pass = work.Password;
+            var startTimer = work.StartTimerOnSuccess;
+            var ignoreGuards = work.IgnoreAuthGuards;
+            var lockAfter = work.LockRegisterAfter;
+            // Promote parked 403 VIN onto the run that is about to execute.
+            if (!string.IsNullOrEmpty(work.Retry403Vin))
+            {
+                _pending403RetryVin = work.Retry403Vin;
+                _pending403RetryReaderId = work.Retry403ReaderId;
+            }
             if (string.IsNullOrEmpty(pass) && !ignoreGuards)
                 return;
             if (!ignoreGuards && IsAuthCooldownActive())
@@ -1939,7 +1949,7 @@ namespace KaiAosRenew
                     ? "Running queued 403 Register (then block)..."
                     : "Running queued Force Register (bypass)...")
                 : "Running queued force Register...", LogLevel.Info);
-            RunNowAsync(startTimer, true, pass, ignoreGuards, lockAfter);
+            Forget(RunNowAsync(startTimer, true, pass, ignoreGuards, lockAfter), "DrainPendingForceRegister");
         }
 
         private static bool LooksLikeAuthFailure(string message)
@@ -1988,133 +1998,148 @@ namespace KaiAosRenew
             catch { }
         }
 
-        private async void RunAutoHealthWithLimitedRegister()
+        private async Task RunAutoHealthWithLimitedRegister()
         {
             if (_busy) return;
             if (!ValidateAosCredentials(false)) return;
             SetBusy(true);
-            SaveFromUi(false);
-            AppendLog(UiStrings.T("HealthOnly"), true);
-            var settings = _settings;
-            RenewResult result = null;
+            var needAutoRegister = false;
             try
             {
-                result = await Task.Run(() => RenewEngine.HealthOnly(settings));
-            }
-            catch (Exception ex)
-            {
-                result = new RenewResult { Ok = false, Message = ex.Message };
-            }
-            RenewEngine.Log(result.Message);
-            if (result.Ok)
-            {
-                AppendLog("OK: " + result.Message, LogLevel.Verbose, true);
-                if (settings.LastTokenExpiresInSeconds > 0)
+                SaveFromUi(false);
+                AppendLog(UiStrings.T("HealthOnly"), true);
+                var settings = _settings;
+                RenewResult result = null;
+                try
                 {
-                    _settings.LastTokenExpiresInSeconds = settings.LastTokenExpiresInSeconds;
-                    _settings.Save();
+                    result = await Task.Run(() => RenewEngine.HealthOnly(settings));
                 }
-                UpdateTokenAgeText();
-                SetTokenFooter(true);
-                if (_timerActive)
-                    _nextHealthUtc = DateTime.UtcNow.AddHours(1);
-                ApplyPreventiveRenewClamp();
-                UpdateNextLabel();
-                UpdateTrayTooltip();
-                ClearFailureAlert();
-                RefreshStatusBadge();
-                SetBusy(false);
-                return;
-            }
-
-            AppendLog("FAIL: " + result.Message, LogLevel.Error);
-            if (LooksLikeAuthFailure(result.Message))
-                TrySilentBrowserPassRefresh(true);
-            ApplyFailureAlert(result.Message);
-            SetTokenFooter(false);
-
-            if (IsAuthRegisterBlocked())
-            {
-                AppendLog(UiStrings.T("AuthRegisterBlockedHealthOnly"), LogLevel.Info);
-                RefreshStatusBadge();
-                SetBusy(false);
-                return;
-            }
-
-            if (_settings.LastAutoRegisterUtc.HasValue
-                && (DateTime.UtcNow - _settings.LastAutoRegisterUtc.Value).TotalHours < AutoRegisterMinHours)
-            {
-                var next = _settings.LastAutoRegisterUtc.Value.AddHours(AutoRegisterMinHours).ToLocalTime().ToString("g");
-                AppendLog("Auto Register skipped (max 1 per 12h). Next allowed after " + next + ".", LogLevel.Info);
-                RefreshStatusBadge();
-                SetBusy(false);
-                return;
-            }
-
-            _settings.LastAutoRegisterUtc = DateTime.UtcNow;
-            try { _settings.Save(); }
-            catch { }
-            AppendLog("Health failed — auto Register (max 1 per 12h)...", LogLevel.Info);
-            RefreshStatusBadge();
-            SetBusy(false);
-            // forceRegister=false: engine Registers because Health already failed.
-            RunNowAsync(false, false);
-        }
-
-        private async void RunHealthOnlyAsync(bool interactive = true)
-        {
-            if (_busy) return;
-            if (!ValidateAosCredentials(interactive)) return;
-            SetBusy(true);
-            SaveFromUi(false);
-            AppendLog(UiStrings.T("HealthOnly"), !interactive);
-            var settings = _settings;
-            RenewResult result = null;
-            try
-            {
-                result = await Task.Run(() => RenewEngine.HealthOnly(settings));
-            }
-            catch (Exception ex)
-            {
-                result = new RenewResult { Ok = false, Message = ex.Message };
-            }
-            RenewEngine.Log(result.Message);
-            if (result.Ok)
-            {
-                if (interactive)
+                catch (Exception ex)
                 {
-                    AppendLog("OK: " + result.Message, LogLevel.Success);
-                    ShowBalloon(WinForms.ToolTipIcon.Info, TruncateBalloon(result.Message));
-                    ClearFailureAlert();
+                    result = new RenewResult { Ok = false, Message = ex.Message };
                 }
-                else
+                RenewEngine.Log(result.Message);
+                if (result.Ok)
                 {
                     AppendLog("OK: " + result.Message, LogLevel.Verbose, true);
+                    if (settings.LastTokenExpiresInSeconds > 0)
+                    {
+                        _settings.LastTokenExpiresInSeconds = settings.LastTokenExpiresInSeconds;
+                        _settings.Save();
+                    }
+                    UpdateTokenAgeText();
+                    _aosBmw403Fail = false;
+                    SetTokenFooter(true);
+                    if (_timerActive)
+                        _nextHealthUtc = DateTime.UtcNow.AddHours(1);
+                    ApplyPreventiveRenewClamp();
+                    UpdateNextLabel();
+                    UpdateTrayTooltip();
+                    ClearFailureAlert();
+                    RefreshStatusBadge();
+                    return;
                 }
-                if (settings.LastTokenExpiresInSeconds > 0)
-                {
-                    _settings.LastTokenExpiresInSeconds = settings.LastTokenExpiresInSeconds;
-                    _settings.Save();
-                }
-                UpdateTokenAgeText();
-                SetTokenFooter(true);
-                if (_timerActive)
-                    _nextHealthUtc = DateTime.UtcNow.AddHours(1);
-                ApplyPreventiveRenewClamp();
-                UpdateNextLabel();
-                UpdateTrayTooltip();
-            }
-            else
-            {
+
                 AppendLog("FAIL: " + result.Message, LogLevel.Error);
                 if (LooksLikeAuthFailure(result.Message))
                     TrySilentBrowserPassRefresh(true);
                 ApplyFailureAlert(result.Message);
-                ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(result.Message));
                 SetTokenFooter(false);
+
+                if (IsAuthRegisterBlocked())
+                {
+                    AppendLog(UiStrings.T("AuthRegisterBlockedHealthOnly"), LogLevel.Info);
+                    RefreshStatusBadge();
+                    return;
+                }
+
+                if (_settings.LastAutoRegisterUtc.HasValue
+                    && (DateTime.UtcNow - _settings.LastAutoRegisterUtc.Value).TotalHours < AutoRegisterMinHours)
+                {
+                    var next = _settings.LastAutoRegisterUtc.Value.AddHours(AutoRegisterMinHours).ToLocalTime().ToString("g");
+                    AppendLog("Auto Register skipped (max 1 per 12h). Next allowed after " + next + ".", LogLevel.Info);
+                    RefreshStatusBadge();
+                    return;
+                }
+
+                _settings.LastAutoRegisterUtc = DateTime.UtcNow;
+                try { _settings.Save(); }
+                catch { }
+                AppendLog("Health failed — auto Register (max 1 per 12h)...", LogLevel.Info);
+                RefreshStatusBadge();
+                needAutoRegister = true;
             }
-            RefreshStatusBadge();
-            SetBusy(false);
+            finally
+            {
+                SetBusy(false);
+            }
+            // forceRegister=false: engine Registers because Health already failed.
+            if (needAutoRegister)
+                Forget(RunNowAsync(false, false), "AutoRegisterAfterHealthFail");
+        }
+
+        private async Task RunHealthOnlyAsync(bool interactive = true)
+        {
+            if (_busy) return;
+            if (!ValidateAosCredentials(interactive)) return;
+            SetBusy(true);
+            try
+            {
+                SaveFromUi(false);
+                AppendLog(UiStrings.T("HealthOnly"), !interactive);
+                var settings = _settings;
+                RenewResult result = null;
+                try
+                {
+                    result = await Task.Run(() => RenewEngine.HealthOnly(settings));
+                }
+                catch (Exception ex)
+                {
+                    result = new RenewResult { Ok = false, Message = ex.Message };
+                }
+                RenewEngine.Log(result.Message);
+                if (result.Ok)
+                {
+                    if (interactive)
+                    {
+                        AppendLog("OK: " + result.Message, LogLevel.Success);
+                        ShowBalloon(WinForms.ToolTipIcon.Info, TruncateBalloon(result.Message));
+                        ClearFailureAlert();
+                    }
+                    else
+                    {
+                        AppendLog("OK: " + result.Message, LogLevel.Verbose, true);
+                    }
+                    if (settings.LastTokenExpiresInSeconds > 0)
+                    {
+                        _settings.LastTokenExpiresInSeconds = settings.LastTokenExpiresInSeconds;
+                        _settings.Save();
+                    }
+                    UpdateTokenAgeText();
+                    _aosBmw403Fail = false;
+                    ClearFailureAlert();
+                    SetTokenFooter(true);
+                    if (_timerActive)
+                        _nextHealthUtc = DateTime.UtcNow.AddHours(1);
+                    ApplyPreventiveRenewClamp();
+                    UpdateNextLabel();
+                    UpdateTrayTooltip();
+                }
+                else
+                {
+                    AppendLog("FAIL: " + result.Message, LogLevel.Error);
+                    if (LooksLikeAuthFailure(result.Message))
+                        TrySilentBrowserPassRefresh(true);
+                    ApplyFailureAlert(result.Message);
+                    ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(result.Message));
+                    SetTokenFooter(false);
+                }
+                RefreshStatusBadge();
+            }
+            finally
+            {
+                SetBusy(false);
+            }
         }
 
         private void SendRegisterSyncTo(int clientId)
