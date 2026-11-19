@@ -69,6 +69,12 @@ namespace KaiAosNotifyClient
         private int _tabIndexBeforeAbout = -1;
         private string _keysFilter = "all";
         private string _keysSearchText = "";
+        /// <summary>Keys list sort column (time/vin/km/paint/upholstery/ilevel/reader/local/bmw/status); empty = server order.</summary>
+        private string _keysSortColumn = "";
+        private bool _keysSortAscending;
+        private string _keysHighlightAppliedFor = "";
+        private static readonly SolidColorBrush KeysSearchHitBrush =
+            new SolidColorBrush(Color.FromArgb(0xFF, 0xF9, 0xE2, 0xA8));
         private DispatcherTimer _keysSearchDebounceTimer;
         /// <summary>Older server-side matches for the current search (display only; not persisted).</summary>
         private List<ClientKeyRow> _keysSearchServerRows = new List<ClientKeyRow>();
@@ -117,6 +123,7 @@ namespace KaiAosNotifyClient
         private const string TestVinPlaceholder = "WBATESTVIN0000001";
         private const string BmwAosPortalUrl = "https://aos.bmwgroup.com/";
         private bool _loadingAosUi;
+        private int _aosPullCloudBusy;
         private bool _aosDirty;
         private bool _aosAwaitingAck;
         private bool _awaitingAosIntervalOnly;
@@ -255,13 +262,18 @@ namespace KaiAosNotifyClient
         {
             _settings = ClientSettings.Load();
             ClientUiStrings.SetLanguage(_settings.Language);
-            ClientThemeManager.SetModeProvider(() => _settings != null ? _settings.Theme : "system");
+            ThemeManager.Configure(ThemeManager.AppUserModelIdClient,
+                () => _settings != null ? _settings.Theme : "system");
             _loadingUi = true;
             InitializeComponent();
             // Apply theme after XAML load so a failed swap cannot blank the tree.
-            try { ClientThemeManager.Apply(_settings.Theme); }
+            try { ThemeManager.Apply(_settings.Theme); }
             catch { }
             if (KeysCopyOkBrush.CanFreeze) KeysCopyOkBrush.Freeze();
+            if (KeysSearchHitBrush.CanFreeze) KeysSearchHitBrush.Freeze();
+            if (KeysEventsList != null)
+                KeysEventsList.AddHandler(GridViewColumnHeader.ClickEvent,
+                    new RoutedEventHandler(KeysColumnHeader_Click));
             _keysCopyFeedbackTimer.Interval = TimeSpan.FromMilliseconds(900);
             _keysCopyFeedbackTimer.Tick += KeysCopyFeedbackTimer_Tick;
             _aosAckTimer.Interval = TimeSpan.FromSeconds(10);
@@ -363,12 +375,33 @@ namespace KaiAosNotifyClient
             if (HostCombo == null) return;
             var text = GetHostText();
             HostCombo.Items.Clear();
+            // Favorites (★ alias — ip) first, then recent hosts that are not already favorites.
+            if (_settings.FavoriteHosts != null)
+            {
+                foreach (var f in _settings.FavoriteHosts)
+                {
+                    if (f == null || string.IsNullOrWhiteSpace(f.Host)) continue;
+                    HostCombo.Items.Add(new HostComboItem { Host = f.Host, Display = f.DisplayText });
+                }
+            }
             if (_settings.RecentHosts != null)
             {
                 foreach (var h in _settings.RecentHosts)
-                    HostCombo.Items.Add(h);
+                {
+                    if (_settings.FindFavoriteHost(h) != null) continue;
+                    HostCombo.Items.Add(new HostComboItem { Host = h, Display = h });
+                }
             }
             SetHostText(text);
+            UpdateFavHostButton();
+        }
+
+        /// <summary>HostCombo item: text box shows <see cref="Host"/>, dropdown shows <see cref="Display"/>.</summary>
+        private sealed class HostComboItem
+        {
+            public string Host { get; set; }
+            public string Display { get; set; }
+            public override string ToString() { return Host ?? ""; }
         }
 
         private string GetHostText()
@@ -623,13 +656,13 @@ namespace KaiAosNotifyClient
             {
                 SetConnStatus(ClientUiStrings.T("BalloonWait"));
                 await Task.Delay(1000);
-                ToastWindow.ShowTip(ClientUiStrings.T("AppTitle"), ClientUiStrings.T("BalloonInfo"), "info", null, null, 4);
+                TrayTipWindow.ShowTip(ClientUiStrings.T("AppTitle"), ClientUiStrings.T("BalloonInfo"), "info", null, null, 4);
                 SetConnStatus(ClientUiStrings.T("BalloonInfo"));
                 await Task.Delay(4500);
-                ToastWindow.ShowTip(ClientUiStrings.T("AppTitle"), ClientUiStrings.T("BalloonWarning"), "warning", null, null, 4);
+                TrayTipWindow.ShowTip(ClientUiStrings.T("AppTitle"), ClientUiStrings.T("BalloonWarning"), "warning", null, null, 4);
                 SetConnStatus(ClientUiStrings.T("BalloonWarning"));
                 await Task.Delay(4500);
-                ToastWindow.ShowTip(ClientUiStrings.T("AppTitle"), ClientUiStrings.T("BalloonError"), "error", null, null, 4);
+                TrayTipWindow.ShowTip(ClientUiStrings.T("AppTitle"), ClientUiStrings.T("BalloonError"), "error", null, null, 4);
                 SetConnStatus(ClientUiStrings.T("BalloonError"));
                 await Task.Delay(4500);
                 SetConnStatus("");
@@ -756,8 +789,17 @@ namespace KaiAosNotifyClient
                     }
                 }
             }
-            if (leftServerSettings && _srvSettingsDirty)
-                DiscardUnsavedServerSettings();
+            if (leftServerSettings && _srvSettingsDirty && !TryResolveUnsavedServerSettings())
+            {
+                try
+                {
+                    _suppressTabChange = true;
+                    if (TabServerSettings != null)
+                        MainTabs.SelectedItem = TabServerSettings;
+                }
+                finally { _suppressTabChange = false; }
+                return;
+            }
 
             if (_aboutVisible && TabDummy != null && !TabDummy.IsSelected)
             {
@@ -932,8 +974,13 @@ namespace KaiAosNotifyClient
                     SetSrvSettingsStatus(string.Format(ClientUiStrings.T("SrvDownloadFail"), "bad payload"), false);
                     return;
                 }
-                foreach (var c in Path.GetInvalidFileNameChars())
-                    name = name.Replace(c, '_');
+                string badName;
+                name = SanitizeDownloadFileName(name, null, out badName);
+                if (name == null)
+                {
+                    ReportDownloadRejected(badName);
+                    return;
+                }
                 var dir = Path.Combine(ClientSettings.StoreDir, subFolder ?? "downloads");
                 Directory.CreateDirectory(dir);
                 var path = Path.Combine(dir, name);
@@ -957,13 +1004,31 @@ namespace KaiAosNotifyClient
                 var name = (parts[1] ?? "").Trim();
                 long total;
                 if (string.IsNullOrEmpty(id) || !long.TryParse(parts[2], out total) || total < 0) return;
-                foreach (var c in Path.GetInvalidFileNameChars())
-                    name = name.Replace(c, '_');
                 FolderZipTransfer old;
-                if (_folderZipTransfers.TryGetValue(id, out old) && old != null && old.Stream != null)
+                if (_folderZipTransfers.TryGetValue(id, out old))
                 {
-                    try { old.Stream.Dispose(); }
-                    catch { }
+                    _folderZipTransfers.Remove(id);
+                    if (old != null && old.Stream != null)
+                    {
+                        try { old.Stream.Dispose(); }
+                        catch { }
+                    }
+                }
+                // Validate size up front so a hostile/buggy server cannot make us buffer unbounded data in RAM.
+                if (total > MaxFolderZipBytes)
+                {
+                    ReportDownloadRejected("zip too large (" + total + " > " + MaxFolderZipBytes + " bytes)");
+                    return;
+                }
+                string badName;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    name = SanitizeDownloadFileName(name, "download.zip", out badName);
+                    if (name == null)
+                    {
+                        ReportDownloadRejected(badName);
+                        return;
+                    }
                 }
                 _folderZipTransfers[id] = new FolderZipTransfer
                 {
@@ -989,6 +1054,16 @@ namespace KaiAosNotifyClient
                 if (!_folderZipTransfers.TryGetValue(id, out t) || t == null || t.Stream == null) return;
                 if (seq != t.NextSeq) return;
                 var raw = Convert.FromBase64String(parts[2] ?? "");
+                // Enforce both the hard cap and the size announced in the start frame.
+                var limit = Math.Min(MaxFolderZipBytes, t.TotalBytes);
+                if (t.Stream.Length + raw.Length > limit)
+                {
+                    _folderZipTransfers.Remove(id);
+                    try { t.Stream.Dispose(); }
+                    catch { }
+                    ReportDownloadRejected("zip exceeds declared/allowed size");
+                    return;
+                }
                 t.Stream.Write(raw, 0, raw.Length);
                 t.NextSeq++;
             }
@@ -1011,8 +1086,13 @@ namespace KaiAosNotifyClient
                     var name = t.FileName ?? "download.zip";
                     if (parts.Length > 1 && !string.IsNullOrWhiteSpace(parts[1]))
                         name = parts[1].Trim();
-                    foreach (var c in Path.GetInvalidFileNameChars())
-                        name = name.Replace(c, '_');
+                    string badName;
+                    name = SanitizeDownloadFileName(name, "download.zip", out badName);
+                    if (name == null)
+                    {
+                        ReportDownloadRejected(badName);
+                        return;
+                    }
                     var dir = Path.Combine(ClientSettings.StoreDir, "downloads");
                     Directory.CreateDirectory(dir);
                     var path = Path.Combine(dir, name);
@@ -1030,6 +1110,59 @@ namespace KaiAosNotifyClient
                 SetSrvSettingsStatus(string.Format(ClientUiStrings.T("SrvDownloadFail"), ex.Message), false);
                 AppendActivityRow(null, "error", string.Format(ClientUiStrings.T("SrvDownloadFail"), ex.Message));
             }
+        }
+
+        private const long MaxFolderZipBytes = 25L * 1024 * 1024;
+
+        private static readonly string[] WindowsReservedNames =
+        {
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+        };
+
+        /// <summary>
+        /// Makes a server-supplied name safe to use as a file name under downloads\.
+        /// Returns null (and a reason in <paramref name="reason"/>) for ".." or Windows reserved device names.
+        /// Invalid characters (including path separators) are replaced with '_'.
+        /// </summary>
+        private static string SanitizeDownloadFileName(string name, string fallback, out string reason)
+        {
+            reason = null;
+            name = (name ?? "").Trim();
+            if (name.Contains(".."))
+            {
+                reason = "unsafe file name";
+                return null;
+            }
+            foreach (var c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+            name = name.Trim().TrimEnd('.', ' ');
+            if (name.Length == 0)
+            {
+                if (fallback != null) return fallback;
+                reason = "empty file name";
+                return null;
+            }
+            // Device names are reserved with or without an extension ("CON.zip").
+            var dot = name.IndexOf('.');
+            var stem = (dot >= 0 ? name.Substring(0, dot) : name).TrimEnd(' ');
+            foreach (var r in WindowsReservedNames)
+            {
+                if (string.Equals(stem, r, StringComparison.OrdinalIgnoreCase))
+                {
+                    reason = "reserved file name";
+                    return null;
+                }
+            }
+            return name;
+        }
+
+        private void ReportDownloadRejected(string reason)
+        {
+            var msg = string.Format(ClientUiStrings.T("SrvDownloadFail"), reason ?? "rejected");
+            SetSrvSettingsStatus(msg, false);
+            AppendActivityRow(null, "error", msg);
         }
 
         private void FinishBinaryDownload(string path)
@@ -1224,6 +1357,11 @@ namespace KaiAosNotifyClient
                 _offlineAlertShown = false;
 
             var kind = (msg.Kind ?? "").Trim().ToLowerInvariant();
+            if (kind == "discoverpong")
+            {
+                OnRttPong();
+                return;
+            }
             if (kind == "footer")
             {
                 ApplyServerFooter(msg.Text);
@@ -1236,12 +1374,6 @@ namespace KaiAosNotifyClient
                 string clientVer;
                 if (NotifyMessage.TryParseUpdateFeed(msg.Text, out serverVer, out clientVer))
                     ApplyCachedFeedVersions(serverVer, clientVer);
-                RefreshTrayStatus();
-                return;
-            }
-            if (kind == "peerstatussync")
-            {
-                ApplyPeerStatusSync(msg.Text);
                 RefreshTrayStatus();
                 return;
             }
@@ -1882,6 +2014,7 @@ namespace KaiAosNotifyClient
             {
                 _activitySearchDebounceTimer.Stop();
                 _activitySearchText = ActivitySearchBox != null ? (ActivitySearchBox.Text ?? "").Trim() : "";
+                SetSearchClearVisibility(ActivitySearchClearBtn, ActivitySearchBox);
                 if (_activityHistoryMode)
                     RequestActivityHistory();
                 else
@@ -1897,6 +2030,7 @@ namespace KaiAosNotifyClient
             {
                 _registerSearchDebounceTimer.Stop();
                 _registerSearchText = RegisterSearchBox != null ? (RegisterSearchBox.Text ?? "").Trim() : "";
+                SetSearchClearVisibility(RegisterSearchClearBtn, RegisterSearchBox);
                 if (_registerHistoryMode)
                     RequestRegisterHistory();
                 else
@@ -2271,7 +2405,7 @@ namespace KaiAosNotifyClient
                     if (TabActivity != null) TabActivity.IsSelected = true;
                 };
             }
-            ToastWindow.ShowTip(msg.Title, msg.Text, level, actionLabel, action, seconds, onBody);
+            TrayTipWindow.ShowTip(msg.Title, msg.Text, level, actionLabel, action, seconds, onBody);
         }
 
 
@@ -2324,7 +2458,7 @@ namespace KaiAosNotifyClient
             if ((DateTime.UtcNow - _lastHeardUtc).TotalMinutes <= mins) return;
             if (_offlineAlertShown) return;
             _offlineAlertShown = true;
-            ToastWindow.ShowTip(ClientUiStrings.T("AppTitle"), ClientUiStrings.T("ServerOffline"), "warning", null, null, 8);
+            TrayTipWindow.ShowTip(ClientUiStrings.T("AppTitle"), ClientUiStrings.T("ServerOffline"), "warning", null, null, 8);
             RefreshTrayStatus();
         }
 
@@ -2469,7 +2603,7 @@ namespace KaiAosNotifyClient
         private void ApplyServerFooter(string text)
         {
             var parts = (text ?? "").Split('\u001f');
-            ApplyFooterChrome(ClientThemeManager.IsNight || FooterPart(parts, 12) == "night");
+            ApplyFooterChrome(ThemeManager.IsNight || FooterPart(parts, 12) == "night");
             ApplyStatusMode(FooterPart(parts, 0), FooterPart(parts, 1));
             if (NextRunText != null) NextRunText.Text = FooterPart(parts, 2);
             if (TokenAgeText != null) TokenAgeText.Text = FooterPart(parts, 3);
@@ -2638,6 +2772,11 @@ namespace KaiAosNotifyClient
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             if (_exitRequested) return;
+            if (_srvSettingsDirty && !TryResolveUnsavedServerSettings())
+            {
+                e.Cancel = true;
+                return;
+            }
             CaptureConnectionFields();
             _settings.Save();
             if (_settings.MinimizeOnClose)
@@ -2663,8 +2802,60 @@ namespace KaiAosNotifyClient
             catch { }
             try { if (_statusTimer != null) _statusTimer.Stop(); }
             catch { }
-            try { _client.Dispose(); }
+            try { _aosAckTimer.Stop(); }
             catch { }
+            try { _authGuardsBlinkTimer.Stop(); }
+            catch { }
+            try { _servicesBlinkTimer.Stop(); }
+            catch { }
+            try { _registerAgeBlinkTimer.Stop(); }
+            catch { }
+            try { _alertBlinkTimer.Stop(); }
+            catch { }
+            try { _keysHighlightTimer.Stop(); }
+            catch { }
+            try { _kaiBusyTimer.Stop(); }
+            catch { }
+            try { _updatePeekTimer.Stop(); }
+            catch { }
+            try { _keysCopyFeedbackTimer.Stop(); }
+            catch { }
+            try { _clipboardWatchTimer.Stop(); }
+            catch { }
+            try { if (_logExportTimeoutTimer != null) _logExportTimeoutTimer.Stop(); }
+            catch { }
+            try { if (_keysSearchDebounceTimer != null) _keysSearchDebounceTimer.Stop(); }
+            catch { }
+            try { if (_activitySearchDebounceTimer != null) _activitySearchDebounceTimer.Stop(); }
+            catch { }
+            try { if (_registerSearchDebounceTimer != null) _registerSearchDebounceTimer.Stop(); }
+            catch { }
+            try
+            {
+                if (_client != null)
+                {
+                    _client.Status -= OnClientStatus;
+                    _client.Connected -= OnClientConnected;
+                    _client.Disconnected -= OnClientDisconnected;
+                    _client.MessageReceived -= OnMessageReceived;
+                    _client.AuthFailed -= OnClientAuthFailed;
+                    _client.Dispose();
+                }
+            }
+            catch { }
+            if (_folderZipTransfers != null)
+            {
+                foreach (var kv in _folderZipTransfers)
+                {
+                    try
+                    {
+                        if (kv.Value != null && kv.Value.Stream != null)
+                            kv.Value.Stream.Dispose();
+                    }
+                    catch { }
+                }
+                _folderZipTransfers.Clear();
+            }
             if (_tray != null)
             {
                 try { _tray.Visible = false; }
@@ -2690,6 +2881,14 @@ namespace KaiAosNotifyClient
 
         private void ExitApp()
         {
+            // Tray Exit runs on the WinForms thread — marshal so the unsaved dialog can show.
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(new Action(ExitApp));
+                return;
+            }
+            if (!_exitRequested && !TryResolveUnsavedServerSettings())
+                return;
             PrepareForRestart();
             Application.Current.Shutdown();
         }
@@ -2829,7 +3028,7 @@ namespace KaiAosNotifyClient
                 : "ondemand";
             map["firebasePushPollMinutes"] = SrvFirebasePushPollMinutesBox != null ? (SrvFirebasePushPollMinutesBox.Text ?? "360").Trim() : "360";
             map["firebasePushUrl"] = SrvFirebasePushUrlBox != null ? (SrvFirebasePushUrlBox.Text ?? "").Trim() : "";
-            map["firebasePushSecret"] = SrvFirebasePushSecretBox != null ? (SrvFirebasePushSecretBox.Text ?? "").Trim() : "";
+            map["firebasePushSecret"] = GetSrvFirebaseSecretFromUi();
             map["firebasePushServerName"] = SrvFirebasePushServerNameBox != null ? (SrvFirebasePushServerNameBox.Text ?? "").Trim() : "";
             return map;
         }
@@ -2841,8 +3040,7 @@ namespace KaiAosNotifyClient
                 MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
             if (result != MessageBoxResult.Yes) return;
             var secret = NotifyPairing.GenerateCode() + NotifyPairing.GenerateCode();
-            if (SrvFirebasePushSecretBox != null)
-                SrvFirebasePushSecretBox.Text = secret;
+            SetSrvFirebaseSecretUi(secret);
             MarkSrvSettingsDirty(true);
             SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
         }
@@ -2876,7 +3074,7 @@ namespace KaiAosNotifyClient
         {
             try
             {
-                var secret = SrvFirebasePushSecretBox != null ? (SrvFirebasePushSecretBox.Text ?? "").Trim() : "";
+                var secret = GetSrvFirebaseSecretFromUi();
                 if (string.IsNullOrEmpty(secret)) return;
                 Clipboard.SetText(secret);
             }
@@ -2889,8 +3087,7 @@ namespace KaiAosNotifyClient
             {
                 var clip = Clipboard.GetText();
                 if (string.IsNullOrWhiteSpace(clip)) return;
-                if (SrvFirebasePushSecretBox != null)
-                    SrvFirebasePushSecretBox.Text = clip.Trim();
+                SetSrvFirebaseSecretUi(clip.Trim());
                 MarkSrvSettingsDirty(true);
                 SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
             }
@@ -2936,23 +3133,7 @@ namespace KaiAosNotifyClient
                 SrvFirebasePushStatusText.Text = ClientUiStrings.T("FirebasePushTest");
         }
 
-        private void ApplyPeerStatusSync(string text)
-        {
-            // Peer servers dashboard removed — ignore legacy peerStatusSync payloads.
-        }
-
-
-
-
-
-
-
-
-
-
-
-
-        private void ActivityList_SizeChanged(object sender, EventArgs e)
+private void ActivityList_SizeChanged(object sender, EventArgs e)
         {
             ResizeActivityMessageColumn();
         }

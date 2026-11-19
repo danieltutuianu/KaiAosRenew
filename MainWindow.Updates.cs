@@ -57,6 +57,7 @@ namespace KaiAosRenew
             if (btn == null) return;
             var ev = btn.DataContext as KeyActivityEvent;
             var tipText = UiStrings.T("KeysCopyVin");
+            System.Windows.Automation.AutomationProperties.SetName(btn, tipText);
             var tip = btn.ToolTip as ToolTip;
             if (tip != null)
             {
@@ -75,6 +76,7 @@ namespace KaiAosRenew
             if (btn == null) return;
             var ev = btn.DataContext as KeyActivityEvent;
             var tipText = UiStrings.T("KeysCopyKm");
+            System.Windows.Automation.AutomationProperties.SetName(btn, tipText);
             var tip = btn.ToolTip as ToolTip;
             if (tip != null)
             {
@@ -94,7 +96,7 @@ namespace KaiAosRenew
             ResetVinCopyIconFeedback();
             _keysCopyFeedbackBtn = btn;
             btn.Content = KeysCopyOkGlyph;
-            btn.Foreground = KeysCopyOkBrush;
+            btn.Foreground = StatusOk() ?? KeysCopyOkBrush;
             _keysCopyFeedbackTimer.Stop();
             _keysCopyFeedbackTimer.Start();
         }
@@ -131,6 +133,8 @@ namespace KaiAosRenew
                 ClearRegisterLogBtn.IsEnabled = _registerHistory != null && _registerHistory.Count > 0;
             if (KeysClearBtn != null)
                 KeysClearBtn.IsEnabled = _keysAllEvents != null && _keysAllEvents.Count > 0;
+            if (KeysExportBtn != null)
+                KeysExportBtn.IsEnabled = KeysEventsList != null && KeysEventsList.Items.Count > 0;
         }
 
         private static void UpdateNoMatchesHint(TextBlock hint, bool hasSourceItems, int visibleCount)
@@ -653,7 +657,7 @@ namespace KaiAosRenew
             if (connected)
             {
                 text = UiStrings.T("AosLoginConnected");
-                brush = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+                brush = StatusOk();
                 glyph = "\uE73E";
             }
             else
@@ -661,12 +665,12 @@ namespace KaiAosRenew
                 text = UiStrings.T("AosLoginNotConnected");
                 if (fail)
                 {
-                    brush = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                    brush = StatusErr();
                     glyph = "\uE711";
                 }
                 else
                 {
-                    brush = new SolidColorBrush(Color.FromRgb(0x8C, 0x8C, 0x8C));
+                    brush = StatusStopped();
                     glyph = "\uE711";
                 }
             }
@@ -684,13 +688,11 @@ namespace KaiAosRenew
 
         private void UpdateAosDirtyStatus()
         {
+            if (_aosPullCloudBusy != 0) return;
             if (AosDirtyStatus != null)
             {
                 AosDirtyStatus.Text = _aosCredentialsDirty ? UiStrings.T("AosSyncDirty") : "";
-                AosDirtyStatus.Foreground = _aosCredentialsDirty
-                    ? new SolidColorBrush(Color.FromRgb(0xB2, 0x6A, 0x00))
-                    : (TryFindResource("TextMutedBrush") as Brush
-                       ?? new SolidColorBrush(Color.FromRgb(0x8C, 0x8C, 0x8C)));
+                AosDirtyStatus.Foreground = _aosCredentialsDirty ? StatusWarn() : TextMuted();
             }
             if (AosDirtyPendingMark != null)
                 AosDirtyPendingMark.Visibility = _aosCredentialsDirty ? Visibility.Visible : Visibility.Collapsed;
@@ -742,12 +744,9 @@ namespace KaiAosRenew
             if (AuthGuardsFooterText == null) return;
             AuthGuardsFooterText.Inlines.Clear();
 
-            var warn = new SolidColorBrush(Color.FromRgb(0xB2, 0x6A, 0x00));
-            var err = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
-            var ok = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
-            if (warn.CanFreeze) warn.Freeze();
-            if (err.CanFreeze) err.Freeze();
-            if (ok.CanFreeze) ok.Freeze();
+            var warn = StatusWarn();
+            var err = StatusErr();
+            var ok = StatusOk();
 
             string cooldownLabel;
             Brush cooldownBrush;
@@ -767,8 +766,7 @@ namespace KaiAosRenew
             string blockedLabel = blocked ? UiStrings.T("FooterBlockedOn") : UiStrings.T("FooterBlockedOff");
             Brush blockedBrush = blocked ? err : ok;
 
-            var muted = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
-            if (muted.CanFreeze) muted.Freeze();
+            var muted = TextMuted();
             AuthGuardsFooterText.Inlines.Add(new Run(cooldownLabel) { Foreground = cooldownBrush });
             AuthGuardsFooterText.Inlines.Add(new Run("  ·  ") { Foreground = muted });
             AuthGuardsFooterText.Inlines.Add(new Run(blockedLabel) { Foreground = blockedBrush });

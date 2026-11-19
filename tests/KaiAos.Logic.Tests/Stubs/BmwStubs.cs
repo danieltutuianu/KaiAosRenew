@@ -84,10 +84,10 @@ namespace BMW.ISPI.KAI.Decentral.KaiAdminLibData.KaiZentral
     }
 }
 
-namespace KaiAosNotifyClient
+namespace KaiAosRenew
 {
-    /// <summary>Stub: ClientSettings.Normalize calls this without WPF ThemeManager.</summary>
-    internal static class ClientThemeManager
+    /// <summary>Stub: ClientSettings.Normalize / AppSettings without WPF ThemeManager.</summary>
+    internal static class ThemeManager
     {
         public static string NormalizeMode(string mode)
         {

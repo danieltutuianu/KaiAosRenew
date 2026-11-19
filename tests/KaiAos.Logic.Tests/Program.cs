@@ -41,6 +41,8 @@ namespace KaiAos.Logic.Tests
             Run("KeySync + ClientKeyHistory + ActivityFilter", TestKeySyncHistoryAndActivityFilter);
             Run("KeyActivityMonitor dedupe/stall/search/403", TestKeyActivityMonitorDedupeStallSearch);
             Run("KeyReaderLogTailer EOF seeding", TestKeyReaderLogTailerEof);
+            Run("KeysExportLogic sort/csv", TestKeysExportLogic);
+            Run("DiagBundleLogic redact/health", TestDiagBundleAndHealthAlert);
 
             Console.WriteLine();
             if (_failed == 0)
@@ -240,48 +242,6 @@ namespace KaiAos.Logic.Tests
             AssertTrue(!PeerSyncLogic.ShouldProcessInboundCreds(ev, "peer-1", 2, "old"), "skip own");
             AssertTrue(!PeerSyncLogic.ShouldProcessInboundCreds(ev, "local-1", 3, "old"), "skip old seq");
             AssertTrue(!PeerSyncLogic.ShouldProcessInboundCreds(ev, "local-1", 2, "evt1"), "skip dup");
-
-            var ack = new PeerAckEvent
-            {
-                AckSeq = 9,
-                TargetServerId = "local-1",
-                PayloadEnc = "blob"
-            };
-            AssertTrue(PeerSyncLogic.ShouldProcessInboundAck(ack, "local-1", 8), "ack process");
-            AssertTrue(!PeerSyncLogic.ShouldProcessInboundAck(ack, "other", 8), "ack wrong target");
-            AssertTrue(!PeerSyncLogic.ShouldProcessInboundAck(ack, "local-1", 9), "ack old");
-
-            var cmd = new PeerCommandEvent
-            {
-                CmdSeq = 4,
-                CmdId = "c1",
-                OriginServerId = "peer-1",
-                PayloadEnc = "blob"
-            };
-            AssertTrue(PeerSyncLogic.ShouldProcessInboundCommand(cmd, "local-1", 3, "old"), "cmd process");
-            AssertTrue(!PeerSyncLogic.ShouldProcessInboundCommand(cmd, "peer-1", 3, "old"), "cmd skip own");
-            AssertTrue(!PeerSyncLogic.ShouldProcessInboundCommand(cmd, "local-1", 4, "old"), "cmd skip old");
-            AssertTrue(!PeerSyncLogic.ShouldProcessInboundCommand(cmd, "local-1", 3, "c1"), "cmd skip dup");
-
-            var now = DateTime.UtcNow;
-            AssertEqual(PeerSyncLogic.HealthOnline,
-                PeerSyncLogic.ClassifyPeerHealth(now.ToString("o"), 60, now), "health online");
-            AssertEqual(PeerSyncLogic.HealthStale,
-                PeerSyncLogic.ClassifyPeerHealth(now.AddHours(-3).ToString("o"), 60, now), "health stale");
-            AssertEqual(PeerSyncLogic.HealthOffline,
-                PeerSyncLogic.ClassifyPeerHealth(now.AddDays(-2).ToString("o"), 60, now), "health offline");
-            AssertEqual(PeerSyncLogic.HealthOffline,
-                PeerSyncLogic.ClassifyPeerHealth("", 60, now), "health empty");
-
-            var wire = new List<PeerDashboardWire>
-            {
-                new PeerDashboardWire { ServerId = "a", ServerName = "Alpha", Health = "Online", TokenStatus = "OK" }
-            };
-            var enc = PeerDashboardWire.Encode(wire);
-            var parsed = PeerDashboardWire.Parse(enc);
-            AssertEqual(1, parsed.Count, "wire count");
-            AssertEqual("Alpha", parsed[0].ServerName, "wire name");
-            AssertEqual("Online", parsed[0].Health, "wire health");
         }
 
         private static void TestFirebaseParse()
@@ -313,32 +273,15 @@ namespace KaiAos.Logic.Tests
     ""originName"": ""A"", ""createdUtc"": ""2020-01-01T00:00:00Z"",
     ""payloadEnc"": ""blob""
   },
-  ""latestCommand"": {
-    ""cmdSeq"": 3, ""cmdId"": ""c1"", ""type"": ""updateAll"",
-    ""originServerId"": ""s1"", ""originName"": ""A"",
-    ""createdUtc"": ""2020-01-01T00:00:00Z"", ""payloadEnc"": ""cmdblob""
-  },
-  ""acks"": {
-    ""a1"": {
-      ""ackSeq"": 1, ""ackId"": ""a1"", ""targetServerId"": ""local"",
-      ""forEventId"": ""e0"", ""responderServerId"": ""s2"",
-      ""responderName"": ""B"", ""createdUtc"": ""2020-01-01T00:00:00Z"",
-      ""payloadEnc"": ""ackblob""
-    }
-  },
   ""peers"": {
     ""s1"": { ""serverId"": ""s1"", ""lastSeenUtc"": ""2020-01-01T00:00:00Z"", ""statusEnc"": ""st"" }
   }
 }";
             var snap = PeerSyncFirebaseParse.ParseRootJson(json);
             AssertEqual(2, (int)snap.Seq, "snap seq");
-            AssertEqual(1, (int)snap.AckSeq, "snap ackSeq");
-            AssertEqual(3, (int)snap.CmdSeq, "snap cmdSeq");
-            AssertEqual(4, (int)snap.PeersSeq, "snap peersSeq");
             AssertTrue(snap.LatestCreds != null && snap.LatestCreds.EventId == "e1", "snap creds");
-            AssertTrue(snap.LatestCommand != null && snap.LatestCommand.CmdId == "c1", "snap cmd");
-            AssertEqual(1, snap.Acks.Count, "snap acks");
-            AssertEqual(1, snap.Peers.Count, "snap peers");
+            // Legacy peers/acks/command nodes are ignored — only latestCreds is read.
+            AssertTrue(snap.LatestCreds.OriginServerId == "s1", "snap origin");
 
             string path;
             Newtonsoft.Json.Linq.JToken data;
@@ -518,7 +461,10 @@ namespace KaiAos.Logic.Tests
                 AssertEqual("tech@example.com", loaded.Email, "loaded email");
                 AssertEqual("Secret!123", loaded.GetPassword(), "loaded dpapi password");
                 AssertEqual("FbSec!456", loaded.GetFirebasePushSecret(), "loaded dpapi secret");
-                AssertEqual("PAIR12", loaded.NotifyPairingCode, "pairing trimmed");
+                AssertEqual("PAIR12", loaded.GetNotifyPairingCode(), "pairing trimmed (DPAPI)");
+                AssertEqual("", loaded.NotifyPairingCode ?? "", "legacy plaintext pairing cleared");
+                AssertTrue(File.ReadAllText(AppSettings.SettingsPath).IndexOf("PAIR12", StringComparison.Ordinal) < 0,
+                    "pairing code must not be plaintext in settings.xml");
                 AssertEqual(10, loaded.AuthRegisterBlockAfter, "blockAfter clamped");
 
                 // 2) Second Save creates .bak; corrupting primary recovers from .bak and repairs primary.
@@ -1260,6 +1206,76 @@ namespace KaiAos.Logic.Tests
                 SafeDeleteDir(tmpStore);
                 SafeDeleteDir(tmpConfig);
             }
+        }
+
+        private static void TestKeysExportLogic()
+        {
+            var rows = new List<KeysRowView>
+            {
+                new KeysRowView
+                {
+                    Time = new DateTime(2026, 11, 19, 10, 0, 0),
+                    Vin = "WBA2", Km = 100, Paint = "P1", Upholstery = "U1",
+                    ILevel = "I001", Reader = "R1", Local = "OK", Bmw = "OK",
+                    Status = "OK", StatusRank = 3, Detail = "Uploaded"
+                },
+                new KeysRowView
+                {
+                    Time = new DateTime(2026, 11, 19, 12, 0, 0),
+                    Vin = "WBA1", Km = 50, Paint = "P2", Upholstery = "U2",
+                    ILevel = "I002", Reader = "R2", Local = "OK", Bmw = "FAIL",
+                    Status = "Failed", StatusRank = 4, Detail = "403"
+                }
+            };
+            var sorted = KeysExportLogic.Sort(rows, "vin", true, r => r);
+            AssertEqual("WBA1", sorted[0].Vin, "vin asc first");
+            AssertEqual("WBA2", sorted[1].Vin, "vin asc second");
+
+            var csv = KeysExportLogic.Build(rows, "out.csv");
+            AssertTrue(csv.IndexOf("VIN", StringComparison.Ordinal) >= 0, "csv has VIN header");
+            AssertTrue(csv.IndexOf("WBA1", StringComparison.Ordinal) >= 0, "csv has WBA1");
+            AssertTrue(KeysExportLogic.IsSortableColumn("time"), "time sortable");
+            AssertTrue(!KeysExportLogic.IsSortableColumn("detail"), "detail not sortable");
+            AssertTrue(!KeysExportLogic.DefaultAscending("time"), "time default desc");
+            AssertTrue(KeysExportLogic.DefaultAscending("vin"), "vin default asc");
+        }
+
+        private static void TestDiagBundleAndHealthAlert()
+        {
+            AssertTrue(DiagBundleLogic.IsSecretElementName("PasswordProtectedBase64"), "password secret");
+            AssertTrue(DiagBundleLogic.IsSecretElementName("NotifyPairingCode"), "pairing secret");
+            AssertTrue(DiagBundleLogic.IsSecretElementName("FirebasePushSecretProtectedBase64"), "firebase secret");
+            AssertEqual("a***@example.com", DiagBundleLogic.MaskEmail("alice@example.com"), "mask email");
+            AssertEqual("https://x.firebasedatabase.app",
+                DiagBundleLogic.StripUrlSecrets("https://x.firebasedatabase.app?auth=secret"), "strip url");
+
+            var xml = "<?xml version=\"1.0\"?><AppSettings><Email>bob@bmw.com</Email>"
+                + "<PasswordProtectedBase64>SECRETBLOB</PasswordProtectedBase64>"
+                + "<NotifyPairingCode>PLAIN</NotifyPairingCode>"
+                + "<FirebasePushUrl>https://db.firebasedatabase.app?auth=tok</FirebasePushUrl>"
+                + "</AppSettings>";
+            var redacted = DiagBundleLogic.RedactSettingsXml(xml);
+            AssertTrue(redacted.IndexOf("SECRETBLOB", StringComparison.Ordinal) < 0, "password scrubbed");
+            AssertTrue(redacted.IndexOf("PLAIN", StringComparison.Ordinal) < 0, "pairing scrubbed");
+            AssertTrue(redacted.IndexOf("b***@bmw.com", StringComparison.Ordinal) >= 0, "email masked");
+            AssertTrue(redacted.IndexOf("auth=tok", StringComparison.Ordinal) < 0, "url secret scrubbed");
+            AssertTrue(redacted.IndexOf(DiagBundleLogic.Redacted, StringComparison.Ordinal) >= 0, "has ***");
+
+            var now = new DateTime(2026, 11, 19, 12, 0, 0, DateTimeKind.Utc);
+            AssertTrue(HealthAlertLogic.ShouldAlertTokenExpiry(
+                now, now.AddMinutes(10), 2, false, false, null,
+                HealthAlertLogic.TokenExpiryWindow, HealthAlertLogic.AlertThrottle),
+                "alert when token soon + failures");
+            AssertTrue(!HealthAlertLogic.ShouldAlertTokenExpiry(
+                now, now.AddHours(2), 2, false, false, null,
+                HealthAlertLogic.TokenExpiryWindow, HealthAlertLogic.AlertThrottle),
+                "no alert when token far");
+            AssertTrue(!HealthAlertLogic.ShouldAlertTokenExpiry(
+                now, now.AddMinutes(10), 0, false, false, null,
+                HealthAlertLogic.TokenExpiryWindow, HealthAlertLogic.AlertThrottle),
+                "no alert when not struggling");
+            AssertEqual("failures=2, cooldown",
+                HealthAlertLogic.DescribeReasons(2, true, false), "reasons text");
         }
     }
 }

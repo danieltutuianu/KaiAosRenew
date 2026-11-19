@@ -164,17 +164,6 @@ namespace KaiAosRenew
             catch { }
         }
 
-        private static string NormalizeClipboardPassword(string raw)
-        {
-            if (string.IsNullOrEmpty(raw)) return raw;
-            var s = raw.Trim().Trim('\0');
-            if (s.Length > 0 && s[0] == '\uFEFF')
-                s = s.Substring(1);
-            s = s.Replace("\u200B", "").Replace("\u200C", "").Replace("\u200D", "")
-                .Replace("\u00A0", " ").Trim();
-            return s;
-        }
-
         private void RunAosCmdFromClient(int clientId, string cmd)
         {
             var rawCmd = (cmd ?? "").Trim();
@@ -507,12 +496,10 @@ namespace KaiAosRenew
             var title = TrimLabelColon(UiStrings.T(showFail ? "RegisterFailAge" : "RegisterOkAge"));
             if (string.IsNullOrEmpty(title))
                 title = showFail ? "Register fail" : "Register OK";
-            var icon = showFail
-                ? WinForms.ToolTipIcon.Warning
-                : WinForms.ToolTipIcon.Info;
             AppendLog(title + " — " + DateTime.Now.ToString("g"),
                 showFail ? LogLevel.Warning : LogLevel.Info);
-            TrayBalloonWindow.ShowSticky(title, body, icon);
+            TrayTipWindow.ShowSticky(title, body,
+                showFail ? TrayTipLevel.Warning : TrayTipLevel.Info);
         }
 
         private void InitTokenFooterFromSettings()
@@ -945,6 +932,8 @@ namespace KaiAosRenew
             UpdateTokenFooterDisplay();
             RefreshAuthCooldownBanner();
             RefreshPasswordHintBanners(true);
+            MaybeAlertTokenExpiry();
+            MaybeAlertSqliteMissing();
             if (HasPasswordProblem())
                 TrySilentBrowserPassRefresh(false);
             if (_busy) return;
@@ -1128,12 +1117,12 @@ namespace KaiAosRenew
                 if (cooldown && untilLocal != null)
                 {
                     AuthCooldownStatusLine.Text = string.Format(UiStrings.T("AuthCooldownStatusActive"), untilLocal);
-                    AuthCooldownStatusLine.Foreground = new SolidColorBrush(Color.FromRgb(0xB2, 0x6A, 0x00));
+                    AuthCooldownStatusLine.Foreground = StatusWarn();
                 }
                 else
                 {
                     AuthCooldownStatusLine.Text = UiStrings.T("AuthCooldownStatusInactive");
-                    AuthCooldownStatusLine.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+                    AuthCooldownStatusLine.Foreground = StatusOk();
                 }
             }
             if (AuthRegisterBlockedStatusLine != null)
@@ -1141,12 +1130,12 @@ namespace KaiAosRenew
                 if (blocked)
                 {
                     AuthRegisterBlockedStatusLine.Text = UiStrings.T("AuthRegisterBlockedStatusActive");
-                    AuthRegisterBlockedStatusLine.Foreground = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+                    AuthRegisterBlockedStatusLine.Foreground = StatusErr();
                 }
                 else
                 {
                     AuthRegisterBlockedStatusLine.Text = UiStrings.T("AuthRegisterBlockedStatusInactive");
-                    AuthRegisterBlockedStatusLine.Foreground = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+                    AuthRegisterBlockedStatusLine.Foreground = StatusOk();
                 }
             }
 
@@ -1625,6 +1614,7 @@ namespace KaiAosRenew
             RegisterHistoryList.ItemsSource = null;
             RegisterHistoryList.ItemsSource = list;
             UpdateNoMatchesHint(RegisterNoMatchesHint, _registerHistory.Count > 0, list.Count);
+            UpdateEmptyHint(RegisterEmptyHint, _registerHistory.Count == 0);
             UpdateClearButtonsEnabled();
         }
 
@@ -1747,9 +1737,6 @@ namespace KaiAosRenew
                         : UiStrings.T("RunStart"));
                     RenewEngine.Log(force ? "Run start (force Register)" : "Run start");
                 }
-                if (allowRegister && !string.IsNullOrEmpty(password))
-                    AppendLog("Register password length=" + password.Length, LogLevel.Info, true);
-
                 RenewResult result = null;
                 try
                 {
@@ -1866,13 +1853,14 @@ namespace KaiAosRenew
                     _settings.LastMessage = result.Message;
                     _settings.Save();
                     ApplyFailureAlert(result.Message);
-                    if (!suppressAuthBalloons)
-                        ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(result.Message));
                     var msg = result.Message ?? "";
+                    var healthOnlyFail = msg.IndexOf("Health failed (no Register)", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!suppressAuthBalloons && !healthOnlyFail)
+                        ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(result.Message));
                     var skipBlockMsg = msg.IndexOf("Auth cooldown", StringComparison.OrdinalIgnoreCase) >= 0
                         || msg.IndexOf("Auth register blocked", StringComparison.OrdinalIgnoreCase) >= 0
                         || msg.IndexOf("Register blocked", StringComparison.OrdinalIgnoreCase) >= 0
-                        || msg.IndexOf("Health failed (no Register)", StringComparison.OrdinalIgnoreCase) >= 0
+                        || healthOnlyFail
                         || msg.IndexOf("Register skipped", StringComparison.OrdinalIgnoreCase) >= 0;
                     // Failed Register → strike; block only at AuthRegisterBlockAfter threshold.
                     if (result.RegisterAttempted && !skipBlockMsg)
@@ -2103,7 +2091,6 @@ namespace KaiAosRenew
                     if (interactive)
                     {
                         AppendLog("OK: " + result.Message, LogLevel.Success);
-                        ShowBalloon(WinForms.ToolTipIcon.Info, TruncateBalloon(result.Message));
                         ClearFailureAlert();
                     }
                     else
@@ -2131,7 +2118,6 @@ namespace KaiAosRenew
                     if (LooksLikeAuthFailure(result.Message))
                         TrySilentBrowserPassRefresh(true);
                     ApplyFailureAlert(result.Message);
-                    ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(result.Message));
                     SetTokenFooter(false);
                 }
                 RefreshStatusBadge();

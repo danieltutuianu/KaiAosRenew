@@ -1,6 +1,6 @@
 # Firebase Realtime Database — Peer Push relay
 
-KaiAosRenew can sync AOS credentials across workshop sites using **Firebase Realtime Database** (Spark free tier) with near real-time push (SSE).
+KaiAosRenew can sync AOS credentials across workshop sites using **Firebase Realtime Database** (Spark free tier).
 
 Payloads stay **AES-256 + HMAC encrypted** in the app. Firebase only stores ciphertext under a path derived from your shared secret.
 
@@ -30,7 +30,7 @@ On **each** server (Settings → **Firebase push (multi-site)**), or via the not
 1. Enable **Firebase push**.
 2. Paste the Database URL.
 3. Set the same **Shared secret** on every site (Generate once, Copy to the others).
-4. Set **This server name** (shown on the peer dashboard).
+4. Set **This server name** (stored as `originName` on published credentials).
 5. Click **Test connection**, then **Push now** after a successful AOS Register if peers need the current password.
 
 
@@ -42,9 +42,7 @@ Spark typically allows ~100 simultaneous connections and generous transfer for a
 
 ```
 /kai-aos-peer/{authTag}/
-  meta/            seq, ackSeq, cmdSeq, peersSeq
-  latestCreds/     encrypted credential event
-  latestCommand/   encrypted updateAll command
-  acks/{ackId}/    encrypted acks
-  peers/{serverId}/ presence + encrypted status
+  latestCreds/     encrypted credential event (seq, eventId, origin*, payloadEnc)
 ```
+
+Older nodes (`meta/`, `peers/`, `acks/`, `latestCommand/`) are unused by current builds and may be deleted from the RTDB console if present.

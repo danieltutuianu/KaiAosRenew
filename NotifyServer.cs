@@ -29,6 +29,76 @@ namespace KaiAosRenew
         private int _nextClientId = 1;
         private string _pairingCode = "";
 
+        // --- Pairing brute-force protection (per remote IP) ---
+        private const int AuthFailMax = 5;
+        private const int AuthFailWindowSeconds = 60;
+        private const int AuthCooldownSeconds = 30;
+        private sealed class AuthFailState
+        {
+            public int Count;
+            public DateTime FirstUtc;
+            public DateTime LockUntilUtc;
+        }
+        private static readonly object AuthFailGate = new object();
+        private static readonly Dictionary<string, AuthFailState> AuthFails =
+            new Dictionary<string, AuthFailState>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>True while <paramref name="ip"/> is in cooldown after too many failed pairing attempts.</summary>
+        private static bool IsAuthLockedOut(string ip)
+        {
+            if (string.IsNullOrEmpty(ip)) return false;
+            lock (AuthFailGate)
+            {
+                AuthFailState st;
+                if (!AuthFails.TryGetValue(ip, out st)) return false;
+                if (st.LockUntilUtc > DateTime.UtcNow) return true;
+                if (st.LockUntilUtc != DateTime.MinValue)
+                    AuthFails.Remove(ip); // cooldown elapsed
+                return false;
+            }
+        }
+
+        private static void RecordAuthFailure(string ip)
+        {
+            if (string.IsNullOrEmpty(ip)) return;
+            var locked = false;
+            lock (AuthFailGate)
+            {
+                var now = DateTime.UtcNow;
+                AuthFailState st;
+                if (!AuthFails.TryGetValue(ip, out st)
+                    || (st.LockUntilUtc == DateTime.MinValue
+                        && (now - st.FirstUtc).TotalSeconds > AuthFailWindowSeconds))
+                {
+                    st = new AuthFailState { Count = 0, FirstUtc = now, LockUntilUtc = DateTime.MinValue };
+                    AuthFails[ip] = st;
+                }
+                st.Count++;
+                if (st.Count >= AuthFailMax)
+                {
+                    st.LockUntilUtc = now.AddSeconds(AuthCooldownSeconds);
+                    locked = true;
+                }
+                if (AuthFails.Count > 512)
+                    AuthFails.Clear(); // hard cap against memory growth from spoofed sources
+            }
+            if (locked)
+            {
+                try { RenewEngine.Log("Notify: " + ip + " locked out for " + AuthCooldownSeconds
+                    + "s after " + AuthFailMax + " failed pairing attempts"); }
+                catch { }
+            }
+        }
+
+        private static void ClearAuthFailures(string ip)
+        {
+            lock (AuthFailGate)
+            {
+                if (string.IsNullOrEmpty(ip)) AuthFails.Clear();
+                else AuthFails.Remove(ip);
+            }
+        }
+
         public static NotifyServer Instance
         {
             get
@@ -91,6 +161,7 @@ namespace KaiAosRenew
                     prev = _pairingCode ?? "";
                 pairingChanged = !string.Equals(prev, next, StringComparison.Ordinal);
                 PairingCode = next;
+                if (pairingChanged) ClearAuthFailures(null);
             }
             if (!enabled)
             {
@@ -172,6 +243,7 @@ namespace KaiAosRenew
 
         public void Stop()
         {
+            List<ClientConn> snapshot;
             lock (_gate)
             {
                 _running = false;
@@ -184,12 +256,25 @@ namespace KaiAosRenew
                 }
                 catch { }
                 _listener = null;
-                foreach (var c in _clients)
+                snapshot = new List<ClientConn>(_clients);
+                _clients.Clear();
+            }
+            foreach (var c in snapshot)
+            {
+                if (c == null) continue;
+                var wasAuth = c.Authenticated;
+                var id = c.Id;
+                try { c.Dispose(); }
+                catch { }
+                if (!wasAuth) continue;
+                var handler = ClientDisconnected;
+                if (handler == null) continue;
+                try { handler(id); }
+                catch (Exception ex)
                 {
-                    try { c.Dispose(); }
+                    try { RenewEngine.Log("Notify ClientDisconnected handler: " + ex.Message); }
                     catch { }
                 }
-                _clients.Clear();
             }
         }
 
@@ -504,6 +589,21 @@ namespace KaiAosRenew
                     var listener = _listener;
                     if (listener == null) break;
                     var tcp = listener.AcceptTcpClient();
+                    // Cooldown: refuse sockets from IPs that failed pairing too often.
+                    try
+                    {
+                        string requirePair;
+                        lock (_gate) requirePair = _pairingCode ?? "";
+                        var rep = tcp.Client != null ? tcp.Client.RemoteEndPoint as IPEndPoint : null;
+                        if (requirePair.Length > 0 && rep != null && IsAuthLockedOut(rep.Address.ToString()))
+                        {
+                            try { RenewEngine.Log("Notify: refused " + rep.Address + " (pairing cooldown)"); }
+                            catch { }
+                            try { tcp.Close(); } catch { }
+                            continue;
+                        }
+                    }
+                    catch { }
                     tcp.NoDelay = true;
                     try
                     {
@@ -751,8 +851,21 @@ namespace KaiAosRenew
             private void HandleAuthResponse(string response)
             {
                 if (Authenticated) return;
+                if (IsAuthLockedOut(RemoteIp))
+                {
+                    TrySend(Encode(new NotifyMessage
+                    {
+                        Kind = "authFailed",
+                        Level = "error",
+                        Title = "KAI - AOS Renew",
+                        Text = "Too many failed attempts — try again later"
+                    }));
+                    Dispose();
+                    return;
+                }
                 if (NotifyPairing.VerifyResponse(_pairingCode, _authNonce, response))
                 {
+                    ClearAuthFailures(RemoteIp);
                     Authenticated = true;
                     TrySend(Encode(new NotifyMessage
                     {
@@ -771,6 +884,7 @@ namespace KaiAosRenew
                     Title = "KAI - AOS Renew",
                     Text = "Invalid pairing code"
                 }));
+                RecordAuthFailure(RemoteIp);
                 try { RenewEngine.Log("Notify client #" + Id + " pairing failed"); }
                 catch { }
                 Dispose();

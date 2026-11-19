@@ -80,9 +80,15 @@ namespace KaiAosRenew
         public bool NotifyServerEnabled { get; set; }
         /// <summary>TCP listen port (1024–65535), default 17890.</summary>
         public int NotifyServerPort { get; set; }
-        /// <summary>Optional LAN pairing code (empty = no auth). Stored as plain text in settings.xml.</summary>
+        /// <summary>
+        /// LEGACY plaintext pairing code. Only read from old settings.xml / portable imports; migrated into
+        /// <see cref="NotifyPairingCodeProtectedBase64"/> (DPAPI) by <see cref="NormalizeClamps"/> and then cleared.
+        /// Use <see cref="GetNotifyPairingCode"/> / <see cref="SetNotifyPairingCode"/> instead.
+        /// </summary>
         public string NotifyPairingCode { get; set; }
-        /// <summary>Stable GUID for this server instance (peer origin/ack targeting).</summary>
+        /// <summary>Optional LAN pairing code (empty = no auth), DPAPI-protected like the AOS password.</summary>
+        public string NotifyPairingCodeProtectedBase64 { get; set; }
+        /// <summary>Stable GUID for this server instance (peer origin for latestCreds).</summary>
         public string PeerSyncServerId { get; set; }
         /// <summary>Legacy (Apps Script era) server name. Kept only so XmlSerializer can read old settings.xml; migrated to FirebasePushServerName in NormalizeClamps and then cleared. Not used by the UI.
         /// Not marked [Obsolete]: XmlSerializer skips obsolete members and would not deserialize it.</summary>
@@ -92,12 +98,6 @@ namespace KaiAosRenew
         public long PeerSyncLastSeq { get; set; }
         /// <summary>Last processed peer credential eventId.</summary>
         public string PeerSyncLastEventId { get; set; }
-        /// <summary>Last processed peer ACK seq from relay.</summary>
-        public long PeerSyncLastAckSeq { get; set; }
-        /// <summary>Last processed peer command seq from relay.</summary>
-        public long PeerSyncLastCmdSeq { get; set; }
-        /// <summary>Last processed peer command id (dedupe).</summary>
-        public string PeerSyncLastCmdId { get; set; }
         /// <summary>Sync AOS credentials with peer servers via Firebase Realtime Database (push).</summary>
         public bool FirebasePushEnabled { get; set; }
         /// <summary>Legacy pull-only flag (ignored — every site publishes on successful login).</summary>
@@ -120,7 +120,7 @@ namespace KaiAosRenew
         public string FirebasePushUrl { get; set; }
         /// <summary>Shared Firebase push secret (DPAPI-protected).</summary>
         public string FirebasePushSecretProtectedBase64 { get; set; }
-        /// <summary>Display name for this server on the Firebase peer dashboard.</summary>
+        /// <summary>Display name for this server (originName on published latestCreds).</summary>
         public string FirebasePushServerName { get; set; }
         /// <summary>Force Update UI / debug banner until explicitly turned off.</summary>
         public bool DebugMode { get; set; }
@@ -158,13 +158,11 @@ namespace KaiAosRenew
             NotifyServerEnabled = false;
             NotifyServerPort = 17890;
             NotifyPairingCode = "";
+            NotifyPairingCodeProtectedBase64 = null;
             PeerSyncServerId = "";
             PeerSyncServerName = "";
             PeerSyncLastSeq = 0;
             PeerSyncLastEventId = "";
-            PeerSyncLastAckSeq = 0;
-            PeerSyncLastCmdSeq = 0;
-            PeerSyncLastCmdId = "";
             FirebasePushEnabled = false;
             FirebasePushPullOnly = false;
             FirebasePushUsePolling = false;
@@ -210,9 +208,7 @@ namespace KaiAosRenew
         {
             if (string.IsNullOrEmpty(PasswordProtectedBase64))
                 return string.Empty;
-            var protectedBytes = Convert.FromBase64String(PasswordProtectedBase64);
-            var plain = ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser);
-            return Encoding.UTF8.GetString(plain);
+            return DpapiString.Unprotect(PasswordProtectedBase64);
         }
 
         public void SetPassword(string password)
@@ -222,9 +218,27 @@ namespace KaiAosRenew
                 PasswordProtectedBase64 = null;
                 return;
             }
-            var plain = Encoding.UTF8.GetBytes(password);
-            var protectedBytes = ProtectedData.Protect(plain, null, DataProtectionScope.CurrentUser);
-            PasswordProtectedBase64 = Convert.ToBase64String(protectedBytes);
+            PasswordProtectedBase64 = DpapiString.Protect(password);
+        }
+
+        /// <summary>Decrypts the pairing code; returns empty when unset or the blob cannot be decrypted.</summary>
+        public string GetNotifyPairingCode()
+        {
+            if (string.IsNullOrEmpty(NotifyPairingCodeProtectedBase64))
+                return (NotifyPairingCode ?? "").Trim(); // not yet migrated (before NormalizeClamps)
+            return DpapiString.Unprotect(NotifyPairingCodeProtectedBase64);
+        }
+
+        public void SetNotifyPairingCode(string code)
+        {
+            NotifyPairingCode = ""; // never keep plaintext in the serialized property
+            code = (code ?? "").Trim();
+            if (code.Length == 0)
+            {
+                NotifyPairingCodeProtectedBase64 = null;
+                return;
+            }
+            NotifyPairingCodeProtectedBase64 = DpapiString.Protect(code);
         }
 
         public void EnsurePeerSyncServerId()
@@ -242,9 +256,7 @@ namespace KaiAosRenew
         {
             if (string.IsNullOrEmpty(FirebasePushSecretProtectedBase64))
                 return string.Empty;
-            var protectedBytes = Convert.FromBase64String(FirebasePushSecretProtectedBase64);
-            var plain = ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser);
-            return Encoding.UTF8.GetString(plain);
+            return DpapiString.Unprotect(FirebasePushSecretProtectedBase64);
         }
 
         public void SetFirebasePushSecret(string secret)
@@ -254,9 +266,7 @@ namespace KaiAosRenew
                 FirebasePushSecretProtectedBase64 = null;
                 return;
             }
-            var plain = Encoding.UTF8.GetBytes(secret);
-            var protectedBytes = ProtectedData.Protect(plain, null, DataProtectionScope.CurrentUser);
-            FirebasePushSecretProtectedBase64 = Convert.ToBase64String(protectedBytes);
+            FirebasePushSecretProtectedBase64 = DpapiString.Protect(secret);
         }
 
         public void NormalizeClamps()
@@ -276,17 +286,20 @@ namespace KaiAosRenew
             if (KeysVinTipSeconds > 60) KeysVinTipSeconds = 60;
             if (NotifyServerPort < 1024 || NotifyServerPort > 65535)
                 NotifyServerPort = 17890;
-            if (NotifyPairingCode == null) NotifyPairingCode = "";
-            NotifyPairingCode = NotifyPairingCode.Trim();
+            // Migrate legacy plaintext pairing code -> DPAPI, then clear the plaintext.
+            if (!string.IsNullOrWhiteSpace(NotifyPairingCode))
+            {
+                try { SetNotifyPairingCode(NotifyPairingCode); }
+                catch { }
+            }
+            if (NotifyPairingCode == null || !string.IsNullOrEmpty(NotifyPairingCodeProtectedBase64))
+                NotifyPairingCode = "";
             if (PeerSyncServerId == null) PeerSyncServerId = "";
             PeerSyncServerId = PeerSyncServerId.Trim();
             if (PeerSyncServerName == null) PeerSyncServerName = "";
             PeerSyncServerName = PeerSyncServerName.Trim();
             if (PeerSyncLastSeq < 0) PeerSyncLastSeq = 0;
-            if (PeerSyncLastAckSeq < 0) PeerSyncLastAckSeq = 0;
-            if (PeerSyncLastCmdSeq < 0) PeerSyncLastCmdSeq = 0;
             if (PeerSyncLastEventId == null) PeerSyncLastEventId = "";
-            if (PeerSyncLastCmdId == null) PeerSyncLastCmdId = "";
             if (PeerSyncLastCredsHash == null) PeerSyncLastCredsHash = "";
             if (FirebasePushCredsEtag == null) FirebasePushCredsEtag = "";
             if (FirebasePushSeqEtag == null) FirebasePushSeqEtag = "";
@@ -331,6 +344,23 @@ namespace KaiAosRenew
 
         private static readonly object SaveGate = new object();
 
+        /// <summary>
+        /// Set when Load() had to fall back to a backup or to defaults because settings were unreadable.
+        /// UI should show it once and call <see cref="TakeLoadWarning"/>.
+        /// </summary>
+        public static string LastLoadWarning { get; private set; }
+
+        /// <summary>Returns the pending load warning (if any) and clears it so it is shown only once.</summary>
+        public static string TakeLoadWarning()
+        {
+            lock (SaveGate)
+            {
+                var w = LastLoadWarning;
+                LastLoadWarning = null;
+                return w;
+            }
+        }
+
         public static AppSettings Load()
         {
             lock (SaveGate)
@@ -339,6 +369,7 @@ namespace KaiAosRenew
                 if (primary != null)
                     return primary;
                 var bakPath = SettingsPath + ".bak";
+                var primaryCorrupt = PreserveCorruptCopyUnlocked(SettingsPath);
                 var fromBak = TryLoadFromPathUnlocked(bakPath);
                 if (fromBak != null)
                 {
@@ -348,9 +379,64 @@ namespace KaiAosRenew
                         File.Copy(bakPath, SettingsPath, true);
                     }
                     catch { }
+                    if (primaryCorrupt != null)
+                    {
+                        LastLoadWarning = "settings.xml was unreadable; restored from settings.xml.bak. "
+                            + "Bad file kept as: " + primaryCorrupt;
+                    }
                     return fromBak;
                 }
-                return new AppSettings();
+
+                var bakCorrupt = PreserveCorruptCopyUnlocked(bakPath);
+                var defaults = new AppSettings();
+                if (primaryCorrupt != null || bakCorrupt != null)
+                {
+                    var kept = primaryCorrupt ?? bakCorrupt;
+                    var msg = "Settings could not be read; defaults loaded. Corrupt copy kept at: " + kept;
+                    LastLoadWarning = msg;
+                    defaults.LastMessage = msg;
+                }
+                return defaults;
+            }
+        }
+
+        /// <summary>
+        /// Copies an existing, non-empty but unparseable file to "&lt;name&gt;.corrupt" (timestamped if one exists)
+        /// so defaults never silently overwrite user data. Returns the copy path or null.
+        /// </summary>
+        private static string PreserveCorruptCopyUnlocked(string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                    return null;
+                if (new FileInfo(path).Length == 0)
+                    return null; // nothing to preserve
+                var target = path + ".corrupt";
+                if (File.Exists(target))
+                {
+                    // Same bad content already preserved (repeated Load before next Save): don't pile up copies.
+                    try
+                    {
+                        var a = File.ReadAllBytes(path);
+                        var b = File.ReadAllBytes(target);
+                        if (a.Length == b.Length)
+                        {
+                            var same = true;
+                            for (var i = 0; i < a.Length; i++)
+                                if (a[i] != b[i]) { same = false; break; }
+                            if (same) return target;
+                        }
+                    }
+                    catch { }
+                    target = path + "." + DateTime.UtcNow.ToString("yyyyMMddHHmmss") + ".corrupt";
+                }
+                File.Copy(path, target, true);
+                return target;
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -510,7 +596,7 @@ namespace KaiAosRenew
             portable.KeysSqlitePath = KeysSqlitePath;
             portable.NotifyServerEnabled = NotifyServerEnabled;
             portable.NotifyServerPort = NotifyServerPort;
-            portable.NotifyPairingCode = NotifyPairingCode;
+            // Pairing code stays DPAPI-local (not exported, not plaintext).
             portable.FirebasePushEnabled = FirebasePushEnabled;
             portable.FirebasePushSyncMode = FirebasePushSyncMode;
             portable.FirebasePushUsePolling = string.Equals(
@@ -587,8 +673,9 @@ namespace KaiAosRenew
             NotifyServerEnabled = imported.NotifyServerEnabled;
             if (imported.NotifyServerPort >= 1024 && imported.NotifyServerPort <= 65535)
                 NotifyServerPort = imported.NotifyServerPort;
-            if (imported.NotifyPairingCode != null)
-                NotifyPairingCode = imported.NotifyPairingCode.Trim();
+            // Legacy exports may carry a plaintext code; protect it on import.
+            if (!string.IsNullOrWhiteSpace(imported.NotifyPairingCode))
+                SetNotifyPairingCode(imported.NotifyPairingCode);
             FirebasePushEnabled = imported.FirebasePushEnabled;
             if (!string.IsNullOrWhiteSpace(imported.FirebasePushSyncMode))
                 FirebasePushSyncMode = imported.FirebasePushSyncMode;

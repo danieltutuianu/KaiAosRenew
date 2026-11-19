@@ -1,10 +1,9 @@
 using System;
-using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 
 namespace KaiAosRenew
 {
-    /// <summary>Pure Firebase RTDB tree / SSE payload parsing (no network).</summary>
+    /// <summary>Pure Firebase RTDB tree / SSE payload parsing (no network) — latestCreds only.</summary>
     public static class PeerSyncFirebaseParse
     {
         public const string RootPrefix = "kai-aos-peer";
@@ -14,8 +13,8 @@ namespace KaiAosRenew
             if (string.IsNullOrWhiteSpace(url)) return false;
             Uri u;
             if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out u)) return false;
-            if (!string.Equals(u.Scheme, "https", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(u.Scheme, "http", StringComparison.OrdinalIgnoreCase))
+            // HTTPS only: relay payloads must never travel over cleartext HTTP.
+            if (!string.Equals(u.Scheme, "https", StringComparison.OrdinalIgnoreCase))
                 return false;
             var host = (u.Host ?? "").ToLowerInvariant();
             return host.EndsWith(".firebaseio.com", StringComparison.Ordinal)
@@ -53,16 +52,10 @@ namespace KaiAosRenew
         public sealed class RelaySnapshot
         {
             public long Seq;
-            public long AckSeq;
-            public long CmdSeq;
-            public long PeersSeq;
             public PeerCredsEvent LatestCreds;
-            public PeerCommandEvent LatestCommand;
-            public List<PeerAckEvent> Acks = new List<PeerAckEvent>();
-            public List<PeerRecord> Peers = new List<PeerRecord>();
         }
 
-        /// <summary>Parse a Firebase root JSON object (or null) into a relay snapshot.</summary>
+        /// <summary>Parse a Firebase root JSON object (or null) into a relay snapshot (latestCreds only).</summary>
         public static RelaySnapshot ParseRoot(JToken root)
         {
             var snap = new RelaySnapshot();
@@ -72,46 +65,12 @@ namespace KaiAosRenew
 
             var meta = o["meta"] as JObject;
             if (meta != null)
-            {
                 snap.Seq = ParseLong(meta["seq"]);
-                snap.AckSeq = ParseLong(meta["ackSeq"]);
-                snap.CmdSeq = ParseLong(meta["cmdSeq"]);
-                snap.PeersSeq = ParseLong(meta["peersSeq"]);
-            }
 
             snap.LatestCreds = ParseCreds(o["latestCreds"] as JObject);
             if (snap.LatestCreds != null && snap.LatestCreds.Seq > snap.Seq)
                 snap.Seq = snap.LatestCreds.Seq;
 
-            snap.LatestCommand = ParseCommand(o["latestCommand"] as JObject);
-            if (snap.LatestCommand != null && snap.LatestCommand.CmdSeq > snap.CmdSeq)
-                snap.CmdSeq = snap.LatestCommand.CmdSeq;
-
-            var acks = o["acks"] as JObject;
-            if (acks != null)
-            {
-                foreach (var prop in acks.Properties())
-                {
-                    var a = ParseAck(prop.Value as JObject, prop.Name);
-                    if (a != null) snap.Acks.Add(a);
-                }
-                snap.Acks.Sort((x, y) => x.AckSeq.CompareTo(y.AckSeq));
-                if (snap.Acks.Count > 0)
-                {
-                    var maxAck = snap.Acks[snap.Acks.Count - 1].AckSeq;
-                    if (maxAck > snap.AckSeq) snap.AckSeq = maxAck;
-                }
-            }
-
-            var peers = o["peers"] as JObject;
-            if (peers != null)
-            {
-                foreach (var prop in peers.Properties())
-                {
-                    var p = ParsePeer(prop.Value as JObject, prop.Name);
-                    if (p != null) snap.Peers.Add(p);
-                }
-            }
             return snap;
         }
 
@@ -245,57 +204,6 @@ namespace KaiAosRenew
                 OriginName = TokenString(latest["originName"]),
                 CreatedUtc = TokenString(latest["createdUtc"]),
                 PayloadEnc = enc
-            };
-        }
-
-        private static PeerCommandEvent ParseCommand(JObject cmd)
-        {
-            if (cmd == null || cmd.Type == JTokenType.Null) return null;
-            var enc = TokenString(cmd["payloadEnc"]);
-            if (string.IsNullOrEmpty(enc)) return null;
-            return new PeerCommandEvent
-            {
-                CmdSeq = ParseLong(cmd["cmdSeq"]),
-                CmdId = TokenString(cmd["cmdId"]),
-                Type = TokenString(cmd["type"]),
-                OriginServerId = TokenString(cmd["originServerId"]),
-                OriginName = TokenString(cmd["originName"]),
-                CreatedUtc = TokenString(cmd["createdUtc"]),
-                PayloadEnc = enc
-            };
-        }
-
-        private static PeerAckEvent ParseAck(JObject a, string fallbackAckId)
-        {
-            if (a == null) return null;
-            var enc = TokenString(a["payloadEnc"]);
-            if (string.IsNullOrEmpty(enc)) return null;
-            var ackId = TokenString(a["ackId"]);
-            if (string.IsNullOrEmpty(ackId)) ackId = fallbackAckId ?? "";
-            return new PeerAckEvent
-            {
-                AckSeq = ParseLong(a["ackSeq"]),
-                AckId = ackId,
-                TargetServerId = TokenString(a["targetServerId"]),
-                ForEventId = TokenString(a["forEventId"]),
-                ResponderServerId = TokenString(a["responderServerId"]),
-                ResponderName = TokenString(a["responderName"]),
-                CreatedUtc = TokenString(a["createdUtc"]),
-                PayloadEnc = enc
-            };
-        }
-
-        private static PeerRecord ParsePeer(JObject p, string fallbackServerId)
-        {
-            if (p == null) return null;
-            var id = TokenString(p["serverId"]);
-            if (string.IsNullOrEmpty(id)) id = fallbackServerId ?? "";
-            if (string.IsNullOrEmpty(id)) return null;
-            return new PeerRecord
-            {
-                ServerId = id,
-                LastSeenUtc = TokenString(p["lastSeenUtc"]),
-                StatusEnc = TokenString(p["statusEnc"])
             };
         }
 

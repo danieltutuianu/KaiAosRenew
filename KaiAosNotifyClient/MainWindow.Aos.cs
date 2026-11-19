@@ -526,6 +526,191 @@ namespace KaiAosNotifyClient
             }
         }
 
+        private bool TryGetClientFirebaseRelay(out string url, out string secret)
+        {
+            url = "";
+            secret = "";
+            if (SrvFirebasePushEnableCheck == null || SrvFirebasePushEnableCheck.IsChecked != true)
+                return false;
+            url = SrvFirebasePushUrlBox != null ? (SrvFirebasePushUrlBox.Text ?? "").Trim() : "";
+            secret = GetSrvFirebaseSecretFromUi();
+            return !string.IsNullOrWhiteSpace(url) && !string.IsNullOrWhiteSpace(secret);
+        }
+
+        private void UpdateAosPullCloudButtonVisibility()
+        {
+            if (AosPullCloudBtn == null) return;
+            AosPullCloudBtn.Visibility = Visibility.Visible;
+            string url, secret;
+            var ready = TryGetClientFirebaseRelay(out url, out secret);
+            var busy = _aosPullCloudBusy != 0;
+            AosPullCloudBtn.IsEnabled = ready && !busy;
+            if (!ready)
+                AosPullCloudBtn.ToolTip = ClientUiStrings.T("TipAosPullCloudConfigure");
+            else if (busy)
+                AosPullCloudBtn.ToolTip = ClientUiStrings.T("AosPullFromCloudBusy");
+            else
+                AosPullCloudBtn.ToolTip = null;
+        }
+
+        private void SetAosPullProgress(string statusText, string level)
+        {
+            if (AosPullCloudBtn != null)
+                AosPullCloudBtn.IsEnabled = false;
+            if (AosPullCloudBtnText != null)
+                AosPullCloudBtnText.Text = ClientUiStrings.T("AosPullFromCloudBusy");
+            if (AosDirtyPendingMark != null)
+                AosDirtyPendingMark.Visibility = Visibility.Collapsed;
+            if (AosDirtyStatus != null)
+            {
+                AosDirtyStatus.Text = statusText ?? "";
+                if (string.Equals(level, "warning", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(level, "error", StringComparison.OrdinalIgnoreCase))
+                    AosDirtyStatus.Foreground = CreateBrush(0xB2, 0x6A, 0x00);
+                else if (string.Equals(level, "success", StringComparison.OrdinalIgnoreCase))
+                    AosDirtyStatus.Foreground = CreateBrush(0x2E, 0x7D, 0x32);
+                else
+                    AosDirtyStatus.Foreground = _footerMuted
+                        ?? (TryFindResource("TextMutedBrush") as Brush)
+                        ?? CreateBrush(0x8C, 0x8C, 0x8C);
+            }
+            AppendActivityRow(null, level ?? "info", statusText ?? "");
+        }
+
+        private void EndAosPullProgress()
+        {
+            if (AosPullCloudBtnText != null)
+                AosPullCloudBtnText.Text = ClientUiStrings.T("AosPullFromCloud");
+            UpdateAosPullCloudButtonVisibility();
+            UpdateAosControlsEnabled();
+        }
+
+        private void AosPullCloud_Click(object sender, RoutedEventArgs e)
+        {
+            Forget(PullAosCredsFromCloudAsync(), "AosPullCloud");
+        }
+
+        /// <summary>
+        /// Manual AOS Access pull: fill email/password from Firebase latestCreds
+        /// using Server Settings Firebase URL/secret. Marks dirty only when cloud
+        /// values differ from the current form.
+        /// </summary>
+        private async Task PullAosCredsFromCloudAsync()
+        {
+            if (Interlocked.CompareExchange(ref _aosPullCloudBusy, 1, 0) != 0)
+                return;
+            var keepFinalStatus = false;
+            try
+            {
+                string url, secret;
+                if (!TryGetClientFirebaseRelay(out url, out secret))
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(ClientUiStrings.T("AosPullFromCloudFail"), "URL/secret"),
+                        "warning");
+                    return;
+                }
+
+                SetAosPullProgress(ClientUiStrings.T("AosPullProgressConnect"), "info");
+                SetAosPullProgress(ClientUiStrings.T("AosPullProgressDownload"), "info");
+
+                PeerRelayPollResult poll;
+                try
+                {
+                    poll = await PeerSyncFirebaseClient.SnapshotAsync(
+                        url, secret, null, true, CancellationToken.None).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(ClientUiStrings.T("AosPullFromCloudFail"), ex.Message ?? "snapshot"),
+                        "warning");
+                    return;
+                }
+
+                if (poll == null || !poll.Ok)
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(ClientUiStrings.T("AosPullFromCloudFail"),
+                            poll != null ? (poll.Error ?? "poll") : "poll"),
+                        "warning");
+                    return;
+                }
+
+                var ev = poll.LatestCreds;
+                if (ev == null || string.IsNullOrWhiteSpace(ev.PayloadEnc))
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(ClientUiStrings.T("AosPullFromCloudFail"), "no latestCreds"),
+                        "warning");
+                    return;
+                }
+
+                SetAosPullProgress(ClientUiStrings.T("AosPullProgressDecrypt"), "info");
+
+                PeerCredsPayload payload;
+                if (!PeerSyncCrypto.TryDecryptCreds(secret, ev.PayloadEnc, out payload) || payload == null)
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(ClientUiStrings.T("AosPullFromCloudFail"), "decrypt"),
+                        "warning");
+                    return;
+                }
+
+                var remoteEmail = (payload.Email ?? "").Trim();
+                var remotePass = payload.Password ?? "";
+                if (string.IsNullOrEmpty(remoteEmail) && string.IsNullOrEmpty(remotePass))
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(ClientUiStrings.T("AosPullFromCloudFail"), "empty payload"),
+                        "warning");
+                    return;
+                }
+
+                var localEmail = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
+                var localPass = "";
+                try { localPass = GetAosPasswordUi() ?? ""; }
+                catch { localPass = ""; }
+
+                var differ = PeerSyncLogic.CredentialsDiffer(localEmail, localPass, remoteEmail, remotePass);
+
+                SetAosPullProgress(ClientUiStrings.T("AosPullProgressApply"), "info");
+
+                _loadingAosUi = true;
+                try
+                {
+                    if (AosEmailBox != null)
+                        AosEmailBox.Text = remoteEmail;
+                    SetAosPasswordUi(remotePass);
+                }
+                finally
+                {
+                    _loadingAosUi = false;
+                }
+
+                if (differ)
+                    _aosDirty = true;
+
+                var okMsg = string.Format(ClientUiStrings.T("AosPullFromCloudOk"),
+                    string.IsNullOrEmpty(remoteEmail) ? "—" : remoteEmail);
+                keepFinalStatus = !differ;
+                SetAosPullProgress(okMsg, "success");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _aosPullCloudBusy, 0);
+                EndAosPullProgress();
+                if (!keepFinalStatus)
+                    UpdateAosSyncStatus();
+            }
+        }
+
         private void AosCheckBrowserPass_Click(object sender, RoutedEventArgs e)
         {
             var email = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
@@ -596,7 +781,15 @@ namespace KaiAosNotifyClient
                 AppendActivityRow(null, statusOk ? "success" : "warning", statusLine.Replace("\n", " | "));
 
             var dlg = BrowserPassResultWindow.ShowFor(
-                this, found.BrowserName, msg, copiedHint, statusLine, statusOk, hint, offerFillSave);
+                this, found.BrowserName, msg, copiedHint, statusLine, statusOk, hint, offerFillSave,
+                new BrowserPassResultWindow.Labels
+                {
+                    WindowTitle = ClientUiStrings.T("AppTitle"),
+                    OpenPasswords = string.Format(ClientUiStrings.T("OpenBrowserPasswords"), found.BrowserName ?? ""),
+                    OpenFail = ClientUiStrings.T("OpenBrowserPasswordsFail"),
+                    FillSave = ClientUiStrings.T("BrowserPassFillSave"),
+                    Ok = "OK"
+                });
 
             if (dlg.OpenedPasswordManager)
                 StartClipboardPasswordWatch();
@@ -624,16 +817,6 @@ namespace KaiAosNotifyClient
         private DateTime _clipboardWatchUntilUtc = DateTime.MinValue;
         private string _clipboardWatchInitial;
 
-        private static string NormalizeClipboardPassword(string raw)
-        {
-            if (string.IsNullOrEmpty(raw)) return raw;
-            var s = raw.Trim().Trim('\0');
-            if (s.Length > 0 && s[0] == '\uFEFF')
-                s = s.Substring(1);
-            s = s.Replace("\u200B", "").Replace("\u200C", "").Replace("\u200D", "")
-                .Replace("\u00A0", " ").Trim();
-            return s;
-        }
 
         private static bool LooksLikeDomainOrUrl(string s)
         {
@@ -664,7 +847,7 @@ namespace KaiAosNotifyClient
             string initial = null;
             try { initial = Clipboard.GetText(); }
             catch { }
-            _clipboardWatchInitial = NormalizeClipboardPassword(initial) ?? "";
+            _clipboardWatchInitial = ClipboardText.NormalizePassword(initial) ?? "";
             _clipboardWatchUntilUtc = DateTime.UtcNow.AddSeconds(ClipboardWatchSeconds);
             _clipboardWatchTimer.Stop();
             _clipboardWatchTimer.Interval = TimeSpan.FromMilliseconds(400);
@@ -690,7 +873,7 @@ namespace KaiAosNotifyClient
             string raw = null;
             try { raw = Clipboard.GetText(); }
             catch { return; }
-            var clip = NormalizeClipboardPassword(raw);
+            var clip = ClipboardText.NormalizePassword(raw);
             if (string.IsNullOrEmpty(clip)) return;
             if (string.Equals(clip, _clipboardWatchInitial ?? "", StringComparison.Ordinal)) return;
             if (!IsClipboardPasswordCandidate(clip))
@@ -729,9 +912,10 @@ namespace KaiAosNotifyClient
                 ClipboardPassHeaderText.Text = ClientUiStrings.T("ClipboardPassHeader");
             if (ClipboardPassCurrentText != null)
                 ClipboardPassCurrentText.Text = string.Format(ClientUiStrings.T("ClipboardPassCurrent"),
-                    string.IsNullOrEmpty(current) ? "—" : current);
+                    PasswordDisplayMask.Mask(current));
             if (ClipboardPassClipText != null)
-                ClipboardPassClipText.Text = string.Format(ClientUiStrings.T("ClipboardPassClip"), clip);
+                ClipboardPassClipText.Text = string.Format(ClientUiStrings.T("ClipboardPassClip"),
+                    PasswordDisplayMask.Mask(clip));
             ApplyClipboardPassBannerStrings();
             ClipboardPassBanner.Visibility = Visibility.Visible;
         }
@@ -757,6 +941,7 @@ namespace KaiAosNotifyClient
             HideClipboardPassBanner();
             if (string.IsNullOrEmpty(pass)) return;
             SetAosPasswordUi(pass);
+            ScheduleClipboardPasswordClear(pass);
             if (_client != null && _client.IsConnected)
                 SendAosApply();
             else
@@ -770,6 +955,26 @@ namespace KaiAosNotifyClient
         private void ClipboardPassDismiss_Click(object sender, RoutedEventArgs e)
         {
             HideClipboardPassBanner();
+        }
+
+        /// <summary>Clears the clipboard ~10s after a password paste (only if it still holds that password).</summary>
+        private void ScheduleClipboardPasswordClear(string password)
+        {
+            if (string.IsNullOrEmpty(password)) return;
+            var expected = password.Trim();
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+            timer.Tick += delegate
+            {
+                timer.Stop();
+                try
+                {
+                    if (Clipboard.ContainsText()
+                        && string.Equals((Clipboard.GetText() ?? "").Trim(), expected, StringComparison.Ordinal))
+                        Clipboard.Clear();
+                }
+                catch { }
+            };
+            timer.Start();
         }
 
         private void AosCheckToken_Click(object sender, RoutedEventArgs e)
@@ -1095,7 +1300,9 @@ namespace KaiAosNotifyClient
             }
             RegisterHistoryList.ItemsSource = null;
             RegisterHistoryList.ItemsSource = list;
-            UpdateNoMatchesHint(RegisterNoMatchesHint, _registerHistory.Count > 0, list.Count);
+            var hasAny = _registerHistory != null && _registerHistory.Count > 0;
+            UpdateEmptyHint(RegisterEmptyHint, !hasAny);
+            UpdateNoMatchesHint(RegisterNoMatchesHint, hasAny, list.Count);
             UpdateClearButtonsEnabled();
         }
 
@@ -1281,6 +1488,10 @@ namespace KaiAosNotifyClient
             UpdateKeysAlert(); // time-based stall detection
             if (TabRegister != null && TabRegister.IsSelected)
                 RefreshRegisterAges();
+            if (_client != null && _client.IsConnected)
+                NetDiagOnStatusTick();
+            else
+                ClearRtt();
         }
 
         private void RefreshAuthGuardsPanel(bool cooldownOn, string cooldownFooterText, bool blockedOn, string blockedFooterText, string tip)
@@ -1494,7 +1705,7 @@ namespace KaiAosNotifyClient
                 title = showFail ? "Register fail" : "Register OK";
             var level = showFail ? "warning" : "info";
             AppendActivityRow(null, level, title + " — " + DateTime.Now.ToString("g"));
-            ToastWindow.ShowSticky(title, body, level);
+            TrayTipWindow.ShowSticky(title, body, level);
         }
 
         private void MaybeDebugTokenSticky(string mode, string body)
@@ -1517,7 +1728,7 @@ namespace KaiAosNotifyClient
             var tip = string.IsNullOrWhiteSpace(body) ? title : body.Trim();
             var level = fail ? "warning" : "info";
             AppendActivityRow(null, level, title + " — " + DateTime.Now.ToString("g"));
-            ToastWindow.ShowSticky(title, tip, level);
+            TrayTipWindow.ShowSticky(title, tip, level);
         }
 
         private void RegisterHistoryList_SizeChanged(object sender, EventArgs e)

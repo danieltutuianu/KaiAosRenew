@@ -85,6 +85,15 @@
     <Compile Include="..\..\Shared\RenewFlowLogic.cs">
       <Link>Shared\RenewFlowLogic.cs</Link>
     </Compile>
+    <Compile Include="..\..\Shared\KeysExportLogic.cs">
+      <Link>Shared\KeysExportLogic.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\DpapiString.cs">
+      <Link>Shared\DpapiString.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\DiagBundleLogic.cs">
+      <Link>Shared\DiagBundleLogic.cs</Link>
+    </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

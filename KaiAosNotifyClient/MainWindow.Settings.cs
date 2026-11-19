@@ -77,6 +77,8 @@ namespace KaiAosNotifyClient
             if (PairingCodePasteBtn != null)
                 PairingCodePasteBtn.ToolTip = ClientUiStrings.T("NotifyPairingPasteTip");
             if (ScanLanBtn != null) ScanLanBtn.Content = ClientUiStrings.T("ScanLan");
+            try { ApplyShortcutStrings(); }
+            catch { }
             UpdateConnectButtonLabel();
             if (DisconnectBtn != null) DisconnectBtn.Content = ClientUiStrings.T("Disconnect");
             if (KeysEmptyHint != null) KeysEmptyHint.Text = ClientUiStrings.T("KeysEmptyHint");
@@ -135,9 +137,11 @@ namespace KaiAosNotifyClient
             if (AosPassLabel != null) AosPassLabel.Text = ClientUiStrings.T("AosPassword");
             if (AosShowPasswordCheck != null) AosShowPasswordCheck.Content = ClientUiStrings.T("ShowPassword");
             if (AosSaveBtnText != null) AosSaveBtnText.Text = ClientUiStrings.T("Save");
+            if (AosPullCloudBtnText != null) AosPullCloudBtnText.Text = ClientUiStrings.T("AosPullFromCloud");
             if (AosCheckBrowserPassBtnText != null) AosCheckBrowserPassBtnText.Text = ClientUiStrings.T("CheckBrowserPass");
             ApplyClipboardPassBannerStrings();
             if (AosOpenBmwBtnText != null) AosOpenBmwBtnText.Text = ClientUiStrings.T("OpenBmwSso");
+            UpdateAosPullCloudButtonVisibility();
             if (AosCheckTokenBtn != null) AosCheckTokenBtn.Content = ClientUiStrings.T("CheckToken");
             if (AosStartTimerBtn != null) AosStartTimerBtn.Content = ClientUiStrings.T("StartTimer");
             if (AosStopTimerBtn != null) AosStopTimerBtn.Content = ClientUiStrings.T("StopTimer");
@@ -190,17 +194,9 @@ namespace KaiAosNotifyClient
             UpdateAosSyncStatus();
             UpdateAosButtonsVisibility();
             if (KeysEventsSection != null) KeysEventsSection.Text = ClientUiStrings.T("KeysRecent");
-            if (KeysColTime != null) KeysColTime.Header = ClientUiStrings.T("KeysColTime");
-            if (KeysColVin != null) KeysColVin.Header = ClientUiStrings.T("KeysColVin");
-            if (KeysColKm != null) KeysColKm.Header = ClientUiStrings.T("KeysColKm");
-            if (KeysColPaint != null) KeysColPaint.Header = ClientUiStrings.T("KeysColPaint");
-            if (KeysColUpholstery != null) KeysColUpholstery.Header = ClientUiStrings.T("KeysColUpholstery");
-            if (KeysColILevel != null) KeysColILevel.Header = ClientUiStrings.T("KeysColILevel");
-            if (KeysColReader != null) KeysColReader.Header = ClientUiStrings.T("KeysColReader");
-            if (KeysColLocal != null) KeysColLocal.Header = ClientUiStrings.T("KeysColLocal");
-            if (KeysColBmw != null) KeysColBmw.Header = ClientUiStrings.T("KeysColBmw");
-            if (KeysColStatus != null) KeysColStatus.Header = ClientUiStrings.T("KeysColStatus");
+            ApplyKeysSortHeaders();
             if (KeysColDetail != null) KeysColDetail.Header = ClientUiStrings.T("KeysColDetail");
+
             if (KeysColBin != null) KeysColBin.Header = ClientUiStrings.T("KeysColBin");
             if (ConnectionGroup != null) ConnectionGroup.Header = ClientUiStrings.T("Connection");
             if (OfflineAfterLabel != null) OfflineAfterLabel.Text = ClientUiStrings.T("OfflineAfter");
@@ -244,6 +240,11 @@ namespace KaiAosNotifyClient
             if (TestBalloonTipsBtn != null) TestBalloonTipsBtn.Content = ClientUiStrings.T("TrayTestTips");
             if (KeysRefreshBtn != null) KeysRefreshBtn.Content = ClientUiStrings.T("KeysRefresh");
             if (KeysClearBtn != null) KeysClearBtn.Content = ClientUiStrings.T("ClearKeys");
+            if (KeysExportBtn != null)
+            {
+                KeysExportBtn.Content = ClientUiStrings.T("KeysExport");
+                KeysExportBtn.ToolTip = ClientUiStrings.T("KeysExportTip");
+            }
             if (KeysRetryBmwBtn != null)
             {
                 KeysRetryBmwBtn.Content = ClientUiStrings.T("KeysRetryBmw");
@@ -441,7 +442,7 @@ namespace KaiAosNotifyClient
             }
             if (ThemeCombo != null)
             {
-                var theme = ClientThemeManager.NormalizeMode(_settings.Theme);
+                var theme = ThemeManager.NormalizeMode(_settings.Theme);
                 ThemeCombo.SelectedValue = theme;
                 if (ThemeCombo.SelectedItem == null)
                     ThemeCombo.SelectedValue = "system";
@@ -554,8 +555,8 @@ namespace KaiAosNotifyClient
             }
             if (!string.Equals(prevTheme, _settings.Theme, StringComparison.OrdinalIgnoreCase))
             {
-                ClientThemeManager.Apply(_settings.Theme);
-                ApplyFooterChrome(ClientThemeManager.IsNight);
+                ThemeManager.Apply(_settings.Theme);
+                ApplyFooterChrome(ThemeManager.IsNight);
             }
             RefreshTrayStatus();
         }
@@ -655,8 +656,8 @@ namespace KaiAosNotifyClient
                 ClientUiStrings.SetLanguage(_settings.Language);
                 ApplyLanguageToUi();
                 RebuildTrayMenu();
-                ClientThemeManager.Apply(_settings.Theme);
-                ApplyFooterChrome(ClientThemeManager.IsNight);
+                ThemeManager.Apply(_settings.Theme);
+                ApplyFooterChrome(ThemeManager.IsNight);
                 AppendActivityRow(null, "success", string.Format(ClientUiStrings.T("ClientImportOk"), dlg.FileName));
             }
             catch (Exception ex)
@@ -684,6 +685,25 @@ namespace KaiAosNotifyClient
                 return;
             }
             ApplyServerSettingsSync(NotifyMessage.EncodeKvMap(_lastServerSettingsMap));
+        }
+
+        /// <summary>
+        /// If Server Settings has unsaved edits, prompt Save / Discard / Cancel.
+        /// Returns true when the caller may continue (tab leave / window close).
+        /// </summary>
+        private bool TryResolveUnsavedServerSettings()
+        {
+            if (!_srvSettingsDirty) return true;
+            var leave = UnsavedServerSettingsDialog.Show(this, BuildServerSettingsDiff());
+            if (leave == UnsavedSettingsChoice.Cancel)
+                return false;
+            if (leave == UnsavedSettingsChoice.Save)
+            {
+                SrvSettingsSaveCore(skipConfirm: true);
+                return !_srvSettingsDirty;
+            }
+            DiscardUnsavedServerSettings();
+            return true;
         }
 
         private void SrvDownloadSettingsFolder_Click(object sender, RoutedEventArgs e)
@@ -814,6 +834,10 @@ namespace KaiAosNotifyClient
             }
             if (SrvFirebasePushSecretBox != null)
                 SrvFirebasePushSecretBox.ToolTip = ClientUiStrings.T("FirebasePushSecretTip");
+            if (SrvFirebasePushSecretPlainBox != null)
+                SrvFirebasePushSecretPlainBox.ToolTip = ClientUiStrings.T("FirebasePushSecretTip");
+            if (SrvFirebasePushShowSecretCheck != null)
+                SrvFirebasePushShowSecretCheck.Content = ClientUiStrings.T("ShowPassword");
             if (SrvFirebasePushGenerateBtn != null)
             {
                 SrvFirebasePushGenerateBtn.Content = ClientUiStrings.T("FirebasePushGenerate");
@@ -972,7 +996,7 @@ namespace KaiAosNotifyClient
                 if (SrvFirebasePushPollMinutesBox != null) SrvFirebasePushPollMinutesBox.Text = KvStr(map, "firebasePushPollMinutes", "360");
                 UpdateSrvFirebasePollMinutesVisibility();
                 if (SrvFirebasePushUrlBox != null) SrvFirebasePushUrlBox.Text = KvStr(map, "firebasePushUrl", "");
-                if (SrvFirebasePushSecretBox != null) SrvFirebasePushSecretBox.Text = KvStr(map, "firebasePushSecret", "");
+                SetSrvFirebaseSecretUi(KvStr(map, "firebasePushSecret", ""));
                 if (SrvFirebasePushServerNameBox != null) SrvFirebasePushServerNameBox.Text = KvStr(map, "firebasePushServerName", "");
                 if (SrvFirebasePushStatusText != null)
                 {
@@ -1005,6 +1029,7 @@ namespace KaiAosNotifyClient
                 if (markSynced)
                     SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsSynced"), true);
                 UpdateSrvSettingsResetEnabled();
+                UpdateAosPullCloudButtonVisibility();
             }
             finally
             {
@@ -1031,6 +1056,137 @@ namespace KaiAosNotifyClient
                     return false;
             }
             return true;
+        }
+
+        private List<ServerSettingsDiffRow> BuildServerSettingsDiff()
+        {
+            var baseline = _lastServerSettingsMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var current = CaptureServerSettingsMap() ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            // Only editable UI keys (Capture). Baseline-only keys (paths, notify, etc.) are read-only
+            // on the client and would falsely appear as value → (empty).
+            var ordered = new List<string>(current.Keys);
+            ordered.Sort(StringComparer.OrdinalIgnoreCase);
+
+            var rows = new List<ServerSettingsDiffRow>();
+            foreach (var key in ordered)
+            {
+                if (string.Equals(key, "notifyIps", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                string oldRaw;
+                string newRaw;
+                baseline.TryGetValue(key, out oldRaw);
+                current.TryGetValue(key, out newRaw);
+                oldRaw = oldRaw ?? "";
+                newRaw = newRaw ?? "";
+                if (string.Equals(oldRaw, newRaw, StringComparison.Ordinal))
+                    continue;
+                rows.Add(new ServerSettingsDiffRow
+                {
+                    Key = key,
+                    Label = ServerSettingsDiffLabel(key),
+                    OldDisplay = FormatServerSettingsDiffValue(key, oldRaw),
+                    NewDisplay = FormatServerSettingsDiffValue(key, newRaw)
+                });
+            }
+            return rows;
+        }
+
+        private static string ServerSettingsDiffLabel(string key)
+        {
+            string uiKey = null;
+            if (string.Equals(key, "language", StringComparison.OrdinalIgnoreCase)) uiKey = "Language";
+            else if (string.Equals(key, "themeMode", StringComparison.OrdinalIgnoreCase)) uiKey = "Theme";
+            else if (string.Equals(key, "startWithWindows", StringComparison.OrdinalIgnoreCase)) uiKey = "StartWithWindowsYes";
+            else if (string.Equals(key, "minimizeToTray", StringComparison.OrdinalIgnoreCase)) uiKey = "MinimizeToTrayYes";
+            else if (string.Equals(key, "minimizeOnClose", StringComparison.OrdinalIgnoreCase)) uiKey = "MinimizeOnClose";
+            else if (string.Equals(key, "autoUpdate", StringComparison.OrdinalIgnoreCase)) uiKey = "AutoUpdate";
+            else if (string.Equals(key, "keysRefreshSeconds", StringComparison.OrdinalIgnoreCase)) uiKey = "KeysRefreshSeconds";
+            else if (string.Equals(key, "keysVinTipSeconds", StringComparison.OrdinalIgnoreCase)) uiKey = "KeysVinTipSeconds";
+            else if (string.Equals(key, "keysStallMinutes", StringComparison.OrdinalIgnoreCase)) uiKey = "KeysStallMinutes";
+            else if (string.Equals(key, "keysBalloon", StringComparison.OrdinalIgnoreCase)) uiKey = "KeysBalloonOption";
+            else if (string.Equals(key, "keysVinBmwFailOnly", StringComparison.OrdinalIgnoreCase)) uiKey = "KeysVinBmwFailOnly";
+            else if (string.Equals(key, "keysAutoCopyVin", StringComparison.OrdinalIgnoreCase)) uiKey = "KeysAutoCopyVin";
+            else if (string.Equals(key, "keysStallAlert", StringComparison.OrdinalIgnoreCase)) uiKey = "KeysStallAlert";
+            else if (string.Equals(key, "browserPassHint", StringComparison.OrdinalIgnoreCase)) uiKey = "BrowserPassHintOption";
+            else if (string.Equals(key, "useSystemProxy", StringComparison.OrdinalIgnoreCase)) uiKey = "UseSystemProxy";
+            else if (string.Equals(key, "authCooldownMinutes", StringComparison.OrdinalIgnoreCase)) uiKey = "AuthCooldownMinutes";
+            else if (string.Equals(key, "authRegisterBlockAfter", StringComparison.OrdinalIgnoreCase)) uiKey = "AuthRegisterBlockAfter";
+            else if (string.Equals(key, "keyReaderLogLevel", StringComparison.OrdinalIgnoreCase)) uiKey = "KeyReaderLogLevel";
+            else if (string.Equals(key, "firebasePushEnabled", StringComparison.OrdinalIgnoreCase)) uiKey = "FirebasePushEnable";
+            else if (string.Equals(key, "firebasePushSyncMode", StringComparison.OrdinalIgnoreCase)) uiKey = "FirebasePushSyncMode";
+            else if (string.Equals(key, "firebasePushPollMinutes", StringComparison.OrdinalIgnoreCase)) uiKey = "FirebasePushSyncModePoll";
+            else if (string.Equals(key, "firebasePushUrl", StringComparison.OrdinalIgnoreCase)) uiKey = "FirebasePushUrl";
+            else if (string.Equals(key, "firebasePushSecret", StringComparison.OrdinalIgnoreCase)) uiKey = "FirebasePushSecret";
+            else if (string.Equals(key, "firebasePushServerName", StringComparison.OrdinalIgnoreCase)) uiKey = "FirebasePushServerName";
+            else if (string.Equals(key, "logVerbose", StringComparison.OrdinalIgnoreCase)) uiKey = "LogVerbose";
+
+            var label = !string.IsNullOrEmpty(uiKey) ? ClientUiStrings.T(uiKey) : key;
+            if (string.IsNullOrEmpty(label) || label == uiKey)
+                label = key;
+            return StripTrailingColon(label);
+        }
+
+        private static string StripTrailingColon(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s ?? "";
+            s = s.TrimEnd();
+            while (s.Length > 0 && (s[s.Length - 1] == ':' || s[s.Length - 1] == '：'))
+                s = s.Substring(0, s.Length - 1).TrimEnd();
+            return s;
+        }
+
+        private static bool IsServerSettingsToggleKey(string key)
+        {
+            return string.Equals(key, "startWithWindows", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "minimizeToTray", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "minimizeOnClose", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "autoUpdate", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "keysBalloon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "keysVinBmwFailOnly", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "keysAutoCopyVin", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "keysStallAlert", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "browserPassHint", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "useSystemProxy", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "firebasePushEnabled", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "logVerbose", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string FormatServerSettingsDiffValue(string key, string raw)
+        {
+            raw = raw ?? "";
+            if (string.Equals(key, "firebasePushSecret", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrEmpty(raw))
+                    return ClientUiStrings.T("ServerSettingsDiffEmptyValue");
+                // Never show the secret; presence in the diff list means it changed.
+                return ClientUiStrings.T("ServerSettingsDiffSecretChanged");
+            }
+            if (IsServerSettingsToggleKey(key))
+            {
+                if (raw == "1" || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase))
+                    return ClientUiStrings.T("ServerSettingsDiffOn");
+                if (raw == "0" || string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) || raw.Length == 0)
+                    return ClientUiStrings.T("ServerSettingsDiffOff");
+            }
+            if (string.Equals(key, "firebasePushSyncMode", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.Equals(raw, "poll", StringComparison.OrdinalIgnoreCase))
+                    return ClientUiStrings.T("FirebasePushSyncModePoll");
+                if (string.Equals(raw, "sse", StringComparison.OrdinalIgnoreCase))
+                    return ClientUiStrings.T("FirebasePushSyncModeSse");
+                return ClientUiStrings.T("FirebasePushSyncModeOnDemand");
+            }
+            if (string.Equals(key, "keyReaderLogLevel", StringComparison.OrdinalIgnoreCase))
+            {
+                var lvlKey = "KeyReaderLog" + (raw ?? "").Trim();
+                var lvl = ClientUiStrings.T(lvlKey);
+                if (!string.IsNullOrEmpty(lvl) && lvl != lvlKey)
+                    return lvl;
+            }
+            if (string.IsNullOrEmpty(raw))
+                return ClientUiStrings.T("ServerSettingsDiffEmptyValue");
+            return raw;
         }
 
         private void ClearSrvSettingsConflict()
@@ -1176,11 +1332,65 @@ namespace KaiAosNotifyClient
                 SrvSettingsPendingMark.Visibility = (!syncedOk && hasText) ? Visibility.Visible : Visibility.Collapsed;
         }
 
+        private bool _srvSecretSyncing;
+
+        private string GetSrvFirebaseSecretFromUi()
+        {
+            if (SrvFirebasePushShowSecretCheck != null && SrvFirebasePushShowSecretCheck.IsChecked == true
+                && SrvFirebasePushSecretPlainBox != null)
+                return (SrvFirebasePushSecretPlainBox.Text ?? "").Trim();
+            return SrvFirebasePushSecretBox != null ? (SrvFirebasePushSecretBox.Password ?? "").Trim() : "";
+        }
+
+        private void SetSrvFirebaseSecretUi(string secret)
+        {
+            secret = secret ?? "";
+            var prev = _srvSecretSyncing;
+            _srvSecretSyncing = true;
+            try
+            {
+                if (SrvFirebasePushSecretBox != null && SrvFirebasePushSecretBox.Password != secret)
+                    SrvFirebasePushSecretBox.Password = secret;
+                if (SrvFirebasePushSecretPlainBox != null && SrvFirebasePushSecretPlainBox.Text != secret)
+                    SrvFirebasePushSecretPlainBox.Text = secret;
+            }
+            finally { _srvSecretSyncing = prev; }
+        }
+
+        private void SrvFirebasePushShowSecret_Changed(object sender, RoutedEventArgs e)
+        {
+            if (SrvFirebasePushSecretBox == null || SrvFirebasePushSecretPlainBox == null) return;
+            var prev = _srvSecretSyncing;
+            _srvSecretSyncing = true;
+            try
+            {
+                if (SrvFirebasePushShowSecretCheck != null && SrvFirebasePushShowSecretCheck.IsChecked == true)
+                {
+                    SrvFirebasePushSecretPlainBox.Text = SrvFirebasePushSecretBox.Password ?? "";
+                    SrvFirebasePushSecretBox.Visibility = Visibility.Collapsed;
+                    SrvFirebasePushSecretPlainBox.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    SrvFirebasePushSecretBox.Password = SrvFirebasePushSecretPlainBox.Text ?? "";
+                    SrvFirebasePushSecretPlainBox.Text = "";
+                    SrvFirebasePushSecretPlainBox.Visibility = Visibility.Collapsed;
+                    SrvFirebasePushSecretBox.Visibility = Visibility.Visible;
+                }
+            }
+            finally { _srvSecretSyncing = prev; }
+        }
+
         private void SrvSettings_Changed(object sender, RoutedEventArgs e)
         {
-            if (_loadingSrvSettings) return;
+            if (_loadingSrvSettings || _srvSecretSyncing) return;
             if (sender == SrvFirebasePushSyncModeCombo)
                 UpdateSrvFirebasePollMinutesVisibility();
+            if (sender == SrvFirebasePushEnableCheck
+                || sender == SrvFirebasePushUrlBox
+                || sender == SrvFirebasePushSecretBox
+                || sender == SrvFirebasePushSecretPlainBox)
+                UpdateAosPullCloudButtonVisibility();
             MarkSrvSettingsDirty(true);
             SetSrvSettingsStatus(ClientUiStrings.T("ServerSettingsDirty"), false);
         }
@@ -1191,6 +1401,11 @@ namespace KaiAosNotifyClient
         }
 
         private void SrvSettingsSave_Click(object sender, RoutedEventArgs e)
+        {
+            SrvSettingsSaveCore(skipConfirm: false);
+        }
+
+        private void SrvSettingsSaveCore(bool skipConfirm)
         {
             if (!_srvSettingsDirty) return;
             if (_client == null || !_client.IsConnected)
@@ -1221,7 +1436,7 @@ namespace KaiAosNotifyClient
                 }
                 // Overwrite — fall through and send local UI.
             }
-            else
+            else if (!skipConfirm)
             {
                 var confirm = MessageBox.Show(this, ClientUiStrings.T("ServerSettingsSaveConfirm"),
                     ClientUiStrings.T("AppTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question);

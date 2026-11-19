@@ -73,11 +73,13 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
-    <Page Include="Themes\KaiTheme.xaml">
+    <Page Include="..\Shared\Themes\KaiTheme.xaml">
+      <Link>Themes\KaiTheme.xaml</Link>
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
-    <Page Include="Themes\KaiTheme.Dark.xaml">
+    <Page Include="..\Shared\Themes\KaiTheme.Dark.xaml">
+      <Link>Themes\KaiTheme.Dark.xaml</Link>
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
@@ -99,6 +101,12 @@
     <Compile Include="MainWindow.Updates.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="MainWindow.Shortcuts.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.NetDiag.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
     <Compile Include="MainWindow.Settings.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
@@ -106,8 +114,7 @@
     <Compile Include="ClientSettings.cs" />
     <Compile Include="ClientKeyHistory.cs" />
     <Compile Include="ClientUiStrings.cs" />
-    <Compile Include="ClientThemeManager.cs" />
-    <Compile Include="..\StartMenuShortcut.cs">
+        <Compile Include="..\StartMenuShortcut.cs">
       <Link>StartMenuShortcut.cs</Link>
     </Compile>
     <Compile Include="..\UpdateService.cs">
@@ -118,15 +125,37 @@
     </Compile>
     <Compile Include="LanServerDiscovery.cs" />
     <Compile Include="ClientKeySync.cs" />
+    <Compile Include="ClientKeysExport.cs" />
+    <Compile Include="FavoriteHostDialog.cs" />
     <Compile Include="NotifyClient.cs" />
-    <Compile Include="ToastWindow.cs" />
-    <Compile Include="..\SaveLogDialog.cs">
+        <Compile Include="..\SaveLogDialog.cs">
       <Link>SaveLogDialog.cs</Link>
     </Compile>
     <Compile Include="SettingsConflictDialog.cs" />
-    <Compile Include="BrowserPassResultWindow.cs" />
-    <Compile Include="..\Shared\NotifyMessage.cs">
+    <Compile Include="UnsavedServerSettingsDialog.cs" />
+        <Compile Include="..\Shared\NotifyMessage.cs">
       <Link>Shared\NotifyMessage.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\KeysExportLogic.cs">
+      <Link>Shared\KeysExportLogic.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\DiagBundleLogic.cs">
+      <Link>Shared\DiagBundleLogic.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\ThemeManager.cs">
+      <Link>Shared\ThemeManager.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\TrayTipWindow.cs">
+      <Link>Shared\TrayTipWindow.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\BrowserPassResultWindow.cs">
+      <Link>Shared\BrowserPassResultWindow.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\DpapiString.cs">
+      <Link>Shared\DpapiString.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\WpfFocusHelpers.cs">
+      <Link>Shared\WpfFocusHelpers.cs</Link>
     </Compile>
     <Compile Include="..\Shared\TcpUtf8LineReader.cs">
       <Link>Shared\TcpUtf8LineReader.cs</Link>
@@ -142,6 +171,15 @@
     </Compile>
     <Compile Include="..\Shared\PeerSyncLogic.cs">
       <Link>Shared\PeerSyncLogic.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\PeerSyncFirebaseParse.cs">
+      <Link>Shared\PeerSyncFirebaseParse.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\PeerRelayResults.cs">
+      <Link>Shared\PeerRelayResults.cs</Link>
+    </Compile>
+    <Compile Include="..\PeerSyncFirebaseClient.cs">
+      <Link>PeerSyncFirebaseClient.cs</Link>
     </Compile>
     <Compile Include="..\Shared\RenewFlowLogic.cs">
       <Link>Shared\RenewFlowLogic.cs</Link>

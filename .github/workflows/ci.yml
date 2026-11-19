@@ -16,7 +16,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path tools | Out-Null
           if (-not (Test-Path tools\nuget.exe)) {
-            Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile tools\nuget.exe
+            # Pin a known release (avoid floating "latest" without checksum in CI).
+            Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/v6.11.0/nuget.exe' -OutFile tools\nuget.exe
           }
 
       - name: NuGet restore (server + client packages.config)

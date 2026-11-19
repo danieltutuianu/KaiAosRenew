@@ -3,11 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="KAI - AOS Renew - Client"
         Width="1280" Height="740"
-        MinWidth="1180" MinHeight="600"
+        MinWidth="1040" MinHeight="600"
         WindowStartupLocation="CenterScreen"
         FontFamily="{DynamicResource KaiFont}"
         Background="{DynamicResource WindowBgBrush}"
-        FocusVisualStyle="{x:Null}"
+        FocusVisualStyle="{DynamicResource KaiFocusVisual}"
+        PreviewKeyDown="Window_PreviewKeyDown"
         Loaded="Window_Loaded"
         Closing="Window_Closing">
   <Grid>
@@ -59,31 +60,35 @@
               <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <WrapPanel Orientation="Horizontal" Margin="0,0,0,4">
               <Button x:Name="KeysRefreshBtn" Content="Refresh" Style="{DynamicResource BeigeButton}"
-                      Click="KeysRefresh_Click" MinWidth="90" Margin="0,0,8,0"  Tag="{DynamicResource IconRefresh}" />
+                      Click="KeysRefresh_Click" MinWidth="90" Margin="0,0,8,4"  Tag="{DynamicResource IconRefresh}" />
               <Button x:Name="KeysClearBtn" Content="Clear" Style="{DynamicResource BeigeButton}"
-                      Click="KeysClear_Click" MinWidth="80" Margin="0,0,8,0"  Tag="{DynamicResource IconClear}" />
+                      Click="KeysClear_Click" MinWidth="80" Margin="0,0,8,4"  Tag="{DynamicResource IconClear}" />
+              <Button x:Name="KeysExportBtn" Content="Export" Style="{DynamicResource BeigeButton}"
+                      Click="KeysExport_Click" MinWidth="80" Margin="0,0,8,4" IsEnabled="False"
+                      ToolTip="Export the visible Keys rows to CSV or TXT"  Tag="{DynamicResource IconSave}" />
               <Button x:Name="KeysRetryBmwBtn" Content="Retry BMW" Style="{DynamicResource BeigeButton}"
-                      Click="KeysRetryBmw_Click" MinWidth="100" Margin="0,0,8,0"
+                      Click="KeysRetryBmw_Click" MinWidth="100" Margin="0,0,8,4"
                       IsEnabled="False"
                       ToolTip="Ask the server to re-send the last key file to BMW Server"  Tag="{DynamicResource IconRetry}" />
-              <TextBlock x:Name="KeysFilterLabel" Text="Filter:" VerticalAlignment="Center" Margin="8,0,6,0"
+              <TextBlock x:Name="KeysFilterLabel" Text="Filter:" VerticalAlignment="Center" Margin="8,0,6,4"
                          Style="{DynamicResource FieldLabel}" />
-              <ComboBox x:Name="KeysFilterCombo" Width="120" VerticalAlignment="Center"
+              <ComboBox x:Name="KeysFilterCombo" Width="120" VerticalAlignment="Center" Margin="0,0,0,4"
                         Style="{DynamicResource KaiComboBox}"
                         SelectionChanged="KeysFilter_SelectionChanged" />
-              <TextBlock x:Name="KeysSearchLabel" Text="Search:" VerticalAlignment="Center" Margin="10,0,6,0"
+              <TextBlock x:Name="KeysSearchLabel" Text="Search:" VerticalAlignment="Center" Margin="10,0,6,4"
                          Style="{DynamicResource FieldLabel}" />
-              <TextBox x:Name="KeysSearchBox" Width="140" VerticalAlignment="Center"
+              <TextBox x:Name="KeysSearchBox" Width="140" VerticalAlignment="Center" Margin="0,0,0,4"
                        Style="{DynamicResource KaiTextBox}"
                        ToolTip="VIN / paint / I-level"
                        TextChanged="KeysSearchBox_TextChanged" />
               <Button x:Name="KeysSearchClearBtn" Content="✕" Style="{DynamicResource BeigeButton}"
-                      Click="KeysSearchClear_Click" MinWidth="28" Padding="8,4,8,4" Margin="6,0,0,0"
+                      Click="KeysSearchClear_Click" MinWidth="28" Padding="8,4,8,4" Margin="6,0,0,4"
                       HorizontalContentAlignment="Center" Visibility="Collapsed"
-                      ToolTip="Clear search" />
-            </StackPanel>
+                      ToolTip="Clear search"
+                    AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}"/>
+            </WrapPanel>
             <StackPanel Grid.Row="1">
               <Border x:Name="KeysReaderWarnBanner" Background="{DynamicResource WarnBannerBgBrush}"
                       BorderBrush="{DynamicResource StatusWarnBrush}"
@@ -130,6 +135,8 @@
               </ListView.ItemContainerStyle>
               <ListView.View>
                 <GridView>
+                  <GridViewColumn x:Name="KeysColIndex" Header="#" Width="40"
+                                  DisplayMemberBinding="{Binding Index}" />
                   <GridViewColumn x:Name="KeysColTime" Header="Time" Width="120"
                                   DisplayMemberBinding="{Binding TimeText}" />
                   <GridViewColumn x:Name="KeysColVin" Header="VIN" Width="175">
@@ -138,22 +145,13 @@
                         <StackPanel Orientation="Horizontal">
                           <Button Padding="0" Margin="0,0,4,0" Width="18" Height="18"
                                   FontFamily="Segoe MDL2 Assets" FontSize="11" Content="&#xE8C8;"
-                                  Cursor="Hand" Focusable="False"
-                                  Background="Transparent" BorderThickness="0"
+                                  Cursor="Hand" Focusable="True" IsTabStop="False"
+                                  Style="{DynamicResource KeysActionIconButton}"
+                                  AutomationProperties.Name="Copy VIN"
                                   Loaded="KeysVinCopyIcon_Loaded"
                                   DataContextChanged="KeysVinCopyIcon_DataContextChanged"
                                   PreviewMouseLeftButtonDown="KeysVinCopyIcon_PreviewMouseLeftButtonDown"
                                   Click="KeysVinCopyIcon_Click">
-                            <Button.Style>
-                              <Style TargetType="Button">
-                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-                                <Style.Triggers>
-                                  <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True">
-                                    <Setter Property="Foreground" Value="Black" />
-                                  </DataTrigger>
-                                </Style.Triggers>
-                              </Style>
-                            </Button.Style>
                             <Button.ToolTip>
                               <ToolTip Foreground="Black" Background="#FFF7F7F7" BorderBrush="#FFABABAB" BorderThickness="1"
                                        Padding="6,4">
@@ -161,7 +159,9 @@
                               </ToolTip>
                             </Button.ToolTip>
                           </Button>
-                          <TextBlock Text="{Binding VinText}" VerticalAlignment="Center" />
+                          <TextBlock Tag="vin" VerticalAlignment="Center"
+                                     Loaded="KeysHighlightCell_Loaded"
+                                     DataContextChanged="KeysHighlightCell_DataContextChanged" />
                         </StackPanel>
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
@@ -172,22 +172,13 @@
                         <StackPanel Orientation="Horizontal">
                           <Button Padding="0" Margin="0,0,4,0" Width="18" Height="18"
                                   FontFamily="Segoe MDL2 Assets" FontSize="11" Content="&#xE8C8;"
-                                  Cursor="Hand" Focusable="False"
-                                  Background="Transparent" BorderThickness="0"
+                                  Cursor="Hand" Focusable="True" IsTabStop="False"
+                                  Style="{DynamicResource KeysActionIconButton}"
+                                  AutomationProperties.Name="Copy Km"
                                   Loaded="KeysKmCopyIcon_Loaded"
                                   DataContextChanged="KeysKmCopyIcon_DataContextChanged"
                                   PreviewMouseLeftButtonDown="KeysKmCopyIcon_PreviewMouseLeftButtonDown"
                                   Click="KeysKmCopyIcon_Click">
-                            <Button.Style>
-                              <Style TargetType="Button">
-                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-                                <Style.Triggers>
-                                  <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True">
-                                    <Setter Property="Foreground" Value="Black" />
-                                  </DataTrigger>
-                                </Style.Triggers>
-                              </Style>
-                            </Button.Style>
                             <Button.ToolTip>
                               <ToolTip Foreground="Black" Background="#FFF7F7F7" BorderBrush="#FFABABAB" BorderThickness="1"
                                        Padding="6,4">
@@ -204,16 +195,21 @@
                                   DisplayMemberBinding="{Binding PaintText}" />
                   <GridViewColumn x:Name="KeysColUpholstery" Header="Upholstery" Width="95"
                                   DisplayMemberBinding="{Binding UpholsteryText}" />
-                  <GridViewColumn x:Name="KeysColILevel" Header="I-level" Width="130"
-                                  DisplayMemberBinding="{Binding ILevelText}" />
+                  <GridViewColumn x:Name="KeysColILevel" Header="I-level" Width="130">
+                    <GridViewColumn.CellTemplate>
+                      <DataTemplate>
+                        <TextBlock Tag="ilevel"
+                                   Loaded="KeysHighlightCell_Loaded"
+                                   DataContextChanged="KeysHighlightCell_DataContextChanged" />
+                      </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                  </GridViewColumn>
                   <GridViewColumn x:Name="KeysColReader" Header="Reader" Width="100"
                                   DisplayMemberBinding="{Binding ReaderId}" />
                   <GridViewColumn x:Name="KeysColLocal" Header="Local" Width="50"
                                   DisplayMemberBinding="{Binding LocalText}" />
                   <GridViewColumn x:Name="KeysColBmw" Header="BMW Server" Width="85"
                                   DisplayMemberBinding="{Binding BmwText}" />
-                  <GridViewColumn x:Name="KeysColStatus" Header="Status" Width="75"
-                                  DisplayMemberBinding="{Binding StatusText}" />
                   <GridViewColumn x:Name="KeysColDetail" Header="Detail" Width="220"
                                   DisplayMemberBinding="{Binding DetailText}" />
                   <GridViewColumn x:Name="KeysColBin" Header="Bin" Width="0">
@@ -221,10 +217,12 @@
                       <DataTemplate>
                         <Button Width="20" Height="20" Padding="3" Margin="0"
                                 MinWidth="20" MinHeight="20"
-                                Background="#FFEDE4D4" BorderBrush="#FF9A8F7C" BorderThickness="1"
+                                Style="{DynamicResource KeysActionIconButton}"
+                              Background="{DynamicResource ButtonTopBrush}" BorderBrush="{DynamicResource ButtonBorderBrush}" BorderThickness="1"
                                 HorizontalAlignment="Center"
                                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                                VerticalAlignment="Center" Cursor="Hand" Focusable="False"
+                                VerticalAlignment="Center" Cursor="Hand" Focusable="True" IsTabStop="False"
+                              AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}"
                                 Loaded="KeysDownloadBinBtn_Loaded"
                                 DataContextChanged="KeysDownloadBinBtn_DataContextChanged"
                                 Click="KeysDownloadBinBtn_Click"
@@ -346,35 +344,40 @@
                   </StackPanel>
                 </StackPanel>
               </Grid>
-              <Grid Margin="0,36,0,8">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="130" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
-                  <Button x:Name="AosCheckBrowserPassBtn" Style="{DynamicResource BeigeButton}"
-                          MinWidth="160" Margin="0,0,8,0" Padding="12,4"
-                          Click="AosCheckBrowserPass_Click">
-                    <StackPanel Orientation="Horizontal">
-                      <Viewbox Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
-                        <Path Fill="{DynamicResource TextPrimaryBrush}"
-                              Data="{DynamicResource AosIconSearchGeometry}" />
-                      </Viewbox>
-                      <TextBlock x:Name="AosCheckBrowserPassBtnText" Text="Check browser password" VerticalAlignment="Center" />
-                    </StackPanel>
-                  </Button>
-                  <Button x:Name="AosOpenBmwBtn" Style="{DynamicResource BeigeButton}"
-                          MinWidth="120" Padding="12,4" Click="AosOpenBmw_Click">
-                    <StackPanel Orientation="Horizontal">
-                      <Viewbox Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
-                        <Path Fill="{DynamicResource TextPrimaryBrush}"
-                              Data="{DynamicResource AosIconOpenGeometry}" />
-                      </Viewbox>
-                      <TextBlock x:Name="AosOpenBmwBtnText" Text="Open BMW AOS" VerticalAlignment="Center" />
-                    </StackPanel>
-                  </Button>
-                </StackPanel>
-              </Grid>
+              <WrapPanel Margin="0,36,0,8" Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button x:Name="AosPullCloudBtn" Style="{DynamicResource BeigeButton}"
+                        MinWidth="140" Margin="0,0,8,8" Padding="10,4"
+                        Click="AosPullCloud_Click" ToolTipService.ShowOnDisabled="True">
+                  <StackPanel Orientation="Horizontal">
+                    <Viewbox Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                      <Path Fill="{DynamicResource TextPrimaryBrush}"
+                            Data="{DynamicResource AosIconCloudGeometry}" />
+                    </Viewbox>
+                    <TextBlock x:Name="AosPullCloudBtnText" Text="Pull from cloud" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <Button x:Name="AosCheckBrowserPassBtn" Style="{DynamicResource BeigeButton}"
+                        MinWidth="140" Margin="0,0,8,8" Padding="10,4"
+                        Click="AosCheckBrowserPass_Click">
+                  <StackPanel Orientation="Horizontal">
+                    <Viewbox Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                      <Path Fill="{DynamicResource TextPrimaryBrush}"
+                            Data="{DynamicResource AosIconSearchGeometry}" />
+                    </Viewbox>
+                    <TextBlock x:Name="AosCheckBrowserPassBtnText" Text="Check browser password" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <Button x:Name="AosOpenBmwBtn" Style="{DynamicResource BeigeButton}"
+                        MinWidth="120" Margin="0,0,0,8" Padding="10,4" Click="AosOpenBmw_Click">
+                  <StackPanel Orientation="Horizontal">
+                    <Viewbox Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                      <Path Fill="{DynamicResource TextPrimaryBrush}"
+                            Data="{DynamicResource AosIconOpenGeometry}" />
+                    </Viewbox>
+                    <TextBlock x:Name="AosOpenBmwBtnText" Text="Open BMW AOS" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+              </WrapPanel>
             </StackPanel>
           </Grid>
         </TabItem>
@@ -397,32 +400,36 @@
               <TextBlock x:Name="ActivitySection" Text="Server activity log:"
                          FontSize="12" FontWeight="SemiBold"
                          Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
-              <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                <TextBlock x:Name="ActivityFilterLabel" Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,0"
+              <WrapPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                <TextBlock x:Name="ActivityFilterLabel" Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,4"
                            Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
-                <ComboBox x:Name="LogFilterCombo" Width="120" Margin="0,0,10,0" VerticalAlignment="Center"
+                <ComboBox x:Name="LogFilterCombo" Width="120" Margin="0,0,10,4" VerticalAlignment="Center"
                           Style="{DynamicResource KaiComboBox}"
                           DisplayMemberPath="Name" SelectedValuePath="Code"
                           SelectionChanged="LogFilter_SelectionChanged" />
-                <TextBlock x:Name="ActivitySearchLabel" Text="Search:" VerticalAlignment="Center" Margin="0,0,6,0"
+                <TextBlock x:Name="ActivitySearchLabel" Text="Search:" VerticalAlignment="Center" Margin="0,0,6,4"
                            Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
-                <TextBox x:Name="ActivitySearchBox" Width="140" Margin="0,0,10,0" VerticalAlignment="Center"
+                <TextBox x:Name="ActivitySearchBox" Width="140" Margin="0,0,6,4" VerticalAlignment="Center"
                          Style="{DynamicResource KaiTextBox}"
                          ToolTip="Message text"
                          TextChanged="ActivitySearchBox_TextChanged" />
+                <Button x:Name="ActivitySearchClearBtn" Content="✕" Style="{DynamicResource BeigeButton}"
+                        Click="ActivitySearchClear_Click" MinWidth="28" Padding="8,4,8,4" Margin="0,0,10,4"
+                        HorizontalContentAlignment="Center" Visibility="Collapsed"
+                        ToolTip="Clear search" />
                 <Button x:Name="AosCheckTokenBtn" Content="Check token" Style="{DynamicResource BeigeButton}"
-                        MinWidth="110" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        MinWidth="110" Margin="0,0,8,4" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="AosCheckToken_Click"  Tag="{DynamicResource IconCheck}" />
                 <Button x:Name="ActivityRefreshBtn" Content="Refresh" Style="{DynamicResource BeigeButton}"
-                        MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        MinWidth="88" Margin="0,0,8,4" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="ActivityRefresh_Click"  Tag="{DynamicResource IconRefresh}" />
                 <Button x:Name="SaveActivityLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
-                        MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        MinWidth="88" Margin="0,0,8,4" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="SaveActivityLog_Click"  Tag="{DynamicResource IconSave}" />
                 <Button x:Name="ActivityClearBtn" Content="Clear" Style="{DynamicResource BeigeButton}"
-                        MinWidth="72" Margin="0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        MinWidth="72" Margin="0,0,0,4" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="ActivityClear_Click"  Tag="{DynamicResource IconClear}" />
-              </StackPanel>
+              </WrapPanel>
             </DockPanel>
             <StackPanel Grid.Row="1">
               <TextBlock x:Name="ActivityEmptyHint" Text="No activity yet"
@@ -487,32 +494,39 @@
               <TextBlock x:Name="RegisterHistoryLabel" Text="Register history:"
                          FontSize="12" FontWeight="SemiBold"
                          Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
-              <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                <TextBlock x:Name="RegisterFilterLabel" Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,0"
+              <WrapPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                <TextBlock x:Name="RegisterFilterLabel" Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,4"
                            Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
-                <ComboBox x:Name="RegisterFilterCombo" Width="120" Margin="0,0,10,0" VerticalAlignment="Center"
+                <ComboBox x:Name="RegisterFilterCombo" Width="120" Margin="0,0,10,4" VerticalAlignment="Center"
                           Style="{DynamicResource KaiComboBox}"
                           DisplayMemberPath="Name" SelectedValuePath="Code"
                           SelectionChanged="RegisterFilter_SelectionChanged" />
-                <TextBlock x:Name="RegisterSearchLabel" Text="Search:" VerticalAlignment="Center" Margin="0,0,6,0"
+                <TextBlock x:Name="RegisterSearchLabel" Text="Search:" VerticalAlignment="Center" Margin="0,0,6,4"
                            Foreground="{DynamicResource TextMutedBrush}" FontSize="12" />
-                <TextBox x:Name="RegisterSearchBox" Width="140" Margin="0,0,10,0" VerticalAlignment="Center"
+                <TextBox x:Name="RegisterSearchBox" Width="140" Margin="0,0,6,4" VerticalAlignment="Center"
                          Style="{DynamicResource KaiTextBox}"
                          ToolTip="Message text"
                          TextChanged="RegisterSearchBox_TextChanged" />
+                <Button x:Name="RegisterSearchClearBtn" Content="✕" Style="{DynamicResource BeigeButton}"
+                        Click="RegisterSearchClear_Click" MinWidth="28" Padding="8,4,8,4" Margin="0,0,10,4"
+                        HorizontalContentAlignment="Center" Visibility="Collapsed"
+                        ToolTip="Clear search" />
                 <Button x:Name="RegisterRefreshBtn" Content="Refresh" Style="{DynamicResource BeigeButton}"
-                        MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        MinWidth="88" Margin="0,0,8,4" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="RegisterRefresh_Click"  Tag="{DynamicResource IconRefresh}" />
                 <Button x:Name="SaveRegisterLogBtn" Content="Save log" Style="{DynamicResource BeigeButton}"
-                        MinWidth="88" Margin="0,0,8,0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        MinWidth="88" Margin="0,0,8,4" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="SaveRegisterLog_Click"  Tag="{DynamicResource IconSave}" />
                 <Button x:Name="ClearRegisterLogBtn" Content="Clear" Style="{DynamicResource BeigeButton}"
-                        MinWidth="72" Margin="0" Padding="10,2,12,2" VerticalAlignment="Center"
+                        MinWidth="72" Margin="0,0,0,4" Padding="10,2,12,2" VerticalAlignment="Center"
                         Click="ClearRegisterLog_Click"  Tag="{DynamicResource IconClear}" />
-              </StackPanel>
+              </WrapPanel>
             </DockPanel>
             <StackPanel Grid.Row="1">
               <TextBlock x:Name="RegisterLoadingHint" Text="Loading…"
+                         Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                         Margin="0,0,0,4" Visibility="Collapsed" />
+              <TextBlock x:Name="RegisterEmptyHint" Text="No Register attempts yet"
                          Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
                          Margin="0,0,0,4" Visibility="Collapsed" />
               <TextBlock x:Name="RegisterNoMatchesHint" Text="No matches — clear filter"
@@ -665,6 +679,10 @@
                             MinWidth="160" Margin="0,0,8,0" Click="SrvDownloadSettingsFolder_Click" Tag="{DynamicResource IconFolder}" />
                     <Button x:Name="SrvDownloadLogsFolderBtn" Content="Download logs folder" Style="{DynamicResource BeigeButton}"
                             MinWidth="150" Margin="0,0,8,0" Click="SrvDownloadLogsFolder_Click" Tag="{DynamicResource IconFolder}" />
+                    <Button x:Name="SrvDownloadDiagBundleBtn" Content="Diagnostic bundle" Style="{DynamicResource BeigeButton}"
+                            MinWidth="140" Margin="0,0,8,0" Click="SrvDownloadDiagBundle_Click"
+                            ToolTip="Download a zip with redacted server settings, recent logs, and service status"
+                            Tag="{DynamicResource IconExport}" />
                   </StackPanel>
                   <StackPanel Orientation="Horizontal">
                     <Button x:Name="SrvExportBtn" Content="Export settings" Style="{DynamicResource BeigeButton}"
@@ -919,13 +937,15 @@
                                 MinWidth="36" Padding="8,2" VerticalAlignment="Center"
                                 Content=""
                                 Click="SrvFirebasePushUrlCopy_Click"
-                                Tag="{DynamicResource IconCopy}" />
+                                Tag="{DynamicResource IconCopy}"
+                    AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}"/>
                         <Button x:Name="SrvFirebasePushUrlPasteBtn"
                                 Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
                                 MinWidth="36" Padding="8,2" VerticalAlignment="Center"
                                 Content=""
                                 Click="SrvFirebasePushUrlPaste_Click"
-                                Tag="{DynamicResource IconPaste}" />
+                                Tag="{DynamicResource IconPaste}"
+                    AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}"/>
                       </StackPanel>
                     </Grid>
                     <Grid Margin="0,0,0,8">
@@ -936,9 +956,16 @@
                       <TextBlock x:Name="SrvFirebasePushSecretLabel" Text="Shared secret:" Style="{DynamicResource FieldLabel}"
                                  Width="Auto" VerticalAlignment="Center" Margin="0,0,12,0" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBox x:Name="SrvFirebasePushSecretBox" Width="220" HorizontalAlignment="Left"
-                                 Style="{DynamicResource KaiTextBox}"
-                                 LostFocus="SrvSettingsField_LostFocus" TextChanged="SrvSettings_Changed" />
+                        <Grid Width="220" HorizontalAlignment="Left">
+                          <PasswordBox x:Name="SrvFirebasePushSecretBox" Style="{DynamicResource KaiPasswordBox}"
+                                       LostFocus="SrvSettingsField_LostFocus" PasswordChanged="SrvSettings_Changed" />
+                          <TextBox x:Name="SrvFirebasePushSecretPlainBox" Style="{DynamicResource KaiTextBox}"
+                                   Visibility="Collapsed"
+                                   LostFocus="SrvSettingsField_LostFocus" TextChanged="SrvSettings_Changed" />
+                        </Grid>
+                        <CheckBox x:Name="SrvFirebasePushShowSecretCheck" Content="Show password" Style="{DynamicResource KaiCheckBox}"
+                                  Margin="8,0,0,0" VerticalAlignment="Center"
+                                  Checked="SrvFirebasePushShowSecret_Changed" Unchecked="SrvFirebasePushShowSecret_Changed" />
                         <Button x:Name="SrvFirebasePushGenerateBtn"
                                 Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
                                 MinWidth="80" Padding="8,2" VerticalAlignment="Center"
@@ -949,13 +976,15 @@
                                 MinWidth="36" Padding="8,2" VerticalAlignment="Center"
                                 Content=""
                                 Click="SrvFirebasePushCopy_Click"
-                                Tag="{DynamicResource IconCopy}" />
+                                Tag="{DynamicResource IconCopy}"
+                    AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}"/>
                         <Button x:Name="SrvFirebasePushSecretPasteBtn"
                                 Style="{DynamicResource BeigeButton}" Margin="8,0,0,0"
                                 MinWidth="36" Padding="8,2" VerticalAlignment="Center"
                                 Content=""
                                 Click="SrvFirebasePushSecretPaste_Click"
-                                Tag="{DynamicResource IconPaste}" />
+                                Tag="{DynamicResource IconPaste}"
+                    AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}"/>
                       </StackPanel>
                     </Grid>
                     <Grid Margin="0,0,0,8">
@@ -1097,6 +1126,7 @@
                       <ColumnDefinition Width="Auto" />
                       <ColumnDefinition Width="Auto" />
                       <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Name="IpLabel" Text="IP:" VerticalAlignment="Center" Margin="0,0,8,0"
                                Style="{DynamicResource FieldLabel}"
@@ -1105,8 +1135,15 @@
                               HorizontalAlignment="Left"
                               IsEditable="True" VerticalContentAlignment="Center"
                               Style="{DynamicResource KaiComboBox}"
+                              TextSearch.TextPath="Host"
                               LostFocus="HostPort_LostFocus"
-                              ToolTip="Notify server IP — use Scan LAN or pick a recent host" />
+                              ToolTip="Notify server IP — use Scan LAN or pick a recent host">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Text="{Binding Display}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
                     <TextBlock x:Name="PortLabel" Grid.Column="2" Text="Port:" VerticalAlignment="Center"
                                Margin="0,0,8,0" Style="{DynamicResource FieldLabel}"
                                Width="Auto" HorizontalAlignment="Left" />
@@ -1115,6 +1152,9 @@
                     <Button x:Name="ScanLanBtn" Grid.Column="4" Content="Scan LAN"
                             Style="{DynamicResource BeigeButton}" Click="ScanLan_Click"
                             ToolTip="Scan local network for notify server"  Tag="{DynamicResource IconScan}" />
+                    <Button x:Name="FavHostBtn" Grid.Column="5" Content="&#x2605;" Margin="8,0,0,0" MinWidth="36"
+                            Style="{DynamicResource BeigeButton}" Click="FavHost_Click"
+                            ToolTip="Save this host as a favorite (optional alias)" />
                   </Grid>
                   <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
@@ -1135,7 +1175,8 @@
                               Content=""
                               Click="PairingCodePaste_Click"
                               ToolTip="Paste pairing code"
-                              Tag="{DynamicResource IconPaste}" />
+                              Tag="{DynamicResource IconPaste}"
+                    AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}"/>
                     </StackPanel>
                   </Grid>
                   <StackPanel Orientation="Horizontal" Margin="0,0,0,8" HorizontalAlignment="Left">
@@ -1323,6 +1364,8 @@
                        TextTrimming="CharacterEllipsis" MaxWidth="520" />
             <TextBlock x:Name="NextRunText" VerticalAlignment="Center"
                        FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+            <TextBlock x:Name="RttText" VerticalAlignment="Center" Margin="12,0,0,0"
+                       FontSize="11" Foreground="{DynamicResource TextMutedBrush}" Visibility="Collapsed" />
           </StackPanel>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
             <TextBlock x:Name="TokenAgeText" Text=""

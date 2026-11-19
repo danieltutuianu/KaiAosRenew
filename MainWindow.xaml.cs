@@ -127,6 +127,11 @@ namespace KaiAosRenew
         private int _activityFilterScanGen;
         private string _lastServiceProblemSignature;
         private bool _serviceCheckDoneOnce;
+        private DispatcherTimer _startupServiceRecheckTimer;
+        private bool _startupServiceBalloonDeferred;
+        private bool _autoFixInFlight;
+        private DateTime _lastAutoFixUtc = DateTime.MinValue;
+        private readonly Queue<DateTime> _autoFixHourWindow = new Queue<DateTime>();
         private bool? _tokenFooterOk;
         private string _footerStatusMode = "stopped";
         private string _footerTokenMode = "none";
@@ -1069,7 +1074,7 @@ namespace KaiAosRenew
                 HideClipboardPassBanner();
                 return;
             }
-            clip = NormalizeClipboardPassword(clip);
+            clip = ClipboardText.NormalizePassword(clip);
             if (string.IsNullOrEmpty(clip))
             {
                 HideClipboardPassBanner();
@@ -1093,9 +1098,10 @@ namespace KaiAosRenew
                 ClipboardPassHeaderText.Text = UiStrings.T("ClipboardPassHeader");
             if (ClipboardPassCurrentText != null)
                 ClipboardPassCurrentText.Text = string.Format(UiStrings.T("ClipboardPassCurrent"),
-                    string.IsNullOrEmpty(current) ? "—" : current);
+                    PasswordDisplayMask.Mask(current));
             if (ClipboardPassClipText != null)
-                ClipboardPassClipText.Text = string.Format(UiStrings.T("ClipboardPassClip"), clip);
+                ClipboardPassClipText.Text = string.Format(UiStrings.T("ClipboardPassClip"),
+                    PasswordDisplayMask.Mask(clip));
             ApplyClipboardPassBannerStrings();
             ClipboardPassBanner.Visibility = Visibility.Visible;
         }
@@ -1123,7 +1129,7 @@ namespace KaiAosRenew
             string initial = null;
             try { initial = Clipboard.GetText(); }
             catch { }
-            _clipboardWatchInitial = NormalizeClipboardPassword(initial) ?? "";
+            _clipboardWatchInitial = ClipboardText.NormalizePassword(initial) ?? "";
             _clipboardWatchUntilUtc = DateTime.UtcNow.AddSeconds(ClipboardWatchSeconds);
             _clipboardWatchTimer.Stop();
             _clipboardWatchTimer.Interval = TimeSpan.FromMilliseconds(400);
@@ -1173,7 +1179,7 @@ namespace KaiAosRenew
             string raw = null;
             try { raw = Clipboard.GetText(); }
             catch { return; }
-            var clip = NormalizeClipboardPassword(raw);
+            var clip = ClipboardText.NormalizePassword(raw);
             if (string.IsNullOrEmpty(clip)) return;
             if (string.Equals(clip, _clipboardWatchInitial ?? "", StringComparison.Ordinal)) return;
             if (!IsClipboardPasswordCandidate(clip))
@@ -1217,6 +1223,7 @@ namespace KaiAosRenew
             var force = CredentialsWouldChange(pass);
             SetPasswordUi(pass);
             HideClipboardPassBanner();
+            ScheduleClipboardPasswordClear(pass);
             SaveFromUi(true, pass);
             RefreshPasswordRotateBanner(false);
             if (TrySavePreflight())
@@ -1236,6 +1243,26 @@ namespace KaiAosRenew
         private void ClipboardPassDismiss_Click(object sender, RoutedEventArgs e)
         {
             HideClipboardPassBanner();
+        }
+
+        /// <summary>Clears the clipboard ~10s after a password paste (only if it still holds that password).</summary>
+        private void ScheduleClipboardPasswordClear(string password)
+        {
+            if (string.IsNullOrEmpty(password)) return;
+            var expected = password.Trim();
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+            timer.Tick += delegate
+            {
+                timer.Stop();
+                try
+                {
+                    if (Clipboard.ContainsText()
+                        && string.Equals((Clipboard.GetText() ?? "").Trim(), expected, StringComparison.Ordinal))
+                        Clipboard.Clear();
+                }
+                catch { }
+            };
+            timer.Start();
         }
 
         private IntPtr WndProcHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -1340,6 +1367,13 @@ namespace KaiAosRenew
             return text.Substring(0, 177) + "...";
         }
 
+        private static TrayTipLevel ToTrayTipLevel(WinForms.ToolTipIcon icon)
+        {
+            if (icon == WinForms.ToolTipIcon.Warning) return TrayTipLevel.Warning;
+            if (icon == WinForms.ToolTipIcon.Error) return TrayTipLevel.Error;
+            return TrayTipLevel.Info;
+        }
+
         private void ShowBalloon(WinForms.ToolTipIcon icon, string text, bool allowInfo = false)
         {
             if (!Dispatcher.CheckAccess())
@@ -1354,7 +1388,7 @@ namespace KaiAosRenew
                 return;
             text = TruncateBalloon(text);
             // Custom in-app tip only — do not call NotifyIcon.ShowBalloonTip (Windows toast).
-            TrayBalloonWindow.ShowTip("KAI - AOS Renew", text, icon);
+            TrayTipWindow.ShowTip("KAI - AOS Renew", text, ToTrayTipLevel(icon));
             var level = "info";
             var kind = "info";
             if (icon == WinForms.ToolTipIcon.Warning)
@@ -1892,11 +1926,45 @@ namespace KaiAosRenew
         {
             _exitRequested = true;
             CancelRenewInFlight();
-            try { _keysRefreshTimer.Stop(); }
+            try { StopFirebaseListen(); }
             catch { }
-            try { _keysHighlightTimer.Stop(); }
+            try { if (_firebaseSafetyTimer != null) _firebaseSafetyTimer.Stop(); }
+            catch { }
+            try { if (_keysRefreshTimer != null) _keysRefreshTimer.Stop(); }
+            catch { }
+            try { if (_keysHighlightTimer != null) _keysHighlightTimer.Stop(); }
             catch { }
             try { if (_timer != null) _timer.Stop(); }
+            catch { }
+            try { _alertBlinkTimer.Stop(); }
+            catch { }
+            try { _authGuardsBlinkTimer.Stop(); }
+            catch { }
+            try { _servicesBlinkTimer.Stop(); }
+            catch { }
+            try
+            {
+                if (_startupServiceRecheckTimer != null)
+                    _startupServiceRecheckTimer.Stop();
+            }
+            catch { }
+            try { _registerAgeBlinkTimer.Stop(); }
+            catch { }
+            try { _keysCopyFeedbackTimer.Stop(); }
+            catch { }
+            try { _intervalDebounceTimer.Stop(); }
+            catch { }
+            try { _updatePeekTimer.Stop(); }
+            catch { }
+            try { _clipboardWatchTimer.Stop(); }
+            catch { }
+            try { if (_activityFilterScanTimer != null) _activityFilterScanTimer.Stop(); }
+            catch { }
+            try { if (_activitySearchDebounceTimer != null) _activitySearchDebounceTimer.Stop(); }
+            catch { }
+            try { if (_registerSearchDebounceTimer != null) _registerSearchDebounceTimer.Stop(); }
+            catch { }
+            try { if (_keysSearchDebounceTimer != null) _keysSearchDebounceTimer.Stop(); }
             catch { }
             try { _keyMonitor.Dispose(); }
             catch { }
@@ -1921,6 +1989,24 @@ namespace KaiAosRenew
                 try { _tray.Dispose(); }
                 catch { }
                 _tray = null;
+            }
+            if (_errorIcon != null)
+            {
+                try { _errorIcon.Dispose(); }
+                catch { }
+                _errorIcon = null;
+            }
+            if (_outdatedIcon != null)
+            {
+                try { _outdatedIcon.Dispose(); }
+                catch { }
+                _outdatedIcon = null;
+            }
+            if (_appIcon != null)
+            {
+                try { _appIcon.Dispose(); }
+                catch { }
+                _appIcon = null;
             }
             Program.ReleaseSingleInstanceForRestart();
         }
@@ -2007,11 +2093,11 @@ namespace KaiAosRenew
             if (_busy) return;
             if (KaiFixServicesBtn != null) KaiFixServicesBtn.IsEnabled = false;
             if (KaiStopServicesBtn != null) KaiStopServicesBtn.IsEnabled = false;
-            await KaiFixServicesCoreAsync();
+            await KaiFixServicesCoreAsync(false);
         }
 
         /// <returns>Null on success; otherwise error text.</returns>
-        private async Task<string> KaiFixServicesCoreAsync()
+        private async Task<string> KaiFixServicesCoreAsync(bool fromAuto = false)
         {
             if (_busy) return "Busy";
             SetKaiServiceCmdBusy(true);
@@ -2033,10 +2119,15 @@ namespace KaiAosRenew
                 }
 
                 if (result.Ok)
-                    AppendLog(UiStrings.T("KaiFixOk") + " " + result.Message, LogLevel.Success);
+                {
+                    var okMsg = fromAuto ? UiStrings.T("KaiAutoFixOk") : UiStrings.T("KaiFixOk");
+                    AppendLog(okMsg + " " + result.Message, LogLevel.Success);
+                }
                 else
                 {
-                    var fail = string.Format(UiStrings.T("KaiFixFail"), result.Message);
+                    var fail = string.Format(
+                        fromAuto ? UiStrings.T("KaiAutoFixFail") : UiStrings.T("KaiFixFail"),
+                        result.Message);
                     AppendLog(fail, LogLevel.Error);
                     ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(fail));
                 }
@@ -2045,8 +2136,11 @@ namespace KaiAosRenew
             }
             catch (Exception ex)
             {
-                AppendLog(string.Format(UiStrings.T("KaiFixFail"), ex.Message), LogLevel.Error);
-                ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(ex.Message));
+                var fail = string.Format(
+                    fromAuto ? UiStrings.T("KaiAutoFixFail") : UiStrings.T("KaiFixFail"),
+                    ex.Message);
+                AppendLog(fail, LogLevel.Error);
+                ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(fail));
                 CheckBmwServices(false, true);
                 return ex.Message;
             }
@@ -2304,8 +2398,8 @@ namespace KaiAosRenew
             var body = TokenFooterText != null ? (TokenFooterText.Text ?? title) : title;
             AppendLog(title + " — " + DateTime.Now.ToString("g"),
                 fail ? LogLevel.Warning : LogLevel.Info);
-            TrayBalloonWindow.ShowSticky(title, body,
-                fail ? WinForms.ToolTipIcon.Warning : WinForms.ToolTipIcon.Info);
+            TrayTipWindow.ShowSticky(title, body,
+                fail ? TrayTipLevel.Warning : TrayTipLevel.Info);
         }
 
         private TimeSpan? GetTokenRemaining()
@@ -2356,6 +2450,7 @@ namespace KaiAosRenew
 
         private void ActivitySearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
+            SetSearchClearVisibility(ActivitySearchClearBtn, ActivitySearchBox);
             if (_loadingUi) return;
             EnsureActivitySearchDebounceTimer();
             _activitySearchDebounceTimer.Stop();
@@ -2364,6 +2459,7 @@ namespace KaiAosRenew
 
         private void RegisterSearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
+            SetSearchClearVisibility(RegisterSearchClearBtn, RegisterSearchBox);
             if (_loadingUi) return;
             EnsureRegisterSearchDebounceTimer();
             _registerSearchDebounceTimer.Stop();
@@ -3389,17 +3485,15 @@ namespace KaiAosRenew
                 _hwndSource.RemoveHook(WndProcHook);
                 _hwndSource = null;
             }
-            _timer.Stop();
-            if (_tray != null)
+            if (!_exitRequested)
             {
-                _tray.Visible = false;
-                _tray.Dispose();
-                _tray = null;
+                try { PrepareForRestart(); }
+                catch { }
             }
-            if (_errorIcon != null)
+            else
             {
-                _errorIcon.Dispose();
-                _errorIcon = null;
+                try { if (_timer != null) _timer.Stop(); }
+                catch { }
             }
             base.OnClosed(e);
         }

@@ -172,13 +172,21 @@ namespace KaiAosRenew
                 return;
             }
 
-            string plain;
-            string decErr;
-            var decStatus = ChromiumCrypto.TryDecryptPassword(masterKey, best.PasswordBlob, out plain, out decErr);
-            result.DecryptStatus = decStatus;
-            result.DecryptError = decErr;
-            if (decStatus == ChromiumCrypto.DecryptStatus.Ok)
-                result.Password = plain;
+            try
+            {
+                string plain;
+                string decErr;
+                var decStatus = ChromiumCrypto.TryDecryptPassword(masterKey, best.PasswordBlob, out plain, out decErr);
+                result.DecryptStatus = decStatus;
+                result.DecryptError = decErr;
+                if (decStatus == ChromiumCrypto.DecryptStatus.Ok)
+                    result.Password = plain;
+            }
+            finally
+            {
+                if (masterKey != null) Array.Clear(masterKey, 0, masterKey.Length);
+                if (best.PasswordBlob != null) Array.Clear(best.PasswordBlob, 0, best.PasswordBlob.Length);
+            }
         }
 
         /// <summary>Returns password-manager URL and preferred exe path for the matched browser.</summary>
@@ -706,7 +714,7 @@ namespace KaiAosRenew
                 var sampleOrigins = new List<string>();
 
                 // Writable copy so SQLite can apply WAL; ReadOnly often shows 0 rows while Chrome is open.
-                using (var conn = new SQLiteConnection("Data Source=" + temp + ";Version=3;"))
+                using (var conn = new SQLiteConnection("Data Source=" + temp + ";Version=3;Pooling=False;"))
                 {
                     conn.Open();
                     try
@@ -822,10 +830,31 @@ namespace KaiAosRenew
             }
             finally
             {
-                try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-                try { if (File.Exists(temp + "-wal")) File.Delete(temp + "-wal"); } catch { }
-                try { if (File.Exists(temp + "-shm")) File.Delete(temp + "-shm"); } catch { }
-                try { if (File.Exists(temp + "-journal")) File.Delete(temp + "-journal"); } catch { }
+                // Always remove temp Login Data copies (even on exceptions); SQLite may hold handles briefly.
+                try { SQLiteConnection.ClearAllPools(); } catch { }
+                TryDeleteTempFile(temp);
+                TryDeleteTempFile(temp + "-wal");
+                TryDeleteTempFile(temp + "-shm");
+                TryDeleteTempFile(temp + "-journal");
+            }
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                try
+                {
+                    if (!File.Exists(path)) return;
+                    File.SetAttributes(path, FileAttributes.Normal);
+                    File.Delete(path);
+                    return;
+                }
+                catch
+                {
+                    if (attempt < 4) Thread.Sleep(40);
+                }
             }
         }
 

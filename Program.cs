@@ -149,6 +149,8 @@ namespace KaiAosRenew
 
             try
             {
+                ThemeManager.Configure(ThemeManager.AppUserModelIdServer,
+                    () => AppSettings.Load().ThemeMode);
                 NativeMethods.SetAppUserModelId(ThemeManager.AppUserModelId);
                 NativeMethods.EnsureTrayNotificationsEnabled();
                 ThreadPool.QueueUserWorkItem(_ =>

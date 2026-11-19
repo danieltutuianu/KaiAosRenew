@@ -96,12 +96,14 @@ namespace KaiAosNotifyClient
 
             try
             {
-                try { SetCurrentProcessExplicitAppUserModelID(ClientThemeManager.AppUserModelId); }
+                KaiAosRenew.ThemeManager.Configure(KaiAosRenew.ThemeManager.AppUserModelIdClient,
+                    () => ClientSettings.Load().Theme);
+                try { SetCurrentProcessExplicitAppUserModelID(KaiAosRenew.ThemeManager.AppUserModelId); }
                 catch { }
                 // Shortcuts off the UI thread — COM can hang on some desktops.
                 ThreadPool.QueueUserWorkItem(_ =>
                 {
-                    try { KaiAosRenew.StartMenuShortcut.Ensure("KAI - AOS Renew - Client", ClientThemeManager.AppUserModelId); }
+                    try { KaiAosRenew.StartMenuShortcut.Ensure("KAI - AOS Renew - Client", KaiAosRenew.ThemeManager.AppUserModelId); }
                     catch { }
                 });
                 var app = new App();

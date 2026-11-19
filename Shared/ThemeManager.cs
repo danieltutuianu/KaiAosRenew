@@ -4,15 +4,35 @@ using Microsoft.Win32;
 
 namespace KaiAosRenew
 {
+    /// <summary>Shared day/night theme switch (Server + Client). Call Configure once at startup.</summary>
     internal static class ThemeManager
     {
-        public const string AppUserModelId = "BMW.KaiAosRenew";
+        public const string AppUserModelIdServer = "BMW.KaiAosRenew";
+        public const string AppUserModelIdClient = "BMW.KaiAosRenew.Client";
+
+        private static string _appUserModelId = AppUserModelIdServer;
         private static bool _night;
         private static bool _listening;
+        private static Func<string> _getMode;
+
+        /// <summary>Configured AUMID (defaults to server until Configure).</summary>
+        public static string AppUserModelId
+        {
+            get { return _appUserModelId; }
+        }
 
         public static bool IsNight
         {
             get { return _night; }
+        }
+
+        /// <summary>Set process AUMID identity and how to re-read theme mode on OS preference changes.</summary>
+        public static void Configure(string appUserModelId, Func<string> getMode)
+        {
+            if (!string.IsNullOrWhiteSpace(appUserModelId))
+                _appUserModelId = appUserModelId.Trim();
+            if (getMode != null)
+                _getMode = getMode;
         }
 
         public static string NormalizeMode(string mode)
@@ -96,9 +116,8 @@ namespace KaiAosRenew
             if (app == null) return;
             app.Dispatcher.BeginInvoke(new Action(() =>
             {
-                // Re-read mode from settings file to stay in sync
-                var settings = AppSettings.Load();
-                if (NormalizeMode(settings.ThemeMode) == "system")
+                var mode = _getMode != null ? _getMode() : "system";
+                if (NormalizeMode(mode) == "system")
                     ApplyNight(!IsOsLightTheme());
             }));
         }

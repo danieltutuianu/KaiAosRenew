@@ -124,7 +124,8 @@ namespace KaiAosNotifyClient
             DisconnectSocket();
             StartReconnectLoop();
             StartWatchdogLoop();
-            TryConnectOnce();
+            // Do not call TryConnectOnce() on the caller (often UI) thread — it blocks up to ConnectTimeoutMs.
+            // ReconnectLoop honors _forceRetry and connects on the background thread immediately.
         }
 
         public void SetPairingCode(string pairingCode)
@@ -299,14 +300,31 @@ namespace KaiAosNotifyClient
                 var tcp = new TcpClient();
                 tcp.NoDelay = true;
                 var ar = tcp.BeginConnect(host, port, null, null);
-                if (!ar.AsyncWaitHandle.WaitOne(ConnectTimeoutMs) || !tcp.Connected)
+                var connected = false;
+                try
+                {
+                    connected = ar.AsyncWaitHandle.WaitOne(ConnectTimeoutMs) && tcp.Connected;
+                }
+                finally
+                {
+                    try { ar.AsyncWaitHandle.Close(); }
+                    catch { }
+                }
+                if (!connected)
                 {
                     HardClose(tcp);
                     NoteDisconnect("Connect failed");
                     RaiseStatus("Connect failed — retrying…");
                     return;
                 }
-                tcp.EndConnect(ar);
+                try { tcp.EndConnect(ar); }
+                catch
+                {
+                    HardClose(tcp);
+                    NoteDisconnect("Connect failed");
+                    RaiseStatus("Connect failed — retrying…");
+                    return;
+                }
                 lock (_gate)
                 {
                     if (!_wantConnect || _disposed || _authFailedStop)

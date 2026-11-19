@@ -4,6 +4,18 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.28] - 2026-11-19
+
+- Keys: first `#` order column (1…n after filter/sort) on server and client
+- Keys: full keySync list — MaxKeySyncRows / ClientKeyHistory.MaxEvents 500, no VIN dedupe on sync
+- Shared UI: ThemeManager, TrayTipWindow, BrowserPassResultWindow, DpapiString, WpfFocusHelpers, ClipboardText, ColumnHeaderKey; themes under Shared/Themes
+- Cleanup: remove dead multi-site peer dashboard UI/docs; Shared KeysExportLogic + DiagBundleLogic
+- Reliability: Keys empty-hint on first load; Retry BMW pending log string; keySync snapshot on UI thread; NotifyClient connect no longer blocks UI; full timer/icon cleanup on restart; NotifyServer.Stop raises ClientDisconnected; Client Server Settings leave Save/Discard/Cancel
+- Security: firewall domain/private + localsubnet; pairing DPAPI; empty-pairing soft-block for sensitive remote ops; Firebase secret PasswordBox; clipboard password mask; ChromiumCrypto zeroization; temp Login Data cleanup; BMW log redaction (JWT/Authorization/XML); KeyDebugEnabled gate; Firebase https-only; pairing auth rate limit
+- Performance: KeyActivityMonitor dirty/atomic key-events.xml, bin/SQLite/log caches; KeyReaderLogTailer UTF-8 Decoder + partial cap; AppSettings .corrupt recovery; Firebase publish seq race check; client zip size/name guards
+- UX: focus visuals, WrapPanel toolbars, MinWidth ~1040, Keys export CSV/TXT, Client Keys sort/highlight, LAN scan progress/cancel + RTT + favorite hosts, Diagnostic bundle (local + getZip|diag), token-expiry / Sqlite missing alerts
+- Build/CI: build.ps1 nuget restore; pinned nuget in CI; release.bat signParams fix; expanded Logic tests
+
 ## [1.2.27] - 2026-11-19
 
 - Reliability: notify ReadLoop ownership + watchdog reason; pairing code rotate disconnects; AppSettings SaveGate; RenewEngine `persistSettings` for PeerSync probes

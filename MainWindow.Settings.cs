@@ -177,6 +177,11 @@ namespace KaiAosRenew
             RefreshLogFilterComboItems();
             ExportBtn.Content = UiStrings.T("ExportSettings");
             ImportBtn.Content = UiStrings.T("ImportSettings");
+            if (DiagBundleBtn != null)
+            {
+                DiagBundleBtn.Content = UiStrings.T("DiagBundle");
+                DiagBundleBtn.ToolTip = UiStrings.T("DiagBundleTip");
+            }
             if (AosLoginStatusText != null) UpdateAosLoginStatus();
             AosUserLabel.Text = UiStrings.T("AosUsername");
             AosPassLabel.Text = UiStrings.T("AosPassword");
@@ -192,15 +197,18 @@ namespace KaiAosRenew
                 var current = GetPasswordUi() ?? "";
                 if (ClipboardPassCurrentText != null)
                     ClipboardPassCurrentText.Text = string.Format(UiStrings.T("ClipboardPassCurrent"),
-                        string.IsNullOrEmpty(current) ? "—" : current);
+                        PasswordDisplayMask.Mask(current));
                 if (ClipboardPassClipText != null)
                     ClipboardPassClipText.Text = string.Format(UiStrings.T("ClipboardPassClip"),
-                        _clipboardPassCandidate);
+                        PasswordDisplayMask.Mask(_clipboardPassCandidate));
             }
+            if (AosPullCloudBtnText != null)
+                AosPullCloudBtnText.Text = UiStrings.T("AosPullFromCloud");
             if (CheckBrowserPassBtnText != null)
                 CheckBrowserPassBtnText.Text = UiStrings.T("CheckBrowserPass");
             if (OpenBmwSsoBtnText != null)
                 OpenBmwSsoBtnText.Text = UiStrings.T("OpenBmwSso");
+            UpdateAosPullCloudButtonVisibility();
             if (BrowserPassHintCheck != null)
                 BrowserPassHintCheck.Content = UiStrings.T("BrowserPassHintOption");
             if (TabRenewHeaderText != null) TabRenewHeaderText.Text = UiStrings.T("TabRenew");
@@ -248,6 +256,7 @@ namespace KaiAosRenew
             }
             if (NotifyPairingCodeBox != null)
                 NotifyPairingCodeBox.ToolTip = UiStrings.T("NotifyPairingCodeTip");
+            UpdateNotifyPairingWarning();
             if (NotifyPairingGenerateBtn != null)
             {
                 NotifyPairingGenerateBtn.Content = UiStrings.T("NotifyPairingGenerate");
@@ -333,6 +342,7 @@ namespace KaiAosRenew
             if (ActivitySearchBox != null) ActivitySearchBox.ToolTip = UiStrings.T("ActivitySearchTip");
             if (RegisterSearchLabel != null) RegisterSearchLabel.Text = UiStrings.T("RegisterSearch");
             if (RegisterSearchBox != null) RegisterSearchBox.ToolTip = UiStrings.T("RegisterSearchTip");
+            ApplyShortcutStrings();
             if (ActivityColTime != null) ActivityColTime.Header = UiStrings.T("KeysColTime");
             if (ActivityColLevel != null) ActivityColLevel.Header = UiStrings.T("ActivityColLevel");
             if (ActivityColText != null) ActivityColText.Header = UiStrings.T("ActivityColText");
@@ -428,6 +438,7 @@ namespace KaiAosRenew
                 try { Background = (Brush)FindResource("WindowBgBrush"); }
                 catch { }
             }
+            RefreshThemeDependentBrushes();
         }
 
         private void AboutVersionText_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -596,6 +607,11 @@ namespace KaiAosRenew
             string tempZip = null;
             try
             {
+                if (k == "diag")
+                {
+                    Forget(BuildAndSaveDiagBundleAsync(clientId), "DiagBundleRemote");
+                    return;
+                }
                 if (k != "settings" && k != "logs" && k != "keydebug")
                 {
                     SendAosAck(clientId, false, "Unknown zip kind");
@@ -756,7 +772,7 @@ namespace KaiAosRenew
                 NotifyServer.Instance.ApplySettings(
                     _settings.NotifyServerEnabled,
                     _settings.NotifyServerPort,
-                    _settings.NotifyPairingCode ?? "");
+                    _settings.GetNotifyPairingCode());
             }
             catch (Exception ex)
             {
@@ -772,6 +788,12 @@ namespace KaiAosRenew
             try
             {
                 _settings = AppSettings.Load();
+                var loadWarning = AppSettings.TakeLoadWarning();
+                if (!string.IsNullOrEmpty(loadWarning))
+                {
+                    try { AppendLog(loadWarning, LogLevel.Warning); }
+                    catch { }
+                }
                 if (string.IsNullOrWhiteSpace(_settings.ConfigPath))
                     _settings.ConfigPath = @"C:\ProgramData\BMW\ISPI\config\KAI\KAI";
                 EmailBox.Text = _settings.Email ?? "";
@@ -806,7 +828,8 @@ namespace KaiAosRenew
                 if (NotifyServerPortBox != null)
                     NotifyServerPortBox.Text = (_settings.NotifyServerPort <= 0 ? NotifyServer.DefaultPort : _settings.NotifyServerPort).ToString();
                 if (NotifyPairingCodeBox != null)
-                    NotifyPairingCodeBox.Text = _settings.NotifyPairingCode ?? "";
+                    NotifyPairingCodeBox.Text = _settings.GetNotifyPairingCode();
+                UpdateNotifyPairingWarning();
                 RefreshNotifyServerIpDisplay();
                 RefreshNotifyClientsCombo();
                 LoadFirebasePushToUi();
@@ -943,7 +966,15 @@ namespace KaiAosRenew
                 AppendLog(statusLine.Replace("\n", " | "),
                     statusOk ? LogLevel.Success : LogLevel.Warning);
             var dlg = BrowserPassResultWindow.ShowFor(
-                this, found.BrowserName, msg, copiedHint, statusLine, statusOk, hint, offerFillSave);
+                this, found.BrowserName, msg, copiedHint, statusLine, statusOk, hint, offerFillSave,
+                new BrowserPassResultWindow.Labels
+                {
+                    WindowTitle = "KAI - AOS Renew",
+                    OpenPasswords = string.Format(UiStrings.T("OpenBrowserPasswords"), found.BrowserName ?? ""),
+                    OpenFail = UiStrings.T("OpenBrowserPasswordsFail"),
+                    FillSave = UiStrings.T("BrowserPassFillSave"),
+                    Ok = "OK"
+                });
             if (dlg.OpenedPasswordManager)
             {
                 _focusPasswordOnActivate = true;

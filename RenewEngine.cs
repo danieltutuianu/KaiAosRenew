@@ -184,8 +184,6 @@ namespace KaiAosRenew
                     Log("Credentials changed — forcing Register (skip Health short-circuit)...");
                 else
                     Log("Health check failed: " + healthMsg + " — running Register...");
-                Log("Register password length=" + password.Length);
-
                 if (File.Exists(propsPath))
                     File.Copy(propsPath, propsPath + ".bak_before_renew", true);
 

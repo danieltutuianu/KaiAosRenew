@@ -398,6 +398,14 @@ namespace KaiAosRenew
             return s.DisplayName + ": " + s.StatusText + " | " + s.StartTypeText;
         }
 
+        /// <summary>Running or still coming up after Automatic start / Continue.</summary>
+        internal static bool IsServiceUp(ServiceControllerStatus status)
+        {
+            return status == ServiceControllerStatus.Running
+                || status == ServiceControllerStatus.StartPending
+                || status == ServiceControllerStatus.ContinuePending;
+        }
+
         private static BmwServiceStatus ReadOne(string serviceName)
         {
             var info = new BmwServiceStatus();
@@ -409,7 +417,9 @@ namespace KaiAosRenew
                 {
                     info.Exists = true;
                     try { info.DisplayName = sc.DisplayName; } catch { }
-                    info.IsRunning = sc.Status == ServiceControllerStatus.Running;
+                    // StartPending/ContinuePending are normal during boot — treat as "up" for Ok
+                    // so startup does not false-alarm; StatusText still shows the real state.
+                    info.IsRunning = IsServiceUp(sc.Status);
                     info.StatusText = sc.Status.ToString();
                     var start = GetStartType(sc);
                     info.IsAutomatic = start == ServiceStartMode.Automatic;

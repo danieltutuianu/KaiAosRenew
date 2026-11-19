@@ -38,69 +38,7 @@ namespace KaiAosNotifyClient
             if (AutoConnectCheck != null) AutoConnectCheck.IsChecked = _settings.AutoConnect;
         }
 
-        private void ScanLan_Click(object sender, RoutedEventArgs e)
-        {
-            if (_scanBusy)
-            {
-                SetConnStatus(ClientUiStrings.T("ScanBusy"));
-                return;
-            }
-            _scanBusy = true;
-            if (ScanLanBtn != null) ScanLanBtn.IsEnabled = false;
-            SetConnStatus(ClientUiStrings.T("Scanning"));
-            int port;
-            if (!int.TryParse((PortBox != null ? PortBox.Text : _settings.Port) ?? "", out port) || port < 1 || port > 65535)
-                port = 17890;
-            _settings.Port = port.ToString();
-            if (PortBox != null) PortBox.Text = _settings.Port;
-
-            Task.Run(delegate
-            {
-                string found = null;
-                var pairingRequired = false;
-                try
-                {
-                    found = LanServerDiscovery.FindFirstOpenHost(port, CancellationToken.None, out pairingRequired);
-                }
-                catch { }
-                var needPairing = pairingRequired;
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    _scanBusy = false;
-                    if (ScanLanBtn != null) ScanLanBtn.IsEnabled = true;
-                    if (!string.IsNullOrEmpty(found))
-                    {
-                        _settings.Host = found;
-                        _settings.Port = port.ToString();
-                        if (PortBox != null) PortBox.Text = _settings.Port;
-                        _settings.PushRecentHost(found);
-                        SetHostText(found);
-                        RefreshHostCombo();
-                        SetHostText(found);
-                        _settings.Save();
-                        var code = PairingCodeBox != null
-                            ? (PairingCodeBox.Text ?? "").Trim()
-                            : (_settings.PairingCode ?? "").Trim();
-                        if (needPairing && string.IsNullOrEmpty(code))
-                        {
-                            SetConnStatus(ClientUiStrings.T("PairingRequiredHint"));
-                            FocusPairingCodeBox();
-                            RefreshTrayStatus();
-                        }
-                        else
-                        {
-                            SetConnStatus(string.Format(ClientUiStrings.T("FoundServerConnect"), found, port));
-                            DoConnect(found, port);
-                        }
-                    }
-                    else
-                    {
-                        SetConnStatus(ClientUiStrings.T("NoServerFound"));
-                        RefreshTrayStatus();
-                    }
-                }));
-            });
-        }
+        // ScanLan_Click lives in MainWindow.NetDiag.cs (progress + cancel).
 
         private void FocusPairingCodeBox()
         {

@@ -4,17 +4,23 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
-using WinForms = System.Windows.Forms;
 
 namespace KaiAosRenew
 {
-    /// <summary>
-    /// In-app tray balloon: always visible even when Windows toast notifications are disabled.
-    /// Optional action button (e.g. Copy VIN). Double-click body can navigate (e.g. Keys tab).
-    /// </summary>
-    internal sealed class TrayBalloonWindow : Window
+    public enum TrayTipLevel
     {
-        private static TrayBalloonWindow _current;
+        Info,
+        Warning,
+        Error
+    }
+
+    /// <summary>
+    /// In-app tray tip (Server + Client): visible even when Windows toasts are disabled.
+    /// Optional action button; double-click body can navigate.
+    /// </summary>
+    internal sealed class TrayTipWindow : Window
+    {
+        private static TrayTipWindow _current;
         private readonly DispatcherTimer _closeTimer;
         private readonly bool _sticky;
         private readonly bool _hasAction;
@@ -24,10 +30,10 @@ namespace KaiAosRenew
         private int _remainingSeconds;
         private TextBlock _countdownText;
 
-        private TrayBalloonWindow(
+        private TrayTipWindow(
             string title,
             string text,
-            WinForms.ToolTipIcon icon,
+            TrayTipLevel level,
             string actionLabel,
             Action action,
             int durationSeconds,
@@ -52,12 +58,12 @@ namespace KaiAosRenew
             _hasBodyActivate = onBodyActivate != null;
 
             Color accent;
-            switch (icon)
+            switch (level)
             {
-                case WinForms.ToolTipIcon.Warning:
+                case TrayTipLevel.Warning:
                     accent = Color.FromRgb(200, 140, 20);
                     break;
-                case WinForms.ToolTipIcon.Error:
+                case TrayTipLevel.Error:
                     accent = Color.FromRgb(180, 50, 40);
                     break;
                 default:
@@ -251,7 +257,6 @@ namespace KaiAosRenew
             if (_sticky) return;
             if (e.OriginalSource is Button || IsDescendantOfButton(e.OriginalSource as DependencyObject))
                 return;
-            // When double-click can navigate, ignore single click so the second click can land.
             if (_hasBodyActivate)
                 return;
             Close();
@@ -307,6 +312,14 @@ namespace KaiAosRenew
                 Top = work.Top + 12;
         }
 
+        public static TrayTipLevel ParseLevel(string level)
+        {
+            var lv = (level ?? "info").Trim().ToLowerInvariant();
+            if (lv == "warning" || lv == "warn") return TrayTipLevel.Warning;
+            if (lv == "error" || lv == "err") return TrayTipLevel.Error;
+            return TrayTipLevel.Info;
+        }
+
         /// <summary>Close any visible tip (e.g. when a later BMW upload succeeds).</summary>
         public static void CloseCurrent()
         {
@@ -316,31 +329,60 @@ namespace KaiAosRenew
             _current = null;
         }
 
-        public static void ShowTip(string title, string text, WinForms.ToolTipIcon icon)
+        public static void ShowTip(string title, string text, TrayTipLevel level)
         {
-            ShowTip(title, text, icon, null, null, 0, null);
+            ShowTip(title, text, level, null, null, 0, null);
         }
 
         public static void ShowTip(
             string title,
             string text,
-            WinForms.ToolTipIcon icon,
+            TrayTipLevel level,
             string actionLabel,
             Action action)
         {
-            ShowTip(title, text, icon, actionLabel, action, 0, null);
+            ShowTip(title, text, level, actionLabel, action, 0, null);
         }
 
-        /// <summary>Sticky tip: stays until the user clicks OK (no auto-close).</summary>
-        public static void ShowSticky(string title, string text, WinForms.ToolTipIcon icon)
+        /// <summary>String-level overload (client notify messages: info/warning/error).</summary>
+        public static void ShowTip(
+            string title,
+            string text,
+            string level,
+            string actionLabel,
+            Action action,
+            int durationSeconds)
         {
-            ShowTip(title, text, icon, "OK", () => { }, -1, null);
+            ShowTip(title, text, ParseLevel(level), actionLabel, action, durationSeconds, null);
         }
 
         public static void ShowTip(
             string title,
             string text,
-            WinForms.ToolTipIcon icon,
+            string level,
+            string actionLabel,
+            Action action,
+            int durationSeconds,
+            Action onBodyActivate)
+        {
+            ShowTip(title, text, ParseLevel(level), actionLabel, action, durationSeconds, onBodyActivate);
+        }
+
+        /// <summary>Sticky tip: stays until the user clicks OK (no auto-close).</summary>
+        public static void ShowSticky(string title, string text, TrayTipLevel level)
+        {
+            ShowTip(title, text, level, "OK", () => { }, -1, null);
+        }
+
+        public static void ShowSticky(string title, string text, string level)
+        {
+            ShowSticky(title, text, ParseLevel(level));
+        }
+
+        public static void ShowTip(
+            string title,
+            string text,
+            TrayTipLevel level,
             string actionLabel,
             Action action,
             int durationSeconds,
@@ -352,8 +394,8 @@ namespace KaiAosRenew
                 catch { }
                 _current = null;
             }
-            var win = new TrayBalloonWindow(
-                title, text, icon, actionLabel, action, durationSeconds, onBodyActivate);
+            var win = new TrayTipWindow(
+                title, text, level, actionLabel, action, durationSeconds, onBodyActivate);
             _current = win;
             win.Show();
         }

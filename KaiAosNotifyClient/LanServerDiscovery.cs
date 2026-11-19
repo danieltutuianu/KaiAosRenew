@@ -11,6 +11,14 @@ namespace KaiAosNotifyClient
     /// <summary>
     /// Instant UDP broadcast discovery, then verified TCP /24 fallback (no false positives).
     /// </summary>
+    /// <summary>Progress snapshot for a LAN scan (phase "udp" = broadcast discovery, "tcp" = /24 sweep).</summary>
+    internal sealed class LanScanProgress
+    {
+        public string Phase;
+        public int Checked;
+        public int Total;
+    }
+
     internal static class LanServerDiscovery
     {
         public const string UdpDiscoverRequest = "KAI_DISCOVER_V1";
@@ -50,15 +58,34 @@ namespace KaiAosNotifyClient
 
         public static string FindFirstOpenHost(int port, CancellationToken cancel, out bool pairingRequired)
         {
+            return FindFirstOpenHost(port, cancel, null, out pairingRequired);
+        }
+
+        /// <summary>
+        /// Same as the plain overload but reports <see cref="LanScanProgress"/> (UDP phase once, then TCP checked/total
+        /// roughly every 150 ms) and honours <paramref name="cancel"/> promptly. <paramref name="progress"/> is invoked
+        /// on a worker thread — marshal to the UI thread in the callback.
+        /// </summary>
+        public static string FindFirstOpenHost(int port, CancellationToken cancel,
+            Action<LanScanProgress> progress, out bool pairingRequired)
+        {
             pairingRequired = false;
             if (port < 1 || port > 65535) port = DefaultPort;
 
+            RaiseProgress(progress, "udp", 0, 0);
             var udpHost = TryUdpDiscoverVerified(port, cancel, out pairingRequired);
             if (!string.IsNullOrEmpty(udpHost))
                 return udpHost;
 
             if (cancel.IsCancellationRequested) return null;
-            return TryTcpScanVerified(port, cancel, out pairingRequired);
+            return TryTcpScanVerified(port, cancel, progress, out pairingRequired);
+        }
+
+        private static void RaiseProgress(Action<LanScanProgress> progress, string phase, int done, int total)
+        {
+            if (progress == null) return;
+            try { progress(new LanScanProgress { Phase = phase, Checked = done, Total = total }); }
+            catch { }
         }
 
         /// <summary>
@@ -176,7 +203,8 @@ namespace KaiAosNotifyClient
             return list;
         }
 
-        private static string TryTcpScanVerified(int port, CancellationToken cancel, out bool pairingRequired)
+        private static string TryTcpScanVerified(int port, CancellationToken cancel,
+            Action<LanScanProgress> progress, out bool pairingRequired)
         {
             pairingRequired = false;
             var targets = BuildTargetList();
@@ -186,17 +214,22 @@ namespace KaiAosNotifyClient
             var foundPairing = false;
             var gate = new object();
             var index = 0;
+            var checkedCount = 0;
+            var total = targets.Count;
             var workers = Math.Min(MaxParallel, targets.Count);
             var remaining = workers;
+            // Stops workers when we give up (cancel / overall timeout) so they do not keep probing in the background.
+            using (var abort = CancellationTokenSource.CreateLinkedTokenSource(cancel))
             using (var done = new ManualResetEvent(false))
             {
+                var token = abort.Token;
                 for (var w = 0; w < workers; w++)
                 {
                     ThreadPool.QueueUserWorkItem(delegate
                     {
                         try
                         {
-                            while (!cancel.IsCancellationRequested)
+                            while (!token.IsCancellationRequested)
                             {
                                 string ip;
                                 lock (gate)
@@ -206,8 +239,9 @@ namespace KaiAosNotifyClient
                                     ip = targets[index++];
                                 }
                                 KaiProbe probe;
-                                if (TryConnectVerified(ip, port, ConnectTimeoutMs, out probe)
-                                    && probe != KaiProbe.Fail)
+                                var probeOk = TryConnectVerified(ip, port, ConnectTimeoutMs, out probe);
+                                Interlocked.Increment(ref checkedCount);
+                                if (probeOk && probe != KaiProbe.Fail)
                                 {
                                     lock (gate)
                                     {
@@ -233,10 +267,22 @@ namespace KaiAosNotifyClient
                         }
                     });
                 }
-                done.WaitOne(45000);
+                var started = Environment.TickCount;
+                while (!done.WaitOne(150))
+                {
+                    if (cancel.IsCancellationRequested) break;
+                    if (Environment.TickCount - started >= 45000) break;
+                    RaiseProgress(progress, "tcp", Math.Min(Volatile.Read(ref checkedCount), total), total);
+                }
+                abort.Cancel();
+                RaiseProgress(progress, "tcp", Math.Min(Volatile.Read(ref checkedCount), total), total);
             }
-            pairingRequired = foundPairing;
-            return found;
+            lock (gate)
+            {
+                if (found == null) return null;
+                pairingRequired = foundPairing;
+                return found;
+            }
         }
 
         private static bool TryConnectVerified(string ip, int port, int timeoutMs, out KaiProbe probe)

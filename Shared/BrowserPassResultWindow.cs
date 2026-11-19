@@ -6,7 +6,7 @@ using System.Windows.Media;
 
 namespace KaiAosRenew
 {
-    /// <summary>Result dialog for Check browser password: OK + open password manager (+ optional Fill & Save).</summary>
+    /// <summary>Result dialog for Check browser password: OK + open password manager (+ optional Fill &amp; Save).</summary>
     internal sealed class BrowserPassResultWindow : Window
     {
         private static readonly Brush AccentBrush = CreateBrush(0xC6, 0x28, 0x28);
@@ -14,6 +14,15 @@ namespace KaiAosRenew
 
         public bool FillAndSaveRequested { get; private set; }
         public bool OpenedPasswordManager { get; private set; }
+
+        public struct Labels
+        {
+            public string WindowTitle;
+            public string OpenPasswords;
+            public string OpenFail;
+            public string FillSave;
+            public string Ok;
+        }
 
         public struct ShowResult
         {
@@ -35,9 +44,10 @@ namespace KaiAosRenew
             string statusText,
             bool statusIsOk,
             string footer,
-            bool offerFillSave)
+            bool offerFillSave,
+            Labels labels)
         {
-            Title = "KAI - AOS Renew";
+            Title = string.IsNullOrEmpty(labels.WindowTitle) ? "KAI - AOS Renew" : labels.WindowTitle;
             Width = 520;
             SizeToContent = SizeToContent.Height;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -54,9 +64,9 @@ namespace KaiAosRenew
             };
             DockPanel.SetDock(buttons, Dock.Bottom);
 
-            string openLabel;
-            try { openLabel = string.Format(UiStrings.T("OpenBrowserPasswords"), browserName ?? ""); }
-            catch { openLabel = "Open " + browserName + " passwords"; }
+            var openLabel = string.IsNullOrEmpty(labels.OpenPasswords)
+                ? ("Open " + (browserName ?? "") + " passwords")
+                : labels.OpenPasswords;
 
             var openBtn = new Button
             {
@@ -72,9 +82,10 @@ namespace KaiAosRenew
                 string err;
                 if (!BrowserPasswordReader.TryOpenPasswordManager(browserName, out err))
                 {
-                    MessageBox.Show(this,
-                        string.Format(UiStrings.T("OpenBrowserPasswordsFail"), err ?? "unknown"),
-                        "KAI - AOS Renew", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    var fail = string.IsNullOrEmpty(labels.OpenFail)
+                        ? (err ?? "unknown")
+                        : string.Format(labels.OpenFail, err ?? "unknown");
+                    MessageBox.Show(this, fail, Title, MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
                 OpenedPasswordManager = true;
@@ -86,7 +97,7 @@ namespace KaiAosRenew
             {
                 var fillBtn = new Button
                 {
-                    Content = UiStrings.T("BrowserPassFillSave"),
+                    Content = string.IsNullOrEmpty(labels.FillSave) ? "Fill & Save" : labels.FillSave,
                     MinWidth = 120,
                     MinHeight = 28,
                     Margin = new Thickness(0, 0, 8, 0),
@@ -103,7 +114,7 @@ namespace KaiAosRenew
 
             var okBtn = new Button
             {
-                Content = "OK",
+                Content = string.IsNullOrEmpty(labels.Ok) ? "OK" : labels.Ok,
                 MinWidth = 80,
                 MinHeight = 28,
                 Padding = new Thickness(10, 4, 10, 4),
@@ -181,9 +192,11 @@ namespace KaiAosRenew
             string statusText,
             bool statusIsOk,
             string footer,
-            bool offerFillSave)
+            bool offerFillSave,
+            Labels labels)
         {
-            var w = new BrowserPassResultWindow(browserName, header, coloredSite, statusText, statusIsOk, footer, offerFillSave);
+            var w = new BrowserPassResultWindow(
+                browserName, header, coloredSite, statusText, statusIsOk, footer, offerFillSave, labels);
             if (owner != null)
                 w.Owner = owner;
             w.ShowDialog();

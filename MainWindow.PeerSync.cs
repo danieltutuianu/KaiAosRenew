@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Media;
 using WinForms = System.Windows.Forms;
 
 namespace KaiAosRenew
@@ -11,6 +12,7 @@ namespace KaiAosRenew
         private int _peerSyncBusy;
         private int _peerSyncPending;
         private int _firebaseBootstrapBusy;
+        private int _aosPullCloudBusy;
 
         private void InitPeerSync()
         {
@@ -137,6 +139,176 @@ namespace KaiAosRenew
             finally
             {
                 Interlocked.Exchange(ref _firebaseBootstrapBusy, 0);
+            }
+        }
+
+        private void UpdateAosPullCloudButtonVisibility()
+        {
+            if (AosPullCloudBtn == null) return;
+            AosPullCloudBtn.Visibility = Visibility.Visible;
+            string url, secret, serverName;
+            var ready = TryGetActivePeerRelay(out url, out secret, out serverName);
+            var busy = _aosPullCloudBusy != 0;
+            AosPullCloudBtn.IsEnabled = ready && !busy;
+            if (!ready)
+                AosPullCloudBtn.ToolTip = UiStrings.T("TipAosPullCloudConfigure");
+            else if (busy)
+                AosPullCloudBtn.ToolTip = UiStrings.T("AosPullFromCloudBusy");
+            else
+                AosPullCloudBtn.ToolTip = null;
+        }
+
+        private void SetAosPullProgress(string statusText, LogLevel level)
+        {
+            if (AosPullCloudBtn != null)
+                AosPullCloudBtn.IsEnabled = false;
+            if (AosPullCloudBtnText != null)
+                AosPullCloudBtnText.Text = UiStrings.T("AosPullFromCloudBusy");
+            if (AosDirtyPendingMark != null)
+                AosDirtyPendingMark.Visibility = Visibility.Collapsed;
+            if (AosDirtyStatus != null)
+            {
+                AosDirtyStatus.Text = statusText ?? "";
+                if (level == LogLevel.Warning || level == LogLevel.Error)
+                    AosDirtyStatus.Foreground = StatusWarn();
+                else if (level == LogLevel.Success)
+                    AosDirtyStatus.Foreground = StatusOk();
+                else
+                    AosDirtyStatus.Foreground = TextMuted();
+            }
+            AppendLog(statusText ?? "", level);
+        }
+
+        private void EndAosPullProgress()
+        {
+            if (AosPullCloudBtnText != null)
+                AosPullCloudBtnText.Text = UiStrings.T("AosPullFromCloud");
+            UpdateAosPullCloudButtonVisibility();
+        }
+
+        private void AosPullCloud_Click(object sender, RoutedEventArgs e)
+        {
+            Forget(PullAosCredsFromCloudAsync(), "AosPullCloud");
+        }
+
+        /// <summary>
+        /// Manual AOS Access pull: fill email/password from Firebase latestCreds.
+        /// Marks dirty only when cloud values differ from the current form.
+        /// </summary>
+        private async Task PullAosCredsFromCloudAsync()
+        {
+            if (Interlocked.CompareExchange(ref _aosPullCloudBusy, 1, 0) != 0)
+                return;
+            var keepFinalStatus = false;
+            try
+            {
+                string url, secret, serverName;
+                if (!TryGetActivePeerRelay(out url, out secret, out serverName))
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(UiStrings.T("AosPullFromCloudFail"), "URL/secret"),
+                        LogLevel.Warning);
+                    return;
+                }
+
+                SetAosPullProgress(UiStrings.T("AosPullProgressConnect"), LogLevel.Info);
+                SetAosPullProgress(UiStrings.T("AosPullProgressDownload"), LogLevel.Info);
+
+                PeerRelayPollResult poll;
+                try
+                {
+                    poll = await PeerSyncFirebaseClient.SnapshotAsync(
+                        url, secret, null, true, CancellationToken.None).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(UiStrings.T("AosPullFromCloudFail"), ex.Message ?? "snapshot"),
+                        LogLevel.Warning);
+                    return;
+                }
+
+                if (poll == null || !poll.Ok)
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(UiStrings.T("AosPullFromCloudFail"),
+                            poll != null ? (poll.Error ?? "poll") : "poll"),
+                        LogLevel.Warning);
+                    return;
+                }
+                PersistFirebaseCredsEtag(poll.ETag);
+
+                var ev = poll.LatestCreds;
+                if (ev == null || string.IsNullOrWhiteSpace(ev.PayloadEnc))
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(UiStrings.T("AosPullFromCloudFail"), "no latestCreds"),
+                        LogLevel.Warning);
+                    return;
+                }
+
+                SetAosPullProgress(UiStrings.T("AosPullProgressDecrypt"), LogLevel.Info);
+
+                PeerCredsPayload payload;
+                if (!PeerSyncCrypto.TryDecryptCreds(secret, ev.PayloadEnc, out payload) || payload == null)
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(UiStrings.T("AosPullFromCloudFail"), "decrypt"),
+                        LogLevel.Warning);
+                    return;
+                }
+
+                var remoteEmail = (payload.Email ?? "").Trim();
+                var remotePass = payload.Password ?? "";
+                if (string.IsNullOrEmpty(remoteEmail) && string.IsNullOrEmpty(remotePass))
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(UiStrings.T("AosPullFromCloudFail"), "empty payload"),
+                        LogLevel.Warning);
+                    return;
+                }
+
+                var localEmail = EmailBox != null ? (EmailBox.Text ?? "").Trim() : "";
+                var localPass = "";
+                try { localPass = GetPasswordUi() ?? ""; }
+                catch { localPass = ""; }
+
+                var differ = PeerSyncLogic.CredentialsDiffer(localEmail, localPass, remoteEmail, remotePass);
+
+                SetAosPullProgress(UiStrings.T("AosPullProgressApply"), LogLevel.Info);
+
+                _loadingUi = true;
+                try
+                {
+                    if (EmailBox != null)
+                        EmailBox.Text = remoteEmail;
+                    SetPasswordUi(remotePass);
+                }
+                finally
+                {
+                    _loadingUi = false;
+                }
+
+                if (differ)
+                    _aosCredentialsDirty = true;
+
+                var okMsg = string.Format(UiStrings.T("AosPullFromCloudOk"),
+                    string.IsNullOrEmpty(remoteEmail) ? "—" : remoteEmail);
+                keepFinalStatus = !differ;
+                SetAosPullProgress(okMsg, LogLevel.Success);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _aosPullCloudBusy, 0);
+                EndAosPullProgress();
+                if (!keepFinalStatus)
+                    UpdateAosDirtyStatus();
             }
         }
 

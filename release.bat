@@ -99,7 +99,7 @@ set "SIGN_PARAMS="
 if defined CODESIGN_PFX if defined CODESIGN_PASSWORD (
   if exist "!CODESIGN_PFX!" (
     set "SIGN_ENABLED=1"
-    set "SIGN_PARAMS=/fd sha256 /td sha256 /f !CODESIGN_PFX! /p !CODESIGN_PASSWORD! /tr http://timestamp.digicert.com /td sha256"
+    set "SIGN_PARAMS=/fd sha256 /td sha256 /f "!CODESIGN_PFX!" /p "!CODESIGN_PASSWORD!" /tr http://timestamp.digicert.com"
     echo Signing enabled: !CODESIGN_PFX!
   ) else (
     echo CODESIGN_PFX not found: !CODESIGN_PFX!

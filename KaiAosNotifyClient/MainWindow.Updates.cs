@@ -628,6 +628,8 @@ namespace KaiAosNotifyClient
         {
             if (KeysClearBtn != null)
                 KeysClearBtn.IsEnabled = _keyAllRows != null && _keyAllRows.Count > 0;
+            if (KeysExportBtn != null)
+                KeysExportBtn.IsEnabled = _keyRows != null && _keyRows.Count > 0;
             if (ActivityClearBtn != null)
                 ActivityClearBtn.IsEnabled = _activityRows != null && _activityRows.Count > 0;
             if (ClearRegisterLogBtn != null)
@@ -689,6 +691,7 @@ namespace KaiAosNotifyClient
             SetActionEnabled(RegisterRefreshBtn, on && !updating,
                 !on ? "TipAosOffline" : (updating ? "TipAosUpdating" : null));
 
+            UpdateAosPullCloudButtonVisibility();
             if (AosCheckBrowserPassBtn != null) AosCheckBrowserPassBtn.IsEnabled = true;
             if (AosOpenBmwBtn != null) AosOpenBmwBtn.IsEnabled = true;
 
@@ -759,6 +762,7 @@ namespace KaiAosNotifyClient
 
         private void UpdateAosSyncStatus()
         {
+            if (_aosPullCloudBusy != 0) return;
             if (AosDirtyStatus != null)
             {
                 AosDirtyStatus.Text = _aosDirty ? ClientUiStrings.T("AosSyncDirty") : "";
@@ -928,7 +932,8 @@ namespace KaiAosNotifyClient
                 SrvNotifyTestVinBtn, SrvNotifyTestInfoBtn, SrvNotifyTestWarningBtn, SrvNotifyTestErrorBtn,
                 SrvUpdateAllClientsBtn,
                 SrvFirebasePushEnableCheck, SrvFirebasePushSyncModeCombo, SrvFirebasePushPollMinutesBox,
-                SrvFirebasePushUrlBox, SrvFirebasePushSecretBox, SrvFirebasePushServerNameBox,
+                SrvFirebasePushUrlBox, SrvFirebasePushSecretBox, SrvFirebasePushSecretPlainBox,
+                SrvFirebasePushShowSecretCheck, SrvFirebasePushServerNameBox,
                 SrvFirebasePushUrlCopyBtn, SrvFirebasePushUrlPasteBtn,
                 SrvFirebasePushGenerateBtn, SrvFirebasePushCopyBtn, SrvFirebasePushSecretPasteBtn,
                 SrvFirebasePushNowBtn, SrvFirebasePushPushBtn, SrvFirebasePushTestBtn

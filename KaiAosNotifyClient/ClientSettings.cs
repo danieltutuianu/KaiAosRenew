@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Serialization;
 using Microsoft.Win32;
@@ -45,6 +46,11 @@ namespace KaiAosNotifyClient
         public string InstanceGuid { get; set; }
         /// <summary>Newest first, max 3, semicolon-separated in registry.</summary>
         public List<string> RecentHosts { get; private set; }
+        /// <summary>Saved host IPs with optional alias (registry "FavoriteHosts"), shown first in the host list.</summary>
+        public List<HostFavorite> FavoriteHosts { get; private set; }
+
+        public const int MaxFavoriteHosts = 20;
+        public const int MaxFavoriteAliasLength = 40;
 
         public static string StoreDir
         {
@@ -96,6 +102,7 @@ namespace KaiAosNotifyClient
             Theme = "system";
             InstanceGuid = "";
             RecentHosts = new List<string>();
+            FavoriteHosts = new List<HostFavorite>();
         }
 
         public void Normalize()
@@ -123,10 +130,110 @@ namespace KaiAosNotifyClient
             if (!langOk) Language = "en";
             if (!ShowVinTips)
                 ShowVinTipsBmwFailOnly = false;
-            Theme = ClientThemeManager.NormalizeMode(Theme);
+            Theme = ThemeManager.NormalizeMode(Theme);
             if (RecentHosts == null) RecentHosts = new List<string>();
             while (RecentHosts.Count > 3)
                 RecentHosts.RemoveAt(RecentHosts.Count - 1);
+            if (FavoriteHosts == null) FavoriteHosts = new List<HostFavorite>();
+            while (FavoriteHosts.Count > MaxFavoriteHosts)
+                FavoriteHosts.RemoveAt(FavoriteHosts.Count - 1);
+        }
+
+        // ---- favorite hosts ----------------------------------------------------------------------
+
+        public static string SanitizeFavoriteAlias(string alias)
+        {
+            if (string.IsNullOrEmpty(alias)) return "";
+            var sb = new StringBuilder();
+            foreach (var ch in alias)
+            {
+                if (ch == ';' || ch == '|' || char.IsControl(ch)) continue;
+                sb.Append(ch);
+            }
+            var s = sb.ToString().Trim();
+            if (s.Length > MaxFavoriteAliasLength) s = s.Substring(0, MaxFavoriteAliasLength).Trim();
+            return s;
+        }
+
+        public HostFavorite FindFavoriteHost(string host)
+        {
+            if (string.IsNullOrWhiteSpace(host) || FavoriteHosts == null) return null;
+            host = host.Trim();
+            foreach (var f in FavoriteHosts)
+            {
+                if (f != null && string.Equals(f.Host, host, StringComparison.OrdinalIgnoreCase))
+                    return f;
+            }
+            return null;
+        }
+
+        /// <summary>Add or update a favorite (alias optional). Newest/updated entries move to the top.</summary>
+        public bool SetFavoriteHost(string host, string alias)
+        {
+            if (string.IsNullOrWhiteSpace(host)) return false;
+            host = host.Trim();
+            if (host.IndexOfAny(new[] { ';', '|' }) >= 0) return false;
+            if (FavoriteHosts == null) FavoriteHosts = new List<HostFavorite>();
+            RemoveFavoriteHost(host);
+            FavoriteHosts.Insert(0, new HostFavorite { Host = host, Alias = SanitizeFavoriteAlias(alias) });
+            while (FavoriteHosts.Count > MaxFavoriteHosts)
+                FavoriteHosts.RemoveAt(FavoriteHosts.Count - 1);
+            return true;
+        }
+
+        public bool RemoveFavoriteHost(string host)
+        {
+            if (string.IsNullOrWhiteSpace(host) || FavoriteHosts == null) return false;
+            host = host.Trim();
+            var removed = false;
+            for (var i = FavoriteHosts.Count - 1; i >= 0; i--)
+            {
+                if (FavoriteHosts[i] != null
+                    && string.Equals(FavoriteHosts[i].Host, host, StringComparison.OrdinalIgnoreCase))
+                {
+                    FavoriteHosts.RemoveAt(i);
+                    removed = true;
+                }
+            }
+            return removed;
+        }
+
+        /// <summary>"host|alias;host2|alias2" (alias may be empty). Aliases never contain ';' or '|'.</summary>
+        public static string SerializeFavoriteHosts(IEnumerable<HostFavorite> favorites)
+        {
+            var sb = new StringBuilder();
+            if (favorites != null)
+            {
+                foreach (var f in favorites)
+                {
+                    if (f == null || string.IsNullOrWhiteSpace(f.Host)) continue;
+                    if (sb.Length > 0) sb.Append(';');
+                    sb.Append(f.Host.Trim()).Append('|').Append(SanitizeFavoriteAlias(f.Alias));
+                }
+            }
+            return sb.ToString();
+        }
+
+        public static List<HostFavorite> ParseFavoriteHosts(string text)
+        {
+            var list = new List<HostFavorite>();
+            if (string.IsNullOrWhiteSpace(text)) return list;
+            foreach (var part in text.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var bar = part.IndexOf('|');
+                var host = (bar >= 0 ? part.Substring(0, bar) : part).Trim();
+                var alias = bar >= 0 ? part.Substring(bar + 1) : "";
+                if (host.Length == 0) continue;
+                var dup = false;
+                foreach (var f in list)
+                {
+                    if (string.Equals(f.Host, host, StringComparison.OrdinalIgnoreCase)) { dup = true; break; }
+                }
+                if (dup) continue;
+                list.Add(new HostFavorite { Host = host, Alias = SanitizeFavoriteAlias(alias) });
+                if (list.Count >= MaxFavoriteHosts) break;
+            }
+            return list;
         }
 
         public void EnsureInstanceGuid()
@@ -187,8 +294,18 @@ namespace KaiAosNotifyClient
                     var port = key.GetValue("Port") as string;
                     if (!string.IsNullOrWhiteSpace(host)) s.Host = host.Trim();
                     if (!string.IsNullOrWhiteSpace(port)) s.Port = port.Trim();
-                    var pairing = key.GetValue("PairingCode") as string;
-                    if (pairing != null) s.PairingCode = pairing.Trim();
+                    // Pairing code is DPAPI-protected; legacy plaintext "PairingCode" is read once and
+                    // removed on the next Save().
+                    var pairingProtected = key.GetValue(PairingProtectedValueName) as string;
+                    if (!string.IsNullOrEmpty(pairingProtected))
+                    {
+                        s.PairingCode = UnprotectPairing(pairingProtected);
+                    }
+                    else
+                    {
+                        var pairing = key.GetValue("PairingCode") as string;
+                        if (pairing != null) s.PairingCode = pairing.Trim();
+                    }
                     var instanceGuid = key.GetValue("InstanceGuid") as string;
                     if (!string.IsNullOrWhiteSpace(instanceGuid)) s.InstanceGuid = instanceGuid.Trim();
                     s.VinTipSeconds = ReadInt(key, "VinTipSeconds", 10);
@@ -209,6 +326,9 @@ namespace KaiAosNotifyClient
                                 s.RecentHosts.Add(h);
                         }
                     }
+                    var favs = key.GetValue("FavoriteHosts") as string;
+                    if (!string.IsNullOrWhiteSpace(favs))
+                        s.FavoriteHosts = ParseFavoriteHosts(favs);
                 }
             }
             catch { }
@@ -240,14 +360,35 @@ namespace KaiAosNotifyClient
                     key.SetValue("AuthRegisterBlockAfter", AuthRegisterBlockAfter, RegistryValueKind.DWord);
                     key.SetValue("Host", Host ?? "", RegistryValueKind.String);
                     key.SetValue("Port", Port ?? "17890", RegistryValueKind.String);
-                    key.SetValue("PairingCode", PairingCode ?? "", RegistryValueKind.String);
+                    var pairingBlob = ProtectPairing(PairingCode);
+                    if (string.IsNullOrEmpty(pairingBlob))
+                        try { key.DeleteValue(PairingProtectedValueName, false); } catch { }
+                    else
+                        key.SetValue(PairingProtectedValueName, pairingBlob, RegistryValueKind.String);
+                    // Remove legacy plaintext value.
+                    try { key.DeleteValue("PairingCode", false); } catch { }
                     key.SetValue("InstanceGuid", InstanceGuid ?? "", RegistryValueKind.String);
                     key.SetValue("Language", Language ?? "en", RegistryValueKind.String);
                     key.SetValue("Theme", Theme ?? "system", RegistryValueKind.String);
                     key.SetValue("RecentHosts", string.Join(";", RecentHosts.ToArray()), RegistryValueKind.String);
+                    key.SetValue("FavoriteHosts", SerializeFavoriteHosts(FavoriteHosts), RegistryValueKind.String);
                 }
             }
             catch { }
+        }
+
+        private const string PairingProtectedValueName = "PairingCodeProtected";
+
+        private static string ProtectPairing(string code)
+        {
+            code = (code ?? "").Trim();
+            if (code.Length == 0) return "";
+            return DpapiString.Protect(code);
+        }
+
+        private static string UnprotectPairing(string base64)
+        {
+            return DpapiString.Unprotect(base64);
         }
 
         private static bool ReadBool(RegistryKey key, string name, bool defaultValue)
@@ -298,7 +439,7 @@ namespace KaiAosNotifyClient
                 AutoConnect = AutoConnect,
                 Host = Host ?? "",
                 Port = Port ?? "17890",
-                PairingCode = PairingCode ?? "",
+                PairingCode = "", // never exported (DPAPI-local secret)
                 VinTipSeconds = VinTipSeconds,
                 ShowVinTips = ShowVinTips,
                 ShowVinTipsBmwFailOnly = ShowVinTipsBmwFailOnly,
@@ -309,7 +450,8 @@ namespace KaiAosNotifyClient
                 AuthRegisterBlockAfter = AuthRegisterBlockAfter,
                 Language = Language ?? "en",
                 Theme = Theme ?? "system",
-                RecentHosts = RecentHosts != null ? string.Join(";", RecentHosts.ToArray()) : ""
+                RecentHosts = RecentHosts != null ? string.Join(";", RecentHosts.ToArray()) : "",
+                FavoriteHosts = SerializeFavoriteHosts(FavoriteHosts)
             };
             var ser = new XmlSerializer(typeof(ClientSettingsPortable));
             using (var sw = new StringWriter())
@@ -342,7 +484,8 @@ namespace KaiAosNotifyClient
             AutoConnect = imported.AutoConnect;
             if (imported.Host != null) Host = imported.Host.Trim();
             if (!string.IsNullOrWhiteSpace(imported.Port)) Port = imported.Port.Trim();
-            if (imported.PairingCode != null) PairingCode = imported.PairingCode.Trim();
+            // Legacy exports may still carry a plaintext code; keep it only if non-empty.
+            if (!string.IsNullOrWhiteSpace(imported.PairingCode)) PairingCode = imported.PairingCode.Trim();
             VinTipSeconds = imported.VinTipSeconds;
             ShowVinTips = imported.ShowVinTips;
             ShowVinTipsBmwFailOnly = imported.ShowVinTipsBmwFailOnly;
@@ -365,7 +508,28 @@ namespace KaiAosNotifyClient
                         RecentHosts.Add(h);
                 }
             }
+            // Only replace favorites when the file carries them (older exports have none).
+            if (!string.IsNullOrWhiteSpace(imported.FavoriteHosts))
+                FavoriteHosts = ParseFavoriteHosts(imported.FavoriteHosts);
             Normalize();
+        }
+    }
+
+    /// <summary>A saved server host (IP/name) with an optional friendly alias.</summary>
+    public sealed class HostFavorite
+    {
+        public string Host { get; set; }
+        public string Alias { get; set; }
+
+        /// <summary>Combo text: "★ alias — host" or "★ host".</summary>
+        public string DisplayText
+        {
+            get
+            {
+                return string.IsNullOrEmpty(Alias)
+                    ? "\u2605 " + Host
+                    : "\u2605 " + Alias + " \u2014 " + Host;
+            }
         }
     }
 
@@ -390,6 +554,7 @@ namespace KaiAosNotifyClient
         public string Language { get; set; }
         public string Theme { get; set; }
         public string RecentHosts { get; set; }
+        public string FavoriteHosts { get; set; }
     }
 
     public sealed class ClientKeyRow
@@ -407,6 +572,10 @@ namespace KaiAosNotifyClient
         public string Detail { get; set; }
         public bool HasBin { get; set; }
         public int? MileageKm { get; set; }
+
+        /// <summary>1-based row number in the filtered Keys list (UI only).</summary>
+        [XmlIgnore]
+        public int Index { get; set; }
 
         public string KmText
         {

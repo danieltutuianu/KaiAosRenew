@@ -1010,30 +1010,31 @@ namespace KaiAosRenew
                 BroadcastKeysReaderWarn(idCopy);
                 RefreshNotifyClientsCombo();
                 BroadcastNotifyClientsList();
-            }));
-            try
-            {
-                if (_settings == null || !_settings.NotifyServerEnabled) return;
-                // Authoritative snapshot only — never invent Waiting stubs from VIN cache.
-                // Skip empty after Clear Keys so reconnect does not wipe the client's history.
-                var rows = GetRecentKeyRows(NotifyMessage.MaxKeySyncRows) ?? new List<KeyActivityEvent>();
-                if (rows.Count == 0)
-                    return;
-                var payload = NotifyKeySync.EncodeKeySync(rows) ?? "";
-                _lastKeySyncSignature = KeySyncSignature(rows);
-                NotifyServer.Instance.SendTo(clientId, new NotifyMessage
+                // Snapshot on UI thread — _keysAllEvents is mutated there.
+                try
                 {
-                    Kind = "keySync",
-                    Level = "info",
-                    Title = "KAI - AOS Renew",
-                    Text = payload
-                });
-            }
-            catch (Exception ex)
-            {
-                try { RenewEngine.Log("Notify keySync: " + ex.Message); }
-                catch { }
-            }
+                    if (_settings == null || !_settings.NotifyServerEnabled) return;
+                    // Authoritative snapshot only — never invent Waiting stubs from VIN cache.
+                    // Skip empty after Clear Keys so reconnect does not wipe the client's history.
+                    var rows = GetRecentKeyRows(NotifyMessage.MaxKeySyncRows) ?? new List<KeyActivityEvent>();
+                    if (rows.Count == 0)
+                        return;
+                    var payload = NotifyKeySync.EncodeKeySync(rows) ?? "";
+                    _lastKeySyncSignature = KeySyncSignature(rows);
+                    NotifyServer.Instance.SendTo(idCopy, new NotifyMessage
+                    {
+                        Kind = "keySync",
+                        Level = "info",
+                        Title = "KAI - AOS Renew",
+                        Text = payload
+                    });
+                }
+                catch (Exception ex)
+                {
+                    try { RenewEngine.Log("Notify keySync: " + ex.Message); }
+                    catch { }
+                }
+            }));
         }
 
         private void RefreshNotifyServerIpDisplay()
@@ -1128,9 +1129,21 @@ namespace KaiAosRenew
         {
             if (_settings == null) return;
             var code = NotifyPairingCodeBox != null ? (NotifyPairingCodeBox.Text ?? "").Trim() : "";
-            _settings.NotifyPairingCode = code;
+            _settings.SetNotifyPairingCode(code);
             if (NotifyPairingCodeBox != null && NotifyPairingCodeBox.Text != code)
                 NotifyPairingCodeBox.Text = code;
+            UpdateNotifyPairingWarning();
+        }
+
+        private void UpdateNotifyPairingWarning()
+        {
+            // Soft-blocks for empty pairing were removed; keep banner hidden.
+            try
+            {
+                if (NotifyPairingEmptyWarningBanner != null)
+                    NotifyPairingEmptyWarningBanner.Visibility = Visibility.Collapsed;
+            }
+            catch { }
         }
 
         private void NotifyPairingCode_LostFocus(object sender, RoutedEventArgs e)
@@ -1150,9 +1163,10 @@ namespace KaiAosRenew
                 MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
             if (result != MessageBoxResult.Yes) return;
             var code = NotifyPairing.GenerateCode();
-            _settings.NotifyPairingCode = code;
+            _settings.SetNotifyPairingCode(code);
             if (NotifyPairingCodeBox != null)
                 NotifyPairingCodeBox.Text = code;
+            UpdateNotifyPairingWarning();
             try { _settings.Save(); }
             catch { }
             ApplyNotifyServerFromSettings();
@@ -1164,7 +1178,7 @@ namespace KaiAosRenew
             {
                 var code = NotifyPairingCodeBox != null
                     ? (NotifyPairingCodeBox.Text ?? "").Trim()
-                    : (_settings != null ? (_settings.NotifyPairingCode ?? "") : "");
+                    : (_settings != null ? _settings.GetNotifyPairingCode() : "");
                 if (string.IsNullOrEmpty(code)) return;
                 NativeMethods.TrySetClipboardText(code);
             }

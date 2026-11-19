@@ -9,8 +9,8 @@ namespace KaiAosRenew
     /// <summary>TCP notify JSON line (one object per \n). Shared by server and client.</summary>
     public sealed class NotifyMessage
     {
-        /// <summary>Max Keys rows synced to clients / kept in history.</summary>
-        public const int MaxKeySyncRows = 100;
+        /// <summary>Max Keys rows synced to clients / kept in history (match KeyActivityMonitor.MaxEvents).</summary>
+        public const int MaxKeySyncRows = 500;
 
         [JsonProperty("v")]
         public int V = 1;

@@ -79,11 +79,13 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
-    <Page Include="Themes\KaiTheme.xaml">
+    <Page Include="Shared\Themes\KaiTheme.xaml">
+      <Link>Themes\KaiTheme.xaml</Link>
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
-    <Page Include="Themes\KaiTheme.Dark.xaml">
+    <Page Include="Shared\Themes\KaiTheme.Dark.xaml">
+      <Link>Themes\KaiTheme.Dark.xaml</Link>
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
@@ -105,6 +107,12 @@
     <Compile Include="MainWindow.Updates.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="MainWindow.Shortcuts.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="MainWindow.Diag.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Compile>
     <Compile Include="MainWindow.Settings.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
@@ -113,9 +121,7 @@
     <Compile Include="RenewEngine.cs" />
     <Compile Include="IconFactory.cs" />
     <Compile Include="NativeMethods.cs" />
-    <Compile Include="TrayBalloonWindow.cs" />
-    <Compile Include="ThemeManager.cs" />
-    <Compile Include="StartMenuShortcut.cs" />
+            <Compile Include="StartMenuShortcut.cs" />
     <Compile Include="UpdateService.cs" />
     <Compile Include="UiStrings.cs" />
     <Compile Include="KaiDiag.cs" />
@@ -137,6 +143,13 @@
     <Compile Include="Shared\PeerSyncFirebaseParse.cs" />
     <Compile Include="Shared\PeerRelayResults.cs" />
     <Compile Include="Shared\RenewFlowLogic.cs" />
+    <Compile Include="Shared\KeysExportLogic.cs" />
+    <Compile Include="Shared\DiagBundleLogic.cs" />
+    <Compile Include="Shared\ThemeManager.cs" />
+    <Compile Include="Shared\TrayTipWindow.cs" />
+    <Compile Include="Shared\BrowserPassResultWindow.cs" />
+    <Compile Include="Shared\DpapiString.cs" />
+    <Compile Include="Shared\WpfFocusHelpers.cs" />
     <Compile Include="PeerSyncFirebaseClient.cs" />
     <Compile Include="MainWindow.PeerSync.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
@@ -147,8 +160,7 @@
     <Compile Include="DesktopKeyReaderReg.cs" />
     <Compile Include="ServiceMonitor.cs" />
     <Compile Include="BrowserPasswordReader.cs" />
-    <Compile Include="BrowserPassResultWindow.cs" />
-    <Compile Include="ChromiumCrypto.cs" />
+        <Compile Include="ChromiumCrypto.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

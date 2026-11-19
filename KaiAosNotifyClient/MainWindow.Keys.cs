@@ -178,6 +178,171 @@ namespace KaiAosNotifyClient
                     || ContainsIgnoreCase(r.Detail, q));
         }
 
+        // ---- column sorting (parity with Server Keys tab) -------------------------------------------
+
+        private IEnumerable<KeyValuePair<string, GridViewColumn>> KeysSortColumns()
+        {
+            yield return new KeyValuePair<string, GridViewColumn>("time", KeysColTime);
+            yield return new KeyValuePair<string, GridViewColumn>("vin", KeysColVin);
+            yield return new KeyValuePair<string, GridViewColumn>("km", KeysColKm);
+            yield return new KeyValuePair<string, GridViewColumn>("paint", KeysColPaint);
+            yield return new KeyValuePair<string, GridViewColumn>("upholstery", KeysColUpholstery);
+            yield return new KeyValuePair<string, GridViewColumn>("ilevel", KeysColILevel);
+            yield return new KeyValuePair<string, GridViewColumn>("reader", KeysColReader);
+            yield return new KeyValuePair<string, GridViewColumn>("local", KeysColLocal);
+            yield return new KeyValuePair<string, GridViewColumn>("bmw", KeysColBmw);
+        }
+
+        /// <summary>Localised column headers with a ▲/▼ marker on the active sort column.</summary>
+        private void ApplyKeysSortHeaders()
+        {
+            if (KeysColIndex != null)
+                KeysColIndex.Header = "#";
+            foreach (var kv in KeysSortColumns())
+            {
+                if (kv.Value == null) continue;
+                var h = ClientUiStrings.T(KeysExportLogic.ColumnHeaderKey(kv.Key));
+                if (_keysSortColumn == kv.Key)
+                    h += _keysSortAscending ? " ▲" : " ▼";
+                kv.Value.Header = h;
+            }
+        }
+
+        private void KeysColumnHeader_Click(object sender, RoutedEventArgs e)
+        {
+            var header = e.OriginalSource as GridViewColumnHeader;
+            if (header == null || header.Column == null) return;
+            string col = null;
+            foreach (var kv in KeysSortColumns())
+            {
+                if (ReferenceEquals(header.Column, kv.Value)) { col = kv.Key; break; }
+            }
+            if (col == null) return;
+
+            if (_keysSortColumn == col)
+                _keysSortAscending = !_keysSortAscending;
+            else
+            {
+                _keysSortColumn = col;
+                _keysSortAscending = KeysExportLogic.DefaultAscending(col);
+            }
+            ApplyKeysSortHeaders();
+            ApplyKeysFilter();
+        }
+
+        // ---- search-hit highlighting in VIN / I-level cells -----------------------------------------
+
+        private void KeysHighlightCell_Loaded(object sender, RoutedEventArgs e)
+        {
+            ApplyKeysSearchHighlight(sender as TextBlock);
+        }
+
+        private void KeysHighlightCell_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            ApplyKeysSearchHighlight(sender as TextBlock);
+        }
+
+        private void ApplyKeysSearchHighlight(TextBlock tb)
+        {
+            if (tb == null) return;
+            var row = tb.DataContext as ClientKeyRow;
+            var text = Convert.ToString(tb.Tag) == "ilevel"
+                ? (row != null ? row.ILevelText : "—")
+                : (row != null ? row.VinText : "—");
+
+            var q = _keysSearchText;
+            tb.Inlines.Clear();
+            if (string.IsNullOrEmpty(q) || text == "—"
+                || text.IndexOf(q, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                tb.Text = text;
+                return;
+            }
+            var idx = 0;
+            while (idx < text.Length)
+            {
+                var hit = text.IndexOf(q, idx, StringComparison.OrdinalIgnoreCase);
+                if (hit < 0)
+                {
+                    tb.Inlines.Add(new Run(text.Substring(idx)));
+                    break;
+                }
+                if (hit > idx)
+                    tb.Inlines.Add(new Run(text.Substring(idx, hit - idx)));
+                var matchRun = new Run(text.Substring(hit, q.Length));
+                matchRun.Background = KeysSearchHitBrush;
+                matchRun.Foreground = Brushes.Black; // readable on the pale hit colour in day and night themes
+                tb.Inlines.Add(matchRun);
+                idx = hit + q.Length;
+            }
+        }
+
+        /// <summary>Re-run the highlight on realised cells after the search text changed.</summary>
+        private void RefreshKeysSearchHighlights()
+        {
+            if (KeysEventsList == null) return;
+            foreach (var item in KeysEventsList.Items)
+            {
+                var lvi = KeysEventsList.ItemContainerGenerator.ContainerFromItem(item) as ListViewItem;
+                if (lvi == null) continue;
+                RefreshHighlightIn(lvi);
+            }
+        }
+
+        private void RefreshHighlightIn(DependencyObject root)
+        {
+            var n = VisualTreeHelper.GetChildrenCount(root);
+            for (var i = 0; i < n; i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                var tb = child as TextBlock;
+                if (tb != null && tb.Tag != null)
+                {
+                    var tag = Convert.ToString(tb.Tag);
+                    if (tag == "vin" || tag == "ilevel")
+                        ApplyKeysSearchHighlight(tb);
+                }
+                RefreshHighlightIn(child);
+            }
+        }
+
+        // ---- export CSV / TXT -----------------------------------------------------------------------
+
+        private void KeysExport_Click(object sender, RoutedEventArgs e)
+        {
+            var rows = new List<ClientKeyRow>(_keyRows);
+            if (rows.Count == 0)
+            {
+                MessageBox.Show(this, ClientUiStrings.T("KeysExportEmpty"), ClientUiStrings.T("KeysExportTitle"),
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            try
+            {
+                var dlg = new SaveFileDialog
+                {
+                    Title = ClientUiStrings.T("KeysExportTitle"),
+                    Filter = ClientUiStrings.T("KeysExportFilter"),
+                    FilterIndex = 1,
+                    DefaultExt = ".csv",
+                    AddExtension = true,
+                    OverwritePrompt = true,
+                    FileName = KeysExportLogic.SuggestFileName("keys-history-client", DateTime.Now, false)
+                };
+                if (dlg.ShowDialog(this) != true) return;
+                var path = dlg.FileName;
+                var text = ClientKeysExport.BuildExport(rows, path);
+                File.WriteAllText(path, text, new UTF8Encoding(true));
+                AppendActivityRow(null, "info",
+                    string.Format(ClientUiStrings.T("KeysExportDone"), rows.Count, path));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(ClientUiStrings.T("KeysExportFail"), ex.Message),
+                    ClientUiStrings.T("KeysExportTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
         private void KeysRefresh_Click(object sender, RoutedEventArgs e)
         {
             if (_client != null && _client.IsConnected)
@@ -287,13 +452,22 @@ namespace KaiAosNotifyClient
                 }
                 src = list;
             }
+            if (!string.IsNullOrEmpty(_keysSortColumn))
+                src = ClientKeysExport.Sort(src, _keysSortColumn, _keysSortAscending);
             var maxRows = searching ? KeysSearchServerMaxRows + ClientKeyHistory.MaxEvents : ClientKeyHistory.MaxEvents;
             _keyRows.Clear();
+            var index = 0;
             foreach (var r in src)
             {
                 if (r == null) continue;
+                r.Index = ++index;
                 _keyRows.Add(r);
                 if (_keyRows.Count >= maxRows) break;
+            }
+            if (!string.Equals(_keysHighlightAppliedFor, _keysSearchText ?? "", StringComparison.Ordinal))
+            {
+                _keysHighlightAppliedFor = _keysSearchText ?? "";
+                Dispatcher.BeginInvoke(new Action(RefreshKeysSearchHighlights), DispatcherPriority.Loaded);
             }
             UpdateKeysTodayBadge();
             UpdateKeysRetryButton();

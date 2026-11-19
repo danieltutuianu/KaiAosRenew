@@ -40,6 +40,11 @@ namespace KaiAosRenew
             return diff == 0;
         }
 
+        // TODO(security): v1 derives keys with plain SHA-256 of the shared secret (no salt / KDF).
+        // A v2 HKDF derivation is intentionally NOT introduced yet: changing it would break compatibility
+        // with 1.2.27 peers already in the field (multi-site relay). Migrate once all sites are updated:
+        // try v2 then v1 on decrypt, encrypt with v2. Until then use a long random shared secret
+        // (the Generate button produces one).
         public static void DeriveKeys(string secret, out byte[] aesKey, out byte[] hmacKey)
         {
             var material = Encoding.UTF8.GetBytes(secret ?? "");
@@ -167,38 +172,6 @@ namespace KaiAosRenew
             }
         }
 
-        public static string EncodeAckPayload(PeerAckPayload payload)
-        {
-            if (payload == null) return "{}";
-            var o = new JObject();
-            o["ok"] = payload.Ok;
-            o["rollbackAttempted"] = payload.RollbackAttempted;
-            o["rollbackOk"] = payload.RollbackOk;
-            o["message"] = payload.Message ?? "";
-            return o.ToString(Formatting.None);
-        }
-
-        public static bool TryParseAckPayload(string json, out PeerAckPayload payload)
-        {
-            payload = null;
-            if (string.IsNullOrWhiteSpace(json)) return false;
-            try
-            {
-                var o = JObject.Parse(json);
-                var p = new PeerAckPayload();
-                p.Ok = o["ok"] != null && o["ok"].Type == JTokenType.Boolean && (bool)o["ok"];
-                p.RollbackAttempted = o["rollbackAttempted"] != null && o["rollbackAttempted"].Type == JTokenType.Boolean && (bool)o["rollbackAttempted"];
-                p.RollbackOk = o["rollbackOk"] != null && o["rollbackOk"].Type == JTokenType.Boolean && (bool)o["rollbackOk"];
-                p.Message = (string)o["message"] ?? "";
-                payload = p;
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
         public static string EncryptCreds(string secret, PeerCredsPayload payload)
         {
             return EncryptToBase64(secret, EncodeCredsPayload(payload));
@@ -210,116 +183,6 @@ namespace KaiAosRenew
             string plain;
             if (!TryDecryptFromBase64(secret, payloadEnc, out plain)) return false;
             return TryParseCredsPayload(plain, out payload);
-        }
-
-        public static string EncryptAck(string secret, PeerAckPayload payload)
-        {
-            return EncryptToBase64(secret, EncodeAckPayload(payload));
-        }
-
-        public static bool TryDecryptAck(string secret, string payloadEnc, out PeerAckPayload payload)
-        {
-            payload = null;
-            string plain;
-            if (!TryDecryptFromBase64(secret, payloadEnc, out plain)) return false;
-            return TryParseAckPayload(plain, out payload);
-        }
-
-        public static string EncodeStatusPayload(PeerStatusPayload payload)
-        {
-            if (payload == null) return "{}";
-            var o = new JObject();
-            o["serverName"] = payload.ServerName ?? "";
-            o["appVersion"] = payload.AppVersion ?? "";
-            o["tokenStatus"] = payload.TokenStatus ?? "";
-            o["tokenExpiryUtc"] = payload.TokenExpiryUtc ?? "";
-            o["clientCount"] = payload.ClientCount < 0 ? 0 : payload.ClientCount;
-            o["lastSyncOk"] = payload.LastSyncOk;
-            o["lastSyncUtc"] = payload.LastSyncUtc ?? "";
-            o["lastSyncMsg"] = payload.LastSyncMsg ?? "";
-            return o.ToString(Formatting.None);
-        }
-
-        public static bool TryParseStatusPayload(string json, out PeerStatusPayload payload)
-        {
-            payload = null;
-            if (string.IsNullOrWhiteSpace(json)) return false;
-            try
-            {
-                var o = JObject.Parse(json);
-                var p = new PeerStatusPayload();
-                p.ServerName = TokenString(o["serverName"]);
-                p.AppVersion = TokenString(o["appVersion"]);
-                p.TokenStatus = TokenString(o["tokenStatus"]);
-                p.TokenExpiryUtc = TokenString(o["tokenExpiryUtc"]);
-                p.ClientCount = TokenInt(o["clientCount"], 0);
-                if (p.ClientCount < 0) p.ClientCount = 0;
-                p.LastSyncOk = o["lastSyncOk"] != null && o["lastSyncOk"].Type == JTokenType.Boolean && (bool)o["lastSyncOk"];
-                p.LastSyncUtc = TokenString(o["lastSyncUtc"]);
-                p.LastSyncMsg = TokenString(o["lastSyncMsg"]);
-                payload = p;
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public static string EncryptStatus(string secret, PeerStatusPayload payload)
-        {
-            return EncryptToBase64(secret, EncodeStatusPayload(payload));
-        }
-
-        public static bool TryDecryptStatus(string secret, string payloadEnc, out PeerStatusPayload payload)
-        {
-            payload = null;
-            string plain;
-            if (!TryDecryptFromBase64(secret, payloadEnc, out plain)) return false;
-            return TryParseStatusPayload(plain, out payload);
-        }
-
-        public static string EncodeCommandPayload(PeerCommandPayload payload)
-        {
-            if (payload == null) return "{}";
-            var o = new JObject();
-            o["type"] = payload.Type ?? "";
-            o["targetVersion"] = payload.TargetVersion ?? "";
-            o["includeLocal"] = payload.IncludeLocal;
-            return o.ToString(Formatting.None);
-        }
-
-        public static bool TryParseCommandPayload(string json, out PeerCommandPayload payload)
-        {
-            payload = null;
-            if (string.IsNullOrWhiteSpace(json)) return false;
-            try
-            {
-                var o = JObject.Parse(json);
-                var p = new PeerCommandPayload();
-                p.Type = TokenString(o["type"]);
-                p.TargetVersion = TokenString(o["targetVersion"]);
-                p.IncludeLocal = o["includeLocal"] != null && o["includeLocal"].Type == JTokenType.Boolean && (bool)o["includeLocal"];
-                payload = p;
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public static string EncryptCommand(string secret, PeerCommandPayload payload)
-        {
-            return EncryptToBase64(secret, EncodeCommandPayload(payload));
-        }
-
-        public static bool TryDecryptCommand(string secret, string payloadEnc, out PeerCommandPayload payload)
-        {
-            payload = null;
-            string plain;
-            if (!TryDecryptFromBase64(secret, payloadEnc, out plain)) return false;
-            return TryParseCommandPayload(plain, out payload);
         }
 
         private static string TokenString(JToken t)
@@ -365,14 +228,6 @@ namespace KaiAosRenew
         public int BlockAfter { get; set; }
     }
 
-    public sealed class PeerAckPayload
-    {
-        public bool Ok { get; set; }
-        public bool RollbackAttempted { get; set; }
-        public bool RollbackOk { get; set; }
-        public string Message { get; set; }
-    }
-
     public sealed class PeerCredsEvent
     {
         public long Seq { get; set; }
@@ -381,56 +236,5 @@ namespace KaiAosRenew
         public string OriginName { get; set; }
         public string CreatedUtc { get; set; }
         public string PayloadEnc { get; set; }
-    }
-
-    public sealed class PeerAckEvent
-    {
-        public long AckSeq { get; set; }
-        public string AckId { get; set; }
-        public string TargetServerId { get; set; }
-        public string ForEventId { get; set; }
-        public string ResponderServerId { get; set; }
-        public string ResponderName { get; set; }
-        public string CreatedUtc { get; set; }
-        public string PayloadEnc { get; set; }
-    }
-
-    public sealed class PeerStatusPayload
-    {
-        public string ServerName { get; set; }
-        public string AppVersion { get; set; }
-        public string TokenStatus { get; set; }
-        public string TokenExpiryUtc { get; set; }
-        public int ClientCount { get; set; }
-        public bool LastSyncOk { get; set; }
-        public string LastSyncUtc { get; set; }
-        public string LastSyncMsg { get; set; }
-    }
-
-    public sealed class PeerCommandPayload
-    {
-        public string Type { get; set; }
-        public string TargetVersion { get; set; }
-        public bool IncludeLocal { get; set; }
-    }
-
-    public sealed class PeerCommandEvent
-    {
-        public long CmdSeq { get; set; }
-        public string CmdId { get; set; }
-        public string Type { get; set; }
-        public string OriginServerId { get; set; }
-        public string OriginName { get; set; }
-        public string CreatedUtc { get; set; }
-        public string PayloadEnc { get; set; }
-    }
-
-    public sealed class PeerRecord
-    {
-        public string ServerId { get; set; }
-        public string LastSeenUtc { get; set; }
-        public string StatusEnc { get; set; }
-        public PeerStatusPayload Status { get; set; }
-        public string Health { get; set; }
     }
 }

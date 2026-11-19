@@ -11,7 +11,7 @@ namespace KaiAosNotifyClient
     /// </summary>
     internal static class ClientKeyHistory
     {
-        public const int MaxEvents = 100;
+        public const int MaxEvents = 500;
 
         /// <summary>Test hook: redirect key-events.xml away from %AppData%.</summary>
         internal static string StoreDirOverride;

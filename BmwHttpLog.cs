@@ -120,6 +120,22 @@ namespace KaiAosRenew
                     "\"client_secret\"\\s*:\\s*\"[^\"]*\"",
                     "\"client_secret\":\"***\"",
                     RegexOptions.IgnoreCase);
+                // Authorization / Proxy-Authorization header values
+                s = Regex.Replace(s,
+                    @"(?im)^(\s*(?:Proxy-)?Authorization\s*:\s*).*$",
+                    "$1***");
+                // XML elements: <Password>..</Password>, <...Secret>, <...Token>
+                s = Regex.Replace(s,
+                    @"<((?:[A-Za-z0-9_]+:)?[A-Za-z0-9_]*(?:Password|Secret|Token)[A-Za-z0-9_]*)(\s[^>]*)?>[\s\S]*?</\1>",
+                    "<$1$2>***</$1>",
+                    RegexOptions.IgnoreCase);
+                // JWT-like strings (xxx.yyy.zzz, base64url segments)
+                s = Regex.Replace(s,
+                    @"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*",
+                    "[jwt-redacted]");
+                s = Regex.Replace(s,
+                    @"\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b",
+                    "[jwt-redacted]");
                 s = Regex.Replace(s, @"[A-Za-z0-9+/]{80,}={0,2}", "[redacted]");
                 return s;
             }

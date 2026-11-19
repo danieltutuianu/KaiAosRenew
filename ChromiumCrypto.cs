@@ -104,9 +104,10 @@ namespace KaiAosRenew
             var cipherAndTag = new byte[cipherAndTagLen];
             Buffer.BlockCopy(encrypted, 3 + 12, cipherAndTag, 0, cipherAndTagLen);
 
+            byte[] decrypted = null;
             try
             {
-                var decrypted = AesGcmDecrypt(masterKey, nonce, cipherAndTag);
+                decrypted = AesGcmDecrypt(masterKey, nonce, cipherAndTag);
                 plain = Encoding.UTF8.GetString(decrypted);
                 return DecryptStatus.Ok;
             }
@@ -114,6 +115,13 @@ namespace KaiAosRenew
             {
                 error = ex.Message;
                 return DecryptStatus.Failed;
+            }
+            finally
+            {
+                // masterKey is owned by the caller (cleared there after use).
+                if (decrypted != null) Array.Clear(decrypted, 0, decrypted.Length);
+                Array.Clear(nonce, 0, nonce.Length);
+                Array.Clear(cipherAndTag, 0, cipherAndTag.Length);
             }
         }
 
@@ -159,6 +167,7 @@ namespace KaiAosRenew
                     var plain = new byte[cipherLen];
                     int plainLen = plain.Length;
                     var authInfoPtr = Marshal.AllocHGlobal(Marshal.SizeOf(authInfo));
+                    var returnedPlain = false;
                     try
                     {
                         Marshal.StructureToPtr(authInfo, authInfoPtr, false);
@@ -170,12 +179,14 @@ namespace KaiAosRenew
                         {
                             var trimmed = new byte[plainLen];
                             Buffer.BlockCopy(plain, 0, trimmed, 0, plainLen);
-                            return trimmed;
+                            return trimmed; // plain cleared in finally
                         }
+                        returnedPlain = true;
                         return plain;
                     }
                     finally
                     {
+                        if (!returnedPlain) Array.Clear(plain, 0, plain.Length);
                         Marshal.FreeHGlobal(authInfoPtr);
                     }
                 }
@@ -189,6 +200,8 @@ namespace KaiAosRenew
             {
                 if (hKey != IntPtr.Zero) BCryptDestroyKey(hKey);
                 if (hAlg != IntPtr.Zero) BCryptCloseAlgorithmProvider(hAlg, 0);
+                Array.Clear(cipher, 0, cipher.Length);
+                Array.Clear(tag, 0, tag.Length);
             }
         }
 

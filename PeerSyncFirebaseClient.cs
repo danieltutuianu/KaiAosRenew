@@ -112,12 +112,19 @@ namespace KaiAosRenew
             string originServerId, string originName, string payloadEnc,
             long minSeq, CancellationToken ct)
         {
-            return Task.Run(() => Publish(databaseUrl, secret, eventId, originServerId, originName, payloadEnc, minSeq), ct);
+            return Task.Run(() => Publish(databaseUrl, secret, eventId, originServerId, originName, payloadEnc, minSeq, true), ct);
         }
 
         public static PeerRelayActionResult Publish(
             string databaseUrl, string secret, string eventId,
             string originServerId, string originName, string payloadEnc, long minSeq)
+        {
+            return Publish(databaseUrl, secret, eventId, originServerId, originName, payloadEnc, minSeq, true);
+        }
+
+        public static PeerRelayActionResult Publish(
+            string databaseUrl, string secret, string eventId,
+            string originServerId, string originName, string payloadEnc, long minSeq, bool checkRemoteSeq)
         {
             var result = new PeerRelayActionResult();
             try
@@ -141,7 +148,31 @@ namespace KaiAosRenew
                 creds["createdUtc"] = DateTime.UtcNow.ToString("o");
                 creds["payloadEnc"] = payloadEnc ?? "";
 
-                // Single path-scoped PUT — no meta.json, no prior GET; silent = 0-byte response.
+                // Best-effort optimistic check (instead of If-Match): we only persist the ETag of
+                // latestCreds/seq.json, which cannot be used as If-Match for the latestCreds.json PUT.
+                // So GET the tiny seq value first and abort if a peer published something newer than
+                // what we have processed (minSeq) — otherwise we would silently overwrite their creds.
+                // A failed pre-check (network/parse) never blocks the publish itself.
+                if (checkRemoteSeq && minSeq > 0)
+                {
+                    long remoteSeq = 0;
+                    var checkedOk = false;
+                    try
+                    {
+                        remoteSeq = PeerSyncFirebaseParse.ParseSeqJson(HttpGet(rootUrl + "/latestCreds/seq.json"));
+                        checkedOk = true;
+                    }
+                    catch { }
+                    if (checkedOk && remoteSeq > minSeq)
+                    {
+                        result.Seq = remoteSeq;
+                        result.Error = "Remote latestCreds is newer (seq " + remoteSeq
+                            + " > " + minSeq + "); publish aborted to avoid overwriting peer credentials. Sync first.";
+                        return result;
+                    }
+                }
+
+                // Path-scoped PUT; silent = 0-byte response.
                 HttpPut(rootUrl + "/latestCreds.json?print=silent", creds.ToString(Formatting.None));
 
                 result.Ok = true;

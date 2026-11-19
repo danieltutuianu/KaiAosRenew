@@ -34,6 +34,11 @@ namespace KaiAosRenew
         private string _currentFile;
         private long _offset;
         private string _partial = "";
+        /// <summary>Max carried-over bytes of an unterminated line (guards against files without newlines).</summary>
+        private const int MaxPartialChars = 1024 * 1024;
+        private const string PartialTruncatedMarker = "...[truncated]";
+        // Persistent decoder: multi-byte UTF-8 sequences split across read chunks are preserved.
+        private Decoder _decoder = Utf8.GetDecoder();
         private DateTime _lastBinWriteUtc = DateTime.MinValue;
         private bool _missingFolderNotified;
         private bool _disposed;
@@ -65,7 +70,7 @@ namespace KaiAosRenew
                 _watchBin = watchBin;
                 _currentFile = null;
                 _offset = 0;
-                _partial = "";
+                ResetDecodeStateUnlocked();
                 _missingFolderNotified = false;
                 _lastBinWriteUtc = DateTime.MinValue;
 
@@ -227,15 +232,22 @@ namespace KaiAosRenew
                 {
                     _currentFile = newest;
                     _offset = fs.Length;
-                    _partial = "";
+                    ResetDecodeStateUnlocked();
                 }
             }
             catch
             {
                 _currentFile = newest;
                 _offset = 0;
-                _partial = "";
+                ResetDecodeStateUnlocked();
             }
+        }
+
+        private void ResetDecodeStateUnlocked()
+        {
+            _partial = "";
+            try { _decoder.Reset(); }
+            catch { _decoder = Utf8.GetDecoder(); }
         }
 
         private void SeedBinStampUnlocked()
@@ -278,7 +290,7 @@ namespace KaiAosRenew
                 DrainFileUnlocked(_currentFile);
                 _currentFile = newest;
                 _offset = 0;
-                _partial = "";
+                ResetDecodeStateUnlocked();
             }
 
             DrainFileUnlocked(_currentFile);
@@ -295,7 +307,10 @@ namespace KaiAosRenew
                 using (var fs = OpenShare(path))
                 {
                     if (fs.Length < _offset)
+                    {
                         _offset = 0; // truncated
+                        ResetDecodeStateUnlocked();
+                    }
                     if (fs.Length == _offset)
                         return;
                     fs.Position = _offset;
@@ -303,7 +318,10 @@ namespace KaiAosRenew
                     var n = fs.Read(buf, 0, buf.Length);
                     if (n <= 0) return;
                     _offset = fs.Position;
-                    chunk = Utf8.GetString(buf, 0, n);
+                    // Stateful decode: a multi-byte char split at the chunk boundary is completed on next read.
+                    var chars = new char[_decoder.GetCharCount(buf, 0, n, false)];
+                    var charCount = _decoder.GetChars(buf, 0, n, chars, 0, false);
+                    chunk = new string(chars, 0, charCount);
                 }
             }
             catch
@@ -328,7 +346,16 @@ namespace KaiAosRenew
                 EmitLineUnlocked(line);
             }
             if (start < text.Length)
-                _partial = text.Substring(start);
+            {
+                var rest = text.Substring(start);
+                if (rest.Length > MaxPartialChars)
+                {
+                    // Runaway line without newline: emit what we have (marked) and drop the rest.
+                    EmitLineUnlocked(rest.Substring(0, 4096) + PartialTruncatedMarker);
+                    rest = "";
+                }
+                _partial = rest;
+            }
         }
 
         private void CheckBinUpdatedUnlocked()

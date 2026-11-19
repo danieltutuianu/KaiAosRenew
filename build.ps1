@@ -70,7 +70,24 @@ function Invoke-TestExe([string]$exe) {
     }
 }
 
+function Ensure-Nuget {
+    $nuget = Join-Path $Root "tools\nuget.exe"
+    if (-not (Test-Path $nuget)) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $Root "tools") | Out-Null
+        Write-Host "Downloading nuget.exe..."
+        Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/v6.11.0/nuget.exe" -OutFile $nuget
+    }
+    return $nuget
+}
+
 try {
+    $nuget = Ensure-Nuget
+    Write-Host "NuGet restore..."
+    & $nuget restore (Join-Path $Root "packages.config") -PackagesDirectory (Join-Path $Root "packages") -NonInteractive
+    if ($LASTEXITCODE -ne 0) { throw "nuget restore packages.config failed" }
+    & $nuget restore (Join-Path $Root "KaiAosNotifyClient\packages.config") -PackagesDirectory (Join-Path $Root "packages") -NonInteractive
+    if ($LASTEXITCODE -ne 0) { throw "nuget restore client packages.config failed" }
+
     Invoke-Build (Join-Path $Root "KaiAosRenew.csproj") -AllowLockedOutput
     Invoke-Build (Join-Path $Root "KaiAosNotifyClient\KaiAosNotifyClient.csproj") -AllowLockedOutput
     Invoke-Build (Join-Path $Root "tests\KaiAos.Logic.Tests\KaiAos.Logic.Tests.csproj")

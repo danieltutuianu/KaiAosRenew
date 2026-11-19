@@ -152,6 +152,7 @@ namespace KaiAosRenew
             _settings.NormalizeClamps();
             UpdateFirebasePushStatusUi();
             UpdateFirebasePollMinutesVisibility();
+            UpdateAosPullCloudButtonVisibility();
             _firebaseSafetyTimer.Stop();
             StopFirebaseListen();
 
@@ -357,8 +358,7 @@ namespace KaiAosRenew
             if (result != MessageBoxResult.Yes) return;
             var secret = NotifyPairing.GenerateCode() + NotifyPairing.GenerateCode();
             _settings.SetFirebasePushSecret(secret);
-            if (FirebasePushSecretBox != null)
-                FirebasePushSecretBox.Text = secret;
+            SetFirebaseSecretUi(secret);
             try { _settings.Save(); }
             catch { }
             BroadcastServerSettings();
@@ -401,7 +401,7 @@ namespace KaiAosRenew
             try
             {
                 var secret = FirebasePushSecretBox != null
-                    ? (FirebasePushSecretBox.Text ?? "").Trim()
+                    ? GetFirebaseSecretFromUi()
                     : (_settings != null ? (_settings.GetFirebasePushSecret() ?? "") : "");
                 if (string.IsNullOrEmpty(secret)) return;
                 NativeMethods.TrySetClipboardText(secret);
@@ -416,8 +416,7 @@ namespace KaiAosRenew
             {
                 var clip = Clipboard.GetText();
                 if (string.IsNullOrWhiteSpace(clip)) return;
-                if (FirebasePushSecretBox != null)
-                    FirebasePushSecretBox.Text = clip.Trim();
+                SetFirebaseSecretUi(clip.Trim());
                 CaptureFirebasePushFromUi();
                 try { _settings.Save(); }
                 catch { }
@@ -461,6 +460,46 @@ namespace KaiAosRenew
             await PushPeerCredentialsNowAsync(0).ConfigureAwait(true);
         }
 
+        private bool IsFirebaseSecretShown()
+        {
+            return FirebasePushShowSecretCheck != null && FirebasePushShowSecretCheck.IsChecked == true
+                && FirebasePushSecretPlainBox != null;
+        }
+
+        private string GetFirebaseSecretFromUi()
+        {
+            if (IsFirebaseSecretShown())
+                return (FirebasePushSecretPlainBox.Text ?? "").Trim();
+            return FirebasePushSecretBox != null ? (FirebasePushSecretBox.Password ?? "").Trim() : "";
+        }
+
+        private void SetFirebaseSecretUi(string secret)
+        {
+            secret = secret ?? "";
+            if (FirebasePushSecretBox != null && FirebasePushSecretBox.Password != secret)
+                FirebasePushSecretBox.Password = secret;
+            if (FirebasePushSecretPlainBox != null && FirebasePushSecretPlainBox.Text != secret)
+                FirebasePushSecretPlainBox.Text = secret;
+        }
+
+        private void FirebasePushShowSecret_Changed(object sender, RoutedEventArgs e)
+        {
+            if (FirebasePushSecretBox == null || FirebasePushSecretPlainBox == null) return;
+            if (FirebasePushShowSecretCheck != null && FirebasePushShowSecretCheck.IsChecked == true)
+            {
+                FirebasePushSecretPlainBox.Text = FirebasePushSecretBox.Password ?? "";
+                FirebasePushSecretBox.Visibility = Visibility.Collapsed;
+                FirebasePushSecretPlainBox.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                FirebasePushSecretBox.Password = FirebasePushSecretPlainBox.Text ?? "";
+                FirebasePushSecretPlainBox.Text = "";
+                FirebasePushSecretPlainBox.Visibility = Visibility.Collapsed;
+                FirebasePushSecretBox.Visibility = Visibility.Visible;
+            }
+        }
+
         private void CaptureFirebasePushFromUi()
         {
             if (_settings == null) return;
@@ -479,7 +518,7 @@ namespace KaiAosRenew
             if (FirebasePushUrlBox != null)
                 _settings.FirebasePushUrl = (FirebasePushUrlBox.Text ?? "").Trim();
             if (FirebasePushSecretBox != null)
-                _settings.SetFirebasePushSecret((FirebasePushSecretBox.Text ?? "").Trim());
+                _settings.SetFirebasePushSecret(GetFirebaseSecretFromUi());
             if (FirebasePushServerNameBox != null)
             {
                 var name = (FirebasePushServerNameBox.Text ?? "").Trim();
@@ -508,13 +547,14 @@ namespace KaiAosRenew
                 FirebasePushUrlBox.Text = _settings.FirebasePushUrl ?? "";
             if (FirebasePushSecretBox != null)
             {
-                try { FirebasePushSecretBox.Text = _settings.GetFirebasePushSecret() ?? ""; }
-                catch { FirebasePushSecretBox.Text = ""; }
+                try { SetFirebaseSecretUi(_settings.GetFirebasePushSecret() ?? ""); }
+                catch { SetFirebaseSecretUi(""); }
             }
             if (FirebasePushServerNameBox != null)
                 FirebasePushServerNameBox.Text = _settings.FirebasePushServerName ?? "";
             UpdateFirebasePollMinutesVisibility();
             UpdateFirebasePushStatusUi();
+            UpdateAosPullCloudButtonVisibility();
         }
 
         private void ApplyFirebasePushLanguage()
@@ -543,6 +583,10 @@ namespace KaiAosRenew
             }
             if (FirebasePushSecretBox != null)
                 FirebasePushSecretBox.ToolTip = UiStrings.T("FirebasePushSecretTip");
+            if (FirebasePushSecretPlainBox != null)
+                FirebasePushSecretPlainBox.ToolTip = UiStrings.T("FirebasePushSecretTip");
+            if (FirebasePushShowSecretCheck != null)
+                FirebasePushShowSecretCheck.Content = UiStrings.T("ShowPassword");
             if (FirebasePushGenerateBtn != null)
             {
                 FirebasePushGenerateBtn.Content = UiStrings.T("FirebasePushGenerate");

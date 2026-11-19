@@ -231,4 +231,33 @@ namespace KaiAosRenew
             }
         }
     }
+
+    /// <summary>Clipboard paste hygiene for password fields.</summary>
+    public static class ClipboardText
+    {
+        public static string NormalizePassword(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return raw;
+            var s = raw.Trim().Trim('\0');
+            if (s.Length > 0 && s[0] == '\uFEFF')
+                s = s.Substring(1);
+            s = s.Replace("\u200B", "").Replace("\u200C", "").Replace("\u200D", "")
+                .Replace("\u00A0", " ").Trim();
+            return s;
+        }
+    }
+
+    /// <summary>Display-only password masking (never use for logic / comparison).</summary>
+    public static class PasswordDisplayMask
+    {
+        /// <summary>First character + bullets (fixed length cap), or "—" when empty.</summary>
+        public static string Mask(string password)
+        {
+            if (string.IsNullOrEmpty(password)) return "\u2014";
+            const int maxBullets = 8;
+            var n = Math.Min(password.Length - 1, maxBullets);
+            if (n < 1) n = 1;
+            return password.Substring(0, 1) + new string('\u2022', n);
+        }
+    }
 }

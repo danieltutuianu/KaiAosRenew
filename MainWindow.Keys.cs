@@ -32,6 +32,11 @@ namespace KaiAosRenew
         {
             if (KeysRefreshBtn != null) KeysRefreshBtn.Content = UiStrings.T("KeysRefresh");
             if (KeysClearBtn != null) KeysClearBtn.Content = UiStrings.T("ClearKeys");
+            if (KeysExportBtn != null)
+            {
+                KeysExportBtn.Content = UiStrings.T("KeysExport");
+                KeysExportBtn.ToolTip = UiStrings.T("KeysExportTip");
+            }
             if (KeysRetryBmwBtn != null)
             {
                 KeysRetryBmwBtn.Content = UiStrings.T("KeysRetryBmw");
@@ -79,21 +84,31 @@ namespace KaiAosRenew
             RebuildTrayMenu();
         }
 
+        private IEnumerable<KeyValuePair<string, GridViewColumn>> KeysSortColumns()
+        {
+            yield return new KeyValuePair<string, GridViewColumn>("time", KeysColTime);
+            yield return new KeyValuePair<string, GridViewColumn>("vin", KeysColVin);
+            yield return new KeyValuePair<string, GridViewColumn>("km", KeysColKm);
+            yield return new KeyValuePair<string, GridViewColumn>("paint", KeysColPaint);
+            yield return new KeyValuePair<string, GridViewColumn>("upholstery", KeysColUpholstery);
+            yield return new KeyValuePair<string, GridViewColumn>("ilevel", KeysColILevel);
+            yield return new KeyValuePair<string, GridViewColumn>("reader", KeysColReader);
+            yield return new KeyValuePair<string, GridViewColumn>("local", KeysColLocal);
+            yield return new KeyValuePair<string, GridViewColumn>("bmw", KeysColBmw);
+        }
+
+        /// <summary>Localised column headers with a ▲/▼ marker on the active sort column.</summary>
         private void ApplyKeysSortHeaders()
         {
-            if (KeysColTime != null)
+            if (KeysColIndex != null)
+                KeysColIndex.Header = "#";
+            foreach (var kv in KeysSortColumns())
             {
-                var h = UiStrings.T("KeysColTime");
-                if (_keysSortColumn == "time")
+                if (kv.Value == null) continue;
+                var h = UiStrings.T(KeysExportLogic.ColumnHeaderKey(kv.Key));
+                if (_keysSortColumn == kv.Key)
                     h += _keysSortAscending ? " ▲" : " ▼";
-                KeysColTime.Header = h;
-            }
-            if (KeysColStatus != null)
-            {
-                var h = UiStrings.T("KeysColStatus");
-                if (_keysSortColumn == "status")
-                    h += _keysSortAscending ? " ▲" : " ▼";
-                KeysColStatus.Header = h;
+                kv.Value.Header = h;
             }
         }
 
@@ -102,8 +117,10 @@ namespace KaiAosRenew
             var header = e.OriginalSource as GridViewColumnHeader;
             if (header == null || header.Column == null) return;
             string col = null;
-            if (ReferenceEquals(header.Column, KeysColTime)) col = "time";
-            else if (ReferenceEquals(header.Column, KeysColStatus)) col = "status";
+            foreach (var kv in KeysSortColumns())
+            {
+                if (ReferenceEquals(header.Column, kv.Value)) { col = kv.Key; break; }
+            }
             if (col == null) return;
 
             if (_keysSortColumn == col)
@@ -111,13 +128,11 @@ namespace KaiAosRenew
             else
             {
                 _keysSortColumn = col;
-                // Time: newest first; Status: ascending then newest first as secondary
-                _keysSortAscending = col == "status";
+                _keysSortAscending = KeysExportLogic.DefaultAscending(col);
             }
             ApplyKeysSortHeaders();
             ApplyKeysFilter();
         }
-
         private void KeysHighlightCell_Loaded(object sender, RoutedEventArgs e)
         {
             ApplyKeysSearchHighlight(sender as TextBlock);
@@ -161,43 +176,80 @@ namespace KaiAosRenew
                     tb.Inlines.Add(new Run(text.Substring(idx, hit - idx)));
                 var matchRun = new Run(text.Substring(hit, q.Length));
                 matchRun.Background = KeysSearchHitBrush;
+                // Pale highlight needs dark text in the Night theme too.
+                matchRun.Foreground = Brushes.Black;
                 tb.Inlines.Add(matchRun);
                 idx = hit + q.Length;
             }
         }
 
+        private static KeysRowView ToKeysRowView(KeyActivityEvent ev)
+        {
+            if (ev == null) return null;
+            return new KeysRowView
+            {
+                Time = ev.DetectedLocal,
+                Vin = ev.Vin ?? "",
+                Km = ev.MileageKm,
+                Paint = ev.Paint ?? "",
+                Upholstery = ev.Upholstery ?? "",
+                ILevel = ev.ILevelCurrent ?? "",
+                Reader = ev.ReaderId ?? "",
+                Local = ev.LocalText,
+                Bmw = ev.BmwText,
+                Status = ev.StatusText,
+                StatusRank = (int)ev.Status,
+                Detail = ev.DetailText
+            };
+        }
+
         private static List<KeyActivityEvent> SortKeysEvents(
             IEnumerable<KeyActivityEvent> src, string column, bool ascending)
         {
-            var list = new List<KeyActivityEvent>();
-            if (src != null)
-            {
-                foreach (var ev in src)
-                    if (ev != null) list.Add(ev);
-            }
-            if (string.IsNullOrEmpty(column) || list.Count < 2)
-                return list;
-
-            list.Sort(delegate(KeyActivityEvent a, KeyActivityEvent b)
-            {
-                int cmp;
-                if (column == "status")
-                {
-                    cmp = ((int)a.Status).CompareTo((int)b.Status);
-                    if (!ascending) cmp = -cmp;
-                    if (cmp == 0)
-                        cmp = b.DetectedLocal.CompareTo(a.DetectedLocal);
-                }
-                else
-                {
-                    cmp = a.DetectedLocal.CompareTo(b.DetectedLocal);
-                    if (!ascending) cmp = -cmp;
-                }
-                return cmp;
-            });
-            return list;
+            return KeysExportLogic.Sort<KeyActivityEvent>(src, column, ascending, ToKeysRowView);
         }
 
+        private void KeysExport_Click(object sender, RoutedEventArgs e)
+        {
+            var list = KeysEventsList != null ? KeysEventsList.ItemsSource as System.Collections.IEnumerable : null;
+            var rows = new List<KeysRowView>();
+            if (list != null)
+            {
+                foreach (var obj in list)
+                {
+                    var v = ToKeysRowView(obj as KeyActivityEvent);
+                    if (v != null) rows.Add(v);
+                }
+            }
+            if (rows.Count == 0)
+            {
+                MessageBox.Show(this, UiStrings.T("KeysExportEmpty"), UiStrings.T("KeysExportTitle"),
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            try
+            {
+                var dlg = new SaveFileDialog
+                {
+                    Title = UiStrings.T("KeysExportTitle"),
+                    Filter = UiStrings.T("KeysExportFilter"),
+                    FilterIndex = 1,
+                    DefaultExt = ".csv",
+                    AddExtension = true,
+                    OverwritePrompt = true,
+                    FileName = KeysExportLogic.SuggestFileName("keys-history-server", DateTime.Now, false)
+                };
+                if (dlg.ShowDialog(this) != true) return;
+                var path = dlg.FileName;
+                File.WriteAllText(path, KeysExportLogic.Build(rows, path), new UTF8Encoding(true));
+                AppendLog(string.Format(UiStrings.T("KeysExportDone"), rows.Count, path), LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(UiStrings.T("KeysExportFail"), ex.Message),
+                    UiStrings.T("KeysExportTitle"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
         private void InitKeysFilterCombo()
         {
             if (KeysFilterCombo == null) return;
@@ -402,12 +454,12 @@ namespace KaiAosRenew
                 if (bmwOk)
                 {
                     AppendLog(UiStrings.T("KeysRetryBmwOk"), LogLevel.Success);
-                    try { TrayBalloonWindow.CloseCurrent(); }
+                    try { TrayTipWindow.CloseCurrent(); }
                     catch { }
                 }
                 else
                 {
-                    AppendLog(UiStrings.T("KeysRetryBmwOk"), LogLevel.Warning);
+                    AppendLog(UiStrings.T("KeysRetryBmwPending"), LogLevel.Warning);
                     // Final fail tip only after Register/Firebase + probe + short KAI verify window.
                     if (from403Auto)
                         ShowBmw403StillFailTip(vin);
@@ -432,7 +484,7 @@ namespace KaiAosRenew
             AppendLog(msg, LogLevel.Warning);
             try
             {
-                TrayBalloonWindow.ShowSticky("KAI - AOS Renew", msg, WinForms.ToolTipIcon.Warning);
+                TrayTipWindow.ShowSticky("KAI - AOS Renew", msg, TrayTipLevel.Warning);
             }
             catch
             {
@@ -600,7 +652,26 @@ namespace KaiAosRenew
                 _settings.KeysKaiLogDir,
                 _settings.KeysSqlitePath);
             ApplyKeysRefreshInterval();
-            StartBmwServiceLogTailers();
+            // Log watchers/tailers only while BMW services are healthy (avoids 1.2.26 startup pressure).
+            ApplyBmwServiceLogObservation(_lastBmwReport != null && _lastBmwReport.AllOk);
+        }
+
+        /// <summary>
+        /// Gate KeyUploader/KAI FileSystemWatchers + Activity log tailers on service health.
+        /// </summary>
+        private void ApplyBmwServiceLogObservation(bool enabled)
+        {
+            try
+            {
+                if (_keyMonitor != null)
+                    _keyMonitor.SetServiceLogWatchEnabled(enabled);
+            }
+            catch { }
+
+            if (enabled)
+                StartBmwServiceLogTailers();
+            else
+                StopBmwServiceLogTailers();
         }
 
         private void StartBmwServiceLogTailers()
@@ -628,6 +699,20 @@ namespace KaiAosRenew
             {
                 AppendLog("KAI: tailer start failed: " + ex.Message, LogLevel.Warning);
             }
+        }
+
+        private void StopBmwServiceLogTailers()
+        {
+            try
+            {
+                if (_uploaderLogTailer != null) _uploaderLogTailer.Stop();
+            }
+            catch { }
+            try
+            {
+                if (_kaiLogTailer != null) _kaiLogTailer.Stop();
+            }
+            catch { }
         }
 
         private void OnBmwServiceActivityLine(string text, KeyReaderActivityKind kind)
@@ -1325,10 +1410,23 @@ namespace KaiAosRenew
             var keepDetected = keep != null ? keep.DetectedLocal : DateTime.MinValue;
 
             var list = src as List<KeyActivityEvent> ?? new List<KeyActivityEvent>(src);
+            for (var i = 0; i < list.Count; i++)
+            {
+                if (list[i] != null)
+                    list[i].Index = i + 1;
+            }
+            var hasKeys = _keysAllEvents != null && _keysAllEvents.Count > 0;
             if (string.Equals(_keysLastAppliedSearch, _keysSearchText, StringComparison.Ordinal)
                 && KeysListUnchanged(KeysEventsList.ItemsSource as IList<KeyActivityEvent>
                     ?? KeysEventsList.ItemsSource as System.Collections.IEnumerable, list))
+            {
+                // Still refresh empty/no-match hints (initial load: ItemsSource null + empty list).
+                KeysEventsList.Items.Refresh();
+                UpdateEmptyHint(KeysEmptyHint, !hasKeys);
+                UpdateNoMatchesHint(KeysNoMatchesHint, hasKeys, list.Count);
+                UpdateClearButtonsEnabled();
                 return;
+            }
 
             _keysLastAppliedSearch = _keysSearchText;
             KeysEventsList.ItemsSource = list;
@@ -1373,7 +1471,6 @@ namespace KaiAosRenew
                 KeysEventsList.SelectedItem = restore;
             ReapplyKeysRowHighlightIfNeeded();
             UpdateKeysRetryButton();
-            var hasKeys = _keysAllEvents != null && _keysAllEvents.Count > 0;
             UpdateEmptyHint(KeysEmptyHint, !hasKeys);
             UpdateNoMatchesHint(KeysNoMatchesHint, hasKeys, list.Count);
             UpdateClearButtonsEnabled();
@@ -1799,10 +1896,10 @@ namespace KaiAosRenew
             if (showLocalTip)
             {
                 // Custom tip only — no Windows toast (NotifyIcon.ShowBalloonTip).
-                TrayBalloonWindow.ShowTip(
+                TrayTipWindow.ShowTip(
                     "KAI - AOS Renew",
                     text,
-                    WinForms.ToolTipIcon.Info,
+                    TrayTipLevel.Info,
                     UiStrings.T("KeysCopyVin"),
                     () => CopyVinToClipboard(capture),
                     tipSec,
@@ -1850,16 +1947,15 @@ namespace KaiAosRenew
         {
             var result = new List<KeyActivityEvent>();
             if (max < 1) return result;
+            // Same rows as the Keys tab (FilterMeaningful), newest first — no VIN collapse.
             var src = FilterMeaningful(_keysAllEvents);
             src.Sort(delegate(KeyActivityEvent a, KeyActivityEvent b)
             {
                 return b.DetectedLocal.CompareTo(a.DetectedLocal);
             });
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var ev in src)
             {
                 if (ev == null || string.IsNullOrEmpty(ev.Vin)) continue;
-                if (!seen.Add(ev.Vin)) continue;
                 result.Add(ev);
                 if (result.Count >= max) break;
             }
@@ -2234,6 +2330,22 @@ namespace KaiAosRenew
                         AppendLog(UiStrings.T("KaiServicesOk"), LogLevel.Success);
                     _lastServiceProblemSignature = "";
                     _serviceCheckDoneOnce = true;
+                    StopStartupServiceRecheck();
+                    ApplyBmwServiceLogObservation(true);
+                    ResetAutoFixCounters();
+                    return;
+                }
+
+                // Unhealthy: stop log watchers/tailers so we do not hammer dying services.
+                ApplyBmwServiceLogObservation(false);
+
+                // Startup: refresh UI now, but wait ~12s before balloon/log — services often still StartPending.
+                if (forceBalloon && !_startupServiceBalloonDeferred)
+                {
+                    _lastServiceProblemSignature = report.ProblemSignature
+                        ?? string.Format(UiStrings.T("KaiServicesProblem"), report.AlertMessage ?? "");
+                    _serviceCheckDoneOnce = true;
+                    ScheduleStartupServiceRecheck();
                     return;
                 }
 
@@ -2245,6 +2357,29 @@ namespace KaiAosRenew
 
                 if (shouldLog)
                     AppendLog(msg, LogLevel.Error);
+
+                // After startup defer (and on later Stopped transitions): rate-limited auto-fix.
+                if (ServicesExistButUnhealthy(report) && !_autoFixInFlight && !_busy)
+                {
+                    string limitReason;
+                    if (TryBeginAutoFix(out limitReason))
+                    {
+                        _lastServiceProblemSignature = sig;
+                        _serviceCheckDoneOnce = true;
+                        AppendLog(UiStrings.T("KaiAutoFixStart"), LogLevel.Info);
+                        Forget(AutoFixBmwServicesAsync(), "AutoFixBmwServices");
+                        return;
+                    }
+                    if (shouldBalloon && !string.IsNullOrEmpty(limitReason))
+                    {
+                        AppendLog(limitReason, LogLevel.Warning);
+                        ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(msg));
+                        _lastServiceProblemSignature = sig;
+                        _serviceCheckDoneOnce = true;
+                        return;
+                    }
+                }
+
                 if (shouldBalloon)
                     ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(msg));
 
@@ -2256,12 +2391,109 @@ namespace KaiAosRenew
                 _lastBmwReport = null;
                 UpdateServicesFooter(false);
                 UpdateServiceActionButtons(null);
+                try { ApplyBmwServiceLogObservation(false); }
+                catch { }
                 AppendLog(ex.Message, LogLevel.Error);
                 ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(ex.Message));
             }
             finally
             {
                 BroadcastKaiSync();
+            }
+        }
+
+        private static bool ServicesExistButUnhealthy(BmwServicesReport report)
+        {
+            if (report == null || report.Services == null || report.Services.Count == 0)
+                return false;
+            var anyExists = false;
+            for (var i = 0; i < report.Services.Count; i++)
+            {
+                var s = report.Services[i];
+                if (s == null) continue;
+                if (!s.Exists) return false;
+                anyExists = true;
+            }
+            return anyExists && !report.AllOk;
+        }
+
+        private bool TryBeginAutoFix(out string limitReason)
+        {
+            limitReason = null;
+            var now = DateTime.UtcNow;
+            if ((now - _lastAutoFixUtc).TotalMinutes < 3)
+            {
+                limitReason = UiStrings.T("KaiAutoFixLimited");
+                return false;
+            }
+            while (_autoFixHourWindow.Count > 0
+                && (now - _autoFixHourWindow.Peek()).TotalHours >= 1)
+                _autoFixHourWindow.Dequeue();
+            if (_autoFixHourWindow.Count >= 3)
+            {
+                limitReason = UiStrings.T("KaiAutoFixLimited");
+                return false;
+            }
+            _autoFixInFlight = true;
+            _lastAutoFixUtc = now;
+            _autoFixHourWindow.Enqueue(now);
+            return true;
+        }
+
+        private void ResetAutoFixCounters()
+        {
+            // Clear hourly budget after sustained OK; keep _lastAutoFixUtc so the
+            // 3-minute gap still applies if services crash again immediately.
+            _autoFixHourWindow.Clear();
+        }
+
+        private async System.Threading.Tasks.Task AutoFixBmwServicesAsync()
+        {
+            try
+            {
+                await KaiFixServicesCoreAsync(true);
+            }
+            finally
+            {
+                _autoFixInFlight = false;
+            }
+        }
+
+        private void ScheduleStartupServiceRecheck()
+        {
+            if (_startupServiceRecheckTimer == null)
+            {
+                _startupServiceRecheckTimer = new DispatcherTimer();
+                _startupServiceRecheckTimer.Tick += StartupServiceRecheckTimer_Tick;
+            }
+            _startupServiceRecheckTimer.Interval = TimeSpan.FromSeconds(12);
+            _startupServiceRecheckTimer.Stop();
+            _startupServiceRecheckTimer.Start();
+        }
+
+        private void StopStartupServiceRecheck()
+        {
+            try
+            {
+                if (_startupServiceRecheckTimer != null)
+                    _startupServiceRecheckTimer.Stop();
+            }
+            catch { }
+        }
+
+        private void StartupServiceRecheckTimer_Tick(object sender, EventArgs e)
+        {
+            StopStartupServiceRecheck();
+            if (_exitRequested) return;
+            _startupServiceBalloonDeferred = true;
+            try
+            {
+                // Second pass: allow forceBalloon to raise tray/log if still not OK.
+                CheckBmwServices(true, false);
+            }
+            finally
+            {
+                _startupServiceBalloonDeferred = false;
             }
         }
 

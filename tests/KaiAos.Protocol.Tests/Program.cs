@@ -149,54 +149,6 @@ namespace KaiAos.Protocol.Tests
             bytes[bytes.Length - 1] ^= 0x5A;
             var tampered = Convert.ToBase64String(bytes);
             AssertTrue(!PeerSyncCrypto.TryDecryptCreds(secret, tampered, out bad), "tampered mac must fail");
-
-            var ack = new PeerAckPayload
-            {
-                Ok = false,
-                RollbackAttempted = true,
-                RollbackOk = true,
-                Message = "auth fail"
-            };
-            var ackEnc = PeerSyncCrypto.EncryptAck(secret, ack);
-            PeerAckPayload ackRound;
-            AssertTrue(PeerSyncCrypto.TryDecryptAck(secret, ackEnc, out ackRound), "ack decrypt");
-            AssertTrue(!ackRound.Ok, "ack ok");
-            AssertTrue(ackRound.RollbackAttempted, "rollback attempted");
-            AssertTrue(ackRound.RollbackOk, "rollback ok");
-            AssertEqual("auth fail", ackRound.Message, "ack message");
-
-            var status = new PeerStatusPayload
-            {
-                ServerName = "Shop-1",
-                AppVersion = "1.2.23",
-                TokenStatus = "OK",
-                TokenExpiryUtc = "2026-11-18T12:00:00Z",
-                ClientCount = 2,
-                LastSyncOk = true,
-                LastSyncUtc = "2026-11-18T11:00:00Z",
-                LastSyncMsg = "ok"
-            };
-            var statusEnc = PeerSyncCrypto.EncryptStatus(secret, status);
-            PeerStatusPayload statusRound;
-            AssertTrue(PeerSyncCrypto.TryDecryptStatus(secret, statusEnc, out statusRound), "status decrypt");
-            AssertEqual("Shop-1", statusRound.ServerName, "status name");
-            AssertEqual(2, statusRound.ClientCount, "status clients");
-            AssertTrue(statusRound.LastSyncOk, "status last ok");
-            PeerStatusPayload statusBad;
-            AssertTrue(!PeerSyncCrypto.TryDecryptStatus("WRONG", statusEnc, out statusBad), "status wrong secret");
-
-            var cmd = new PeerCommandPayload
-            {
-                Type = PeerSyncLogic.CommandTypeUpdateAll,
-                TargetVersion = "1.2.23",
-                IncludeLocal = true
-            };
-            var cmdEnc = PeerSyncCrypto.EncryptCommand(secret, cmd);
-            PeerCommandPayload cmdRound;
-            AssertTrue(PeerSyncCrypto.TryDecryptCommand(secret, cmdEnc, out cmdRound), "cmd decrypt");
-            AssertEqual(PeerSyncLogic.CommandTypeUpdateAll, cmdRound.Type, "cmd type");
-            AssertEqual("1.2.23", cmdRound.TargetVersion, "cmd ver");
-            AssertTrue(cmdRound.IncludeLocal, "cmd include local");
         }
 
         private static void TestMessageRoundtrip()
@@ -221,7 +173,6 @@ namespace KaiAos.Protocol.Tests
             RoundtripKind("registerExport", "line1\nline2");
             RoundtripKind("register", "Registration OK");
             RoundtripKind("clientUpdate", "1.2.22");
-            RoundtripKind("peerStatusSync", "id|Shop|Online|OK|1.2.23|2|seen|sync");
             RoundtripKind("keySearchReq", "WBA");
             RoundtripKind("keySearchSync", "vin|paint");
             RoundtripKind("clientUpdateAllReq", "");

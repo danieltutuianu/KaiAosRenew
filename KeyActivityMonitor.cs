@@ -52,6 +52,10 @@ namespace KaiAosRenew
         public KeyEventStatus Status { get; set; }
         public bool StallNotified { get; set; }
 
+        /// <summary>1-based row number in the filtered Keys list (UI only).</summary>
+        [XmlIgnore]
+        public int Index { get; set; }
+
         [XmlIgnore]
         public string TimeText { get { return DetectedLocal.ToString("g"); } }
         [XmlIgnore]
@@ -99,8 +103,9 @@ namespace KaiAosRenew
         {
             get
             {
-                if (BmwUploaded) return "OK";
+                // Same precedence as ComputeStatus / DetailText: fail wins over upload bit.
                 if (Failed) return "FAIL";
+                if (BmwUploaded) return "OK";
                 if (LocalSent) return "…";
                 return "—";
             }
@@ -130,10 +135,17 @@ namespace KaiAosRenew
             get
             {
                 if (string.IsNullOrEmpty(Detail) || IsPickupNoiseDetail(Detail))
-                    return "—";
-                // Migrate older persisted wording.
-                if (string.Equals(Detail, "Uploaded to KAI Central (BMW)", StringComparison.Ordinal)
-                    || string.Equals(Detail, "Uploaded to KAI Central (BMW Server)", StringComparison.Ordinal))
+                    return Failed ? "BMW Server upload failed" : "—";
+                // Failed rows keep fail wording; never show Central success.
+                if (Failed)
+                {
+                    if (IsCentralSuccessDetail(Detail))
+                        return "BMW Server upload failed";
+                    return Detail;
+                }
+                // All columns OK (BMW uploaded, not failed) ⇒ always Central,
+                // even if persisted Detail is still "Sent to KAI Dezentral".
+                if (BmwUploaded)
                     return "Uploaded to KAI Central";
                 return Detail;
             }
@@ -146,6 +158,15 @@ namespace KaiAosRenew
                 || detail.IndexOf("New KeyReader folder", StringComparison.OrdinalIgnoreCase) >= 0
                 || detail.IndexOf("PutKeyDataV1", StringComparison.OrdinalIgnoreCase) >= 0
                 || detail.IndexOf("Enter method", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>UI success wording for full BMW upload (not local-only Dezentral).</summary>
+        internal static bool IsCentralSuccessDetail(string detail)
+        {
+            if (string.IsNullOrEmpty(detail)) return false;
+            return string.Equals(detail, "Uploaded to KAI Central", StringComparison.Ordinal)
+                || string.Equals(detail, "Uploaded to KAI Central (BMW)", StringComparison.Ordinal)
+                || string.Equals(detail, "Uploaded to KAI Central (BMW Server)", StringComparison.Ordinal);
         }
     }
 
@@ -272,13 +293,20 @@ namespace KaiAosRenew
                 _pickupFolder = folder;
                 _uploaderLogDir = nextUploader;
                 _kaiLogDir = nextKai;
-                // Always (re)start watchers after Start() so log-dir watchers attach even when
-                // Configure is called before Start, or when only paths change.
-                if (_onChanged != null && (folderChanged || uploaderChanged || kaiChanged
-                    || _watcher == null || _uploaderLogWatcher == null || _kaiLogWatcher == null))
+                // Always (re)start pickup watcher after Start() / path changes.
+                // Service log watchers are optional (_serviceLogWatchEnabled) — null is OK when gated off.
+                if (_onChanged != null && (folderChanged || uploaderChanged || kaiChanged || _watcher == null))
                 {
                     StopWatcher();
                     StartWatcher();
+                }
+                else if (_onChanged != null && _serviceLogWatchEnabled
+                    && (uploaderChanged || kaiChanged))
+                {
+                    DisposeWatcher(ref _uploaderLogWatcher);
+                    DisposeWatcher(ref _kaiLogWatcher);
+                    _uploaderLogWatcher = StartLogDirWatcher(_uploaderLogDir);
+                    _kaiLogWatcher = StartLogDirWatcher(_kaiLogDir);
                 }
             }
         }
@@ -333,6 +361,79 @@ namespace KaiAosRenew
         private readonly object _vinCacheGate = new object();
         private bool _vinAnnounceSeeded;
 
+        // ---- I/O caches (all guarded by _gate unless noted) ----
+        /// <summary>Signature of the events last written to / loaded from key-events.xml (null = unknown, force write).</summary>
+        private string _lastPersistedSignature;
+        /// <summary>Per-path stamp of already-parsed keyreader.bin files (LastWriteTimeUtc + length + debug flag).</summary>
+        private readonly Dictionary<string, FileStamp> _binStamps =
+            new Dictionary<string, FileStamp>(StringComparer.OrdinalIgnoreCase);
+        private const int MaxBinStampEntries = 200;
+        private string _sqliteHintsPath;
+        private FileStamp _sqliteHintsStamp;
+        private FileStamp _sqliteHintsWalStamp;
+        /// <summary>When false, do not attach FileSystemWatchers on KeyUploader/KAI log dirs (1.2.26 pressure).</summary>
+        private bool _serviceLogWatchEnabled;
+        /// <summary>Incremental log parse state, one per log slot. Guarded by _gate (Refresh only).</summary>
+        private readonly LogLineCache _uploaderLogCache = new LogLineCache();
+        private readonly LogLineCache _kaiLogCache = new LogLineCache();
+        /// <summary>Cached KeyReaderEntity row; PeekReaderInactive can run outside _gate.</summary>
+        private readonly object _readerCacheGate = new object();
+        private string _readerCachePath;
+        private FileStamp _readerCacheStamp;
+        private FileStamp _readerCacheWalStamp;
+        private KeyReaderSnapshot _readerCache;
+        private const int MaxCachedParsedLines = 4000;
+
+        private sealed class FileStamp
+        {
+            public DateTime MtimeUtc;
+            public long Length;
+            public bool Flag;
+
+            public static FileStamp Of(string path, bool flag = false)
+            {
+                try
+                {
+                    var fi = new FileInfo(path);
+                    if (!fi.Exists) return null;
+                    return new FileStamp { MtimeUtc = fi.LastWriteTimeUtc, Length = fi.Length, Flag = flag };
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            public static bool Same(FileStamp a, FileStamp b)
+            {
+                if (a == null || b == null) return a == null && b == null;
+                return a.MtimeUtc == b.MtimeUtc && a.Length == b.Length && a.Flag == b.Flag;
+            }
+        }
+
+        /// <summary>Parsed, categorised log lines for one log file, filled incrementally from the last read offset.</summary>
+        private sealed class LogLineCache
+        {
+            public string Path;
+            public DateTime CreatedUtc;
+            /// <summary>Byte offset just past the last fully consumed (newline-terminated) line.</summary>
+            public long Offset;
+            public bool Initialized;
+            public readonly List<ParsedLine> Lines = new List<ParsedLine>();
+            /// <summary>Parsed trailing line without newline yet (re-evaluated each pass, never persisted in Lines).</summary>
+            public ParsedLine Tentative;
+
+            public void Reset()
+            {
+                Path = null;
+                CreatedUtc = DateTime.MinValue;
+                Offset = 0;
+                Initialized = false;
+                Lines.Clear();
+                Tentative = null;
+            }
+        }
+
         /// <summary>Test hook: redirect key-events.xml / key-bins away from %AppData%.</summary>
         internal static string StoreDirOverride { get; set; }
 
@@ -360,6 +461,42 @@ namespace KaiAosRenew
             }
             StopWatcher();
             StartWatcher();
+        }
+
+        /// <summary>
+        /// Enable/disable FileSystemWatchers on KeyUploader/KAI log dirs.
+        /// Keep off until BMW services are AllOk to avoid 1.2.26 startup pressure.
+        /// </summary>
+        public void SetServiceLogWatchEnabled(bool enabled)
+        {
+            lock (_gate)
+            {
+                if (_serviceLogWatchEnabled == enabled)
+                {
+                    if (enabled && _onChanged != null)
+                    {
+                        if (_uploaderLogWatcher == null)
+                            _uploaderLogWatcher = StartLogDirWatcher(_uploaderLogDir);
+                        if (_kaiLogWatcher == null)
+                            _kaiLogWatcher = StartLogDirWatcher(_kaiLogDir);
+                    }
+                    return;
+                }
+                _serviceLogWatchEnabled = enabled;
+                if (_onChanged == null) return;
+                if (enabled)
+                {
+                    if (_uploaderLogWatcher == null)
+                        _uploaderLogWatcher = StartLogDirWatcher(_uploaderLogDir);
+                    if (_kaiLogWatcher == null)
+                        _kaiLogWatcher = StartLogDirWatcher(_kaiLogDir);
+                }
+                else
+                {
+                    DisposeWatcher(ref _uploaderLogWatcher);
+                    DisposeWatcher(ref _kaiLogWatcher);
+                }
+            }
         }
 
         private void StartWatcher()
@@ -400,8 +537,16 @@ namespace KaiAosRenew
                 _watcher = null;
             }
 
-            _uploaderLogWatcher = StartLogDirWatcher(_uploaderLogDir);
-            _kaiLogWatcher = StartLogDirWatcher(_kaiLogDir);
+            if (_serviceLogWatchEnabled)
+            {
+                _uploaderLogWatcher = StartLogDirWatcher(_uploaderLogDir);
+                _kaiLogWatcher = StartLogDirWatcher(_kaiLogDir);
+            }
+            else
+            {
+                _uploaderLogWatcher = null;
+                _kaiLogWatcher = null;
+            }
         }
 
         private FileSystemWatcher StartLogDirWatcher(string dir)
@@ -623,7 +768,10 @@ namespace KaiAosRenew
                 // Announce VIN as soon as .bin/Sqlite has it — do not wait for BMW upload logs.
                 snap.NewVinReads = DetectNewVinReads();
 
-                var live = BuildEvents(snap.UploaderLogPath, snap.KaiLogPath, snap.Reader);
+                // Incremental: only newly appended log bytes are read/parsed (MaxEvents still caps the result).
+                UpdateLogCache(_uploaderLogCache, snap.UploaderLogPath, ClassifyUploaderLine);
+                UpdateLogCache(_kaiLogCache, snap.KaiLogPath, ClassifyKaiLine);
+                var live = BuildEvents(_uploaderLogCache, _kaiLogCache, snap.Reader);
                 AttachBinFields(live);
                 var merged = MergeEvents(live, _persisted);
                 AttachBinFields(merged);
@@ -777,6 +925,8 @@ namespace KaiAosRenew
                         _persisted.Add(ev);
                         _seenKeys.Add(EventKey(ev));
                     }
+                    // What is on disk now — an identical first Refresh must not rewrite it.
+                    _lastPersistedSignature = ComputeEventsSignature(_persisted);
                 }
             }
             catch { }
@@ -796,11 +946,72 @@ namespace KaiAosRenew
                         if (_persisted.Count >= MaxEvents) break;
                     }
                 }
+                // Skip the disk write entirely when nothing changed since the last write/load.
+                var sig = ComputeEventsSignature(_persisted);
+                var path = EventsStorePath;
+                if (_lastPersistedSignature != null
+                    && string.Equals(sig, _lastPersistedSignature, StringComparison.Ordinal)
+                    && File.Exists(path))
+                    return;
+
+                var tmp = path + ".tmp";
                 var ser = new XmlSerializer(typeof(List<KeyActivityEvent>));
-                using (var fs = File.Create(EventsStorePath))
+                using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
                     ser.Serialize(fs, _persisted);
+                    fs.Flush(true);
+                }
+                // Atomic swap (same approach as AppSettings.Save): never leave a half-written key-events.xml.
+                if (File.Exists(path))
+                {
+                    try
+                    {
+                        File.Replace(tmp, path, null, true);
+                    }
+                    catch
+                    {
+                        File.Copy(tmp, path, true);
+                        try { File.Delete(tmp); } catch { }
+                    }
+                }
+                else
+                {
+                    File.Move(tmp, path);
+                }
+                _lastPersistedSignature = sig;
             }
             catch { }
+        }
+
+        /// <summary>Content hash of every persisted field, used to detect "events unchanged".</summary>
+        private static string ComputeEventsSignature(List<KeyActivityEvent> events)
+        {
+            var sb = new StringBuilder(events == null ? 16 : events.Count * 160);
+            if (events != null)
+            {
+                foreach (var ev in events)
+                {
+                    if (ev == null) continue;
+                    sb.Append(ev.DetectedLocal.Ticks).Append('|')
+                      .Append(ev.ReaderId).Append('|')
+                      .Append(ev.FileId).Append('|')
+                      .Append(ev.Vin).Append('|')
+                      .Append(ev.Paint).Append('|')
+                      .Append(ev.Upholstery).Append('|')
+                      .Append(ev.ILevelCurrent).Append('|')
+                      .Append(ev.ILevelBackup).Append('|')
+                      .Append(ev.ILevelPlant).Append('|')
+                      .Append(ev.MileageKm.HasValue ? ev.MileageKm.Value.ToString() : "").Append('|')
+                      .Append(ev.LocalSent ? '1' : '0')
+                      .Append(ev.BmwUploaded ? '1' : '0')
+                      .Append(ev.Failed ? '1' : '0')
+                      .Append(ev.StallNotified ? '1' : '0').Append('|')
+                      .Append((int)ev.Status).Append('|')
+                      .Append(ev.Detail).Append('\n');
+                }
+            }
+            using (var sha = SHA256.Create())
+                return Convert.ToBase64String(sha.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString())));
         }
 
         private static KeyActivityEvent CloneEvent(KeyActivityEvent ev)
@@ -993,10 +1204,18 @@ namespace KaiAosRenew
                     KeyActivityEvent existing;
                     if (map.TryGetValue(key, out existing))
                     {
-                        // Prefer richer/live status
-                        if (ev.BmwUploaded) existing.BmwUploaded = true;
+                        // Prefer richer/live status; success and fail must not both stick.
                         if (ev.LocalSent) existing.LocalSent = true;
-                        if (ev.Failed) existing.Failed = true;
+                        if (ev.BmwUploaded)
+                        {
+                            existing.BmwUploaded = true;
+                            existing.Failed = false; // retry success clears prior fail
+                        }
+                        else if (ev.Failed)
+                        {
+                            existing.Failed = true;
+                            existing.BmwUploaded = false; // fail must not keep stale OK bit
+                        }
                         if (!string.IsNullOrEmpty(ev.Vin)) existing.Vin = ev.Vin;
                         if (!string.IsNullOrEmpty(ev.Paint)) existing.Paint = ev.Paint;
                         if (!string.IsNullOrEmpty(ev.Upholstery)) existing.Upholstery = ev.Upholstery;
@@ -1004,11 +1223,7 @@ namespace KaiAosRenew
                         if (!string.IsNullOrEmpty(ev.ILevelBackup)) existing.ILevelBackup = ev.ILevelBackup;
                         if (!string.IsNullOrEmpty(ev.ILevelPlant)) existing.ILevelPlant = ev.ILevelPlant;
                         if (ev.MileageKm.HasValue && ev.MileageKm.Value > 0) existing.MileageKm = ev.MileageKm;
-                        if (!string.IsNullOrEmpty(ev.Detail)
-                            && !KeyActivityEvent.IsPickupNoiseDetail(ev.Detail))
-                            existing.Detail = ev.Detail;
-                        if (KeyActivityEvent.IsPickupNoiseDetail(existing.Detail))
-                            existing.Detail = "";
+                        MergeEventDetail(existing, ev);
                         if (!string.IsNullOrEmpty(ev.ReaderId)) existing.ReaderId = ev.ReaderId;
                         existing.Status = ComputeStatus(existing);
                         // keep StallNotified from existing
@@ -1028,6 +1243,41 @@ namespace KaiAosRenew
             if (list.Count > MaxEvents)
                 list = list.GetRange(0, MaxEvents);
             return list;
+        }
+
+        /// <summary>
+        /// Merge Detail without letting LocalSent success wording overwrite a fail message,
+        /// and without leaving Central on a Failed row.
+        /// </summary>
+        private static void MergeEventDetail(KeyActivityEvent existing, KeyActivityEvent ev)
+        {
+            if (existing == null || ev == null) return;
+            var incoming = ev.Detail;
+            var hasIncoming = !string.IsNullOrEmpty(incoming)
+                && !KeyActivityEvent.IsPickupNoiseDetail(incoming);
+
+            if (existing.Failed || ev.Failed)
+            {
+                if (hasIncoming && !KeyActivityEvent.IsCentralSuccessDetail(incoming)
+                    && !string.Equals(incoming, "Sent to KAI Dezentral", StringComparison.Ordinal))
+                    existing.Detail = incoming;
+                else if (KeyActivityEvent.IsCentralSuccessDetail(existing.Detail)
+                    || string.Equals(existing.Detail, "Sent to KAI Dezentral", StringComparison.Ordinal)
+                    || KeyActivityEvent.IsPickupNoiseDetail(existing.Detail)
+                    || string.IsNullOrEmpty(existing.Detail))
+                    existing.Detail = "BMW Server upload failed";
+            }
+            else if (hasIncoming)
+            {
+                existing.Detail = incoming;
+            }
+
+            if (KeyActivityEvent.IsPickupNoiseDetail(existing.Detail))
+                existing.Detail = "";
+
+            // Keep persisted Detail in sync when BMW upload succeeded.
+            if (existing.BmwUploaded && !existing.Failed)
+                existing.Detail = "Uploaded to KAI Central";
         }
 
         private static KeyEventStatus ComputeStatus(KeyActivityEvent ev)
@@ -1096,7 +1346,16 @@ namespace KaiAosRenew
         private void CollectBinHintsFromSqlite()
         {
 #if !NO_SQLITE
-            if (!File.Exists(_sqlitePath)) return;
+            // Skip the whole query when SqliteKaiDb.db (and its -wal, for WAL journal mode) is unchanged
+            // since the last successful collect. Stamps are taken BEFORE querying so a concurrent write
+            // simply triggers another collect on the next pass.
+            var dbStamp = FileStamp.Of(_sqlitePath);
+            if (dbStamp == null) return;
+            var walStamp = FileStamp.Of(_sqlitePath + "-wal");
+            if (string.Equals(_sqliteHintsPath, _sqlitePath, StringComparison.OrdinalIgnoreCase)
+                && FileStamp.Same(_sqliteHintsStamp, dbStamp)
+                && FileStamp.Same(_sqliteHintsWalStamp, walStamp))
+                return;
             try
             {
                 var cs = "Data Source=" + _sqlitePath + ";Version=3;Read Only=True;FailIfMissing=True";
@@ -1167,6 +1426,9 @@ namespace KaiAosRenew
                         }
                     }
                 }
+                _sqliteHintsPath = _sqlitePath;
+                _sqliteHintsStamp = dbStamp;
+                _sqliteHintsWalStamp = walStamp;
             }
             catch
             {
@@ -1200,6 +1462,9 @@ namespace KaiAosRenew
                             }
                         }
                     }
+                    _sqliteHintsPath = _sqlitePath;
+                    _sqliteHintsStamp = dbStamp;
+                    _sqliteHintsWalStamp = walStamp;
                 }
                 catch { }
             }
@@ -1278,24 +1543,43 @@ namespace KaiAosRenew
         {
             try
             {
-                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+                if (string.IsNullOrEmpty(path)) return;
+                // Skip re-reading/parsing when the file is unchanged (mtime + length) since the last pass.
+                // The debug flag is part of the stamp so enabling Debug Mode still archives the current file once.
+                var stamp = FileStamp.Of(path, KeyDebugEnabled);
+                if (stamp == null)
+                {
+                    _binStamps.Remove(path);
+                    return;
+                }
+                FileStamp prev;
+                if (_binStamps.TryGetValue(path, out prev) && FileStamp.Same(prev, stamp))
+                    return;
+
                 byte[] bytes;
                 DateTime mtimeUtc;
                 if (!TryReadKeyReaderBytes(path, out bytes, out mtimeUtc)) return;
+                if (_binStamps.Count >= MaxBinStampEntries)
+                    _binStamps.Clear();
+                _binStamps[path] = stamp; // unreadable-now files (exception above) are retried; parsed/unparseable are not
                 KeyBinFields fields;
                 if (!TryParseKeyReaderBytes(bytes, out fields)) return;
-                try
+                // Privacy: only archive .bin / write key-reader-parse.log when debug is enabled.
+                if (KeyDebugEnabled)
                 {
-                    var archived = WriteKeyReadDebug(path, bytes, mtimeUtc, fields);
-                    if (!string.IsNullOrEmpty(archived) && fields != null && !string.IsNullOrEmpty(fields.Vin))
+                    try
                     {
-                        lock (_gate)
+                        var archived = WriteKeyReadDebug(path, bytes, mtimeUtc, fields);
+                        if (!string.IsNullOrEmpty(archived) && fields != null && !string.IsNullOrEmpty(fields.Vin))
                         {
-                            _lastDebugBinByVin[fields.Vin] = archived;
+                            lock (_gate)
+                            {
+                                _lastDebugBinByVin[fields.Vin] = archived;
+                            }
                         }
                     }
+                    catch { }
                 }
-                catch { }
                 RememberBin(File.GetLastWriteTime(path), fields);
             }
             catch { }
@@ -1881,6 +2165,21 @@ namespace KaiAosRenew
                 info.Message = "SqliteKaiDb.db not found";
                 return info;
             }
+            // Reuse the last successful row while the db (+ -wal) is unchanged: no connection open per refresh.
+            var sqlitePath = _sqlitePath;
+            var dbStamp = FileStamp.Of(sqlitePath);
+            var walStamp = FileStamp.Of(sqlitePath + "-wal");
+            if (dbStamp != null)
+            {
+                lock (_readerCacheGate)
+                {
+                    if (_readerCache != null
+                        && string.Equals(_readerCachePath, sqlitePath, StringComparison.OrdinalIgnoreCase)
+                        && FileStamp.Same(_readerCacheStamp, dbStamp)
+                        && FileStamp.Same(_readerCacheWalStamp, walStamp))
+                        return CloneReaderSnapshot(_readerCache);
+                }
+            }
             try
             {
                 var cs = "Data Source=" + _sqlitePath + ";Version=3;Read Only=True;FailIfMissing=True";
@@ -1928,6 +2227,16 @@ namespace KaiAosRenew
                         }
                     }
                 }
+                if (dbStamp != null)
+                {
+                    lock (_readerCacheGate)
+                    {
+                        _readerCache = CloneReaderSnapshot(info);
+                        _readerCachePath = sqlitePath;
+                        _readerCacheStamp = dbStamp;
+                        _readerCacheWalStamp = walStamp;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -1938,9 +2247,174 @@ namespace KaiAosRenew
 #endif
         }
 
+        private static KeyReaderSnapshot CloneReaderSnapshot(KeyReaderSnapshot s)
+        {
+            if (s == null) return null;
+            return new KeyReaderSnapshot
+            {
+                Ok = s.Ok,
+                Message = s.Message,
+                KeyReaderId = s.KeyReaderId,
+                HwAddress = s.HwAddress,
+                FirmwareVersion = s.FirmwareVersion,
+                IpAddress = s.IpAddress,
+                LastKeyReceivedLocal = s.LastKeyReceivedLocal,
+                Inactive = s.Inactive
+            };
+        }
+
+        /// <summary>Categorise one KeyUploader log line (null = irrelevant).</summary>
+        private static ParsedLine ClassifyUploaderLine(string line)
+        {
+            DateTime ts;
+            string body;
+            if (!TryParseLogLine(line, out ts, out body)) return null;
+            if (IsNoise(body)) return null;
+
+            if (ContainsIgnoreCase(body, "Picked up binary file")
+                || ContainsIgnoreCase(body, "New KeyReader folder"))
+                return new ParsedLine { Time = ts, Body = Redact(body), Kind = "pick" };
+            if (ContainsIgnoreCase(body, "successfully sent to KAI Dezentral"))
+                return new ParsedLine { Time = ts, Body = Redact(body), Kind = "local", Guid = ExtractGuid(body) };
+            if (ContainsIgnoreCase(body, "Upload Url:") || ContainsIgnoreCase(body, "keyreaderids/"))
+            {
+                var rid = ExtractReaderId(body);
+                if (!string.IsNullOrEmpty(rid))
+                    return new ParsedLine { Time = ts, Body = Redact(body), Kind = "reader", Guid = rid };
+                return null;
+            }
+            if (LooksLikeUploaderFail(body))
+                return new ParsedLine { Time = ts, Body = Redact(body), Kind = "fail" };
+            return null;
+        }
+
+        /// <summary>Categorise one KAI service log line (null = irrelevant).</summary>
+        private static ParsedLine ClassifyKaiLine(string line)
+        {
+            DateTime ts;
+            string body;
+            if (!TryParseLogLine(line, out ts, out body)) return null;
+            if (IsNoise(body)) return null;
+
+            if (ContainsIgnoreCase(body, "Successfully uploaded key data to KAI Central"))
+                return new ParsedLine { Time = ts, Body = Redact(body), Kind = "bmw" };
+            if (ContainsIgnoreCase(body, "PutKeyDataV1")
+                && ContainsIgnoreCase(body, "Enter method"))
+                return new ParsedLine { Time = ts, Body = Redact(body), Kind = "put" };
+            if (LooksLikeKaiUploadFail(body))
+                return new ParsedLine { Time = ts, Body = Redact(body), Kind = "fail" };
+            return null;
+        }
+
+        /// <summary>
+        /// Incremental log tail: keeps parsed lines per log path and reads only newly appended bytes.
+        /// First pass (or after rotation / truncation / a different newest file) reads the last
+        /// <see cref="LogTailBytes"/> like before. Only newline-terminated lines are cached; a trailing
+        /// unterminated line is parsed provisionally each pass so it is neither lost nor duplicated.
+        /// </summary>
+        private static void UpdateLogCache(LogLineCache cache, string path, Func<string, ParsedLine> classify)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                cache.Reset();
+                return;
+            }
+            try
+            {
+                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                {
+                    var len = fs.Length;
+                    DateTime created;
+                    try { created = File.GetCreationTimeUtc(path); }
+                    catch { created = DateTime.MinValue; }
+
+                    // Rotation (other file / re-created file) or truncation => start over.
+                    if (!string.Equals(cache.Path, path, StringComparison.OrdinalIgnoreCase)
+                        || len < cache.Offset
+                        || (cache.Initialized && created != cache.CreatedUtc))
+                    {
+                        cache.Reset();
+                        cache.Path = path;
+                        cache.CreatedUtc = created;
+                    }
+
+                    cache.Tentative = null;
+                    if (cache.Initialized && len == cache.Offset)
+                        return; // nothing new
+
+                    var pos = cache.Offset;
+                    var skipPartialFirstLine = false;
+                    if (len - pos > LogTailBytes)
+                    {
+                        // Large initial file or huge burst: only the newest window matters (MaxEvents-bound anyway).
+                        pos = len - LogTailBytes;
+                        skipPartialFirstLine = pos > 0;
+                        if (cache.Initialized)
+                            cache.Lines.Clear(); // gap: older cached lines are no longer contiguous with new ones
+                    }
+
+                    var count = (int)(len - pos);
+                    if (count <= 0)
+                    {
+                        cache.Initialized = true;
+                        return;
+                    }
+                    fs.Position = pos;
+                    var buf = new byte[count];
+                    var read = 0;
+                    while (read < count)
+                    {
+                        var n = fs.Read(buf, read, count - read);
+                        if (n <= 0) break;
+                        read += n;
+                    }
+                    if (read <= 0) return;
+
+                    var begin = 0;
+                    if (pos == 0 && read >= 3 && buf[0] == 0xEF && buf[1] == 0xBB && buf[2] == 0xBF)
+                        begin = 3; // UTF-8 BOM
+                    if (skipPartialFirstLine)
+                    {
+                        var nl = Array.IndexOf(buf, (byte)'\n', 0, read);
+                        begin = nl < 0 ? read : nl + 1;
+                    }
+
+                    // '\n' (0x0A) never occurs inside a multi-byte UTF-8 sequence, so cutting there is decode-safe.
+                    var lastNl = Array.LastIndexOf(buf, (byte)'\n', read - 1, read);
+                    var completeEnd = lastNl + 1; // exclusive; 0 when no newline in buffer
+                    if (completeEnd > begin)
+                    {
+                        var text = Encoding.UTF8.GetString(buf, begin, completeEnd - begin);
+                        foreach (var raw in text.Split('\n'))
+                        {
+                            var parsed = classify(raw.TrimEnd('\r'));
+                            if (parsed != null) cache.Lines.Add(parsed);
+                        }
+                    }
+                    // Never advance past an unterminated tail (or a partial head with no newline at all).
+                    cache.Offset = pos + completeEnd;
+                    cache.Initialized = true;
+
+                    var tailStart = Math.Max(completeEnd, begin);
+                    if (tailStart < read && !(skipPartialFirstLine && lastNl < 0))
+                    {
+                        var tailText = Encoding.UTF8.GetString(buf, tailStart, read - tailStart);
+                        cache.Tentative = classify(tailText.TrimEnd('\r', '\n'));
+                    }
+
+                    if (cache.Lines.Count > MaxCachedParsedLines)
+                        cache.Lines.RemoveRange(0, cache.Lines.Count - MaxCachedParsedLines);
+                }
+            }
+            catch
+            {
+                // Locked / vanished: keep what we have; next pass retries.
+            }
+        }
+
         private static List<KeyActivityEvent> BuildEvents(
-            string uploaderLog,
-            string kaiLog,
+            LogLineCache uploaderCache,
+            LogLineCache kaiCache,
             KeyReaderSnapshot reader)
         {
             var picks = new List<ParsedLine>();
@@ -1949,53 +2423,23 @@ namespace KaiAosRenew
             var fails = new List<ParsedLine>();
             var readerIds = new List<ParsedLine>();
 
-            foreach (var line in ReadLogTailLines(uploaderLog))
+            foreach (var cache in new[] { uploaderCache, kaiCache })
             {
-                DateTime ts;
-                string body;
-                if (!TryParseLogLine(line, out ts, out body)) continue;
-                if (IsNoise(body)) continue;
-
-                if (ContainsIgnoreCase(body, "Picked up binary file")
-                    || ContainsIgnoreCase(body, "New KeyReader folder"))
+                if (cache == null) continue;
+                var all = new List<ParsedLine>(cache.Lines.Count + 1);
+                all.AddRange(cache.Lines);
+                if (cache.Tentative != null) all.Add(cache.Tentative);
+                foreach (var p in all)
                 {
-                    picks.Add(new ParsedLine { Time = ts, Body = Redact(body), Kind = "pick" });
-                }
-                else if (ContainsIgnoreCase(body, "successfully sent to KAI Dezentral"))
-                {
-                    locals.Add(new ParsedLine { Time = ts, Body = Redact(body), Kind = "local", Guid = ExtractGuid(body) });
-                }
-                else if (ContainsIgnoreCase(body, "Upload Url:") || ContainsIgnoreCase(body, "keyreaderids/"))
-                {
-                    var rid = ExtractReaderId(body);
-                    if (!string.IsNullOrEmpty(rid))
-                        readerIds.Add(new ParsedLine { Time = ts, Body = Redact(body), Kind = "reader", Guid = rid });
-                }
-                else if (LooksLikeUploaderFail(body))
-                {
-                    fails.Add(new ParsedLine { Time = ts, Body = Redact(body), Kind = "fail" });
-                }
-            }
-
-            foreach (var line in ReadLogTailLines(kaiLog))
-            {
-                DateTime ts;
-                string body;
-                if (!TryParseLogLine(line, out ts, out body)) continue;
-                if (IsNoise(body)) continue;
-
-                if (ContainsIgnoreCase(body, "Successfully uploaded key data to KAI Central"))
-                {
-                    bmws.Add(new ParsedLine { Time = ts, Body = Redact(body), Kind = "bmw" });
-                }
-                else if (ContainsIgnoreCase(body, "PutKeyDataV1")
-                    && ContainsIgnoreCase(body, "Enter method"))
-                {
-                    picks.Add(new ParsedLine { Time = ts, Body = Redact(body), Kind = "put" });
-                }
-                else if (LooksLikeKaiUploadFail(body))
-                {
-                    fails.Add(new ParsedLine { Time = ts, Body = Redact(body), Kind = "fail" });
+                    switch (p.Kind)
+                    {
+                        case "pick":
+                        case "put": picks.Add(p); break;
+                        case "local": locals.Add(p); break;
+                        case "bmw": bmws.Add(p); break;
+                        case "fail": fails.Add(p); break;
+                        case "reader": readerIds.Add(p); break;
+                    }
                 }
             }
 
@@ -2171,9 +2615,32 @@ namespace KaiAosRenew
                 ev.BmwUploaded = donor.BmwUploaded;
                 ev.Failed = donor.Failed;
                 if (string.IsNullOrEmpty(ev.FileId)) ev.FileId = donor.FileId;
-                if (string.IsNullOrEmpty(ev.Detail)
+                if (ev.Failed)
+                {
+                    if (string.IsNullOrEmpty(ev.Detail)
+                        || KeyActivityEvent.IsPickupNoiseDetail(ev.Detail)
+                        || KeyActivityEvent.IsCentralSuccessDetail(ev.Detail)
+                        || string.Equals(ev.Detail, "Sent to KAI Dezentral", StringComparison.Ordinal))
+                    {
+                        if (!string.IsNullOrEmpty(donor.Detail)
+                            && !KeyActivityEvent.IsCentralSuccessDetail(donor.Detail)
+                            && !string.Equals(donor.Detail, "Sent to KAI Dezentral", StringComparison.Ordinal))
+                            ev.Detail = donor.Detail;
+                        else
+                            ev.Detail = "BMW Server upload failed";
+                    }
+                }
+                else if (ev.BmwUploaded)
+                    ev.Detail = "Uploaded to KAI Central";
+                else if (ev.LocalSent
+                    && (string.IsNullOrEmpty(ev.Detail) || KeyActivityEvent.IsPickupNoiseDetail(ev.Detail)))
+                    ev.Detail = "Sent to KAI Dezentral";
+                else if (string.IsNullOrEmpty(ev.Detail)
                     || KeyActivityEvent.IsPickupNoiseDetail(ev.Detail))
-                    ev.Detail = donor.Detail;
+                {
+                    if (!string.IsNullOrEmpty(donor.Detail))
+                        ev.Detail = donor.Detail;
+                }
                 ev.Status = ComputeStatus(ev);
             }
         }
@@ -2360,43 +2827,6 @@ namespace KaiAosRenew
             catch
             {
                 return null;
-            }
-        }
-
-        private static IEnumerable<string> ReadLogTailLines(string path)
-        {
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
-                yield break;
-
-            string text = null;
-            try
-            {
-                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-                {
-                    var len = fs.Length;
-                    var start = len > LogTailBytes ? len - LogTailBytes : 0;
-                    fs.Position = start;
-                    using (var sr = new StreamReader(fs, Encoding.UTF8, true))
-                    {
-                        if (start > 0)
-                            sr.ReadLine();
-                        text = sr.ReadToEnd();
-                    }
-                }
-            }
-            catch
-            {
-                yield break;
-            }
-
-            if (string.IsNullOrEmpty(text))
-                yield break;
-
-            using (var reader = new StringReader(text))
-            {
-                string line;
-                while ((line = reader.ReadLine()) != null)
-                    yield return line;
             }
         }
 

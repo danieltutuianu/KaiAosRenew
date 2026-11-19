@@ -114,10 +114,10 @@ namespace KaiAosRenew
                 DeleteRuleByName(RuleNameUdp);
                 RunNetsh("advfirewall firewall add rule name=\"" + RuleNameTcp
                     + "\" dir=in action=allow protocol=TCP localport=" + port
-                    + " profile=any enable=yes");
+                    + " profile=domain,private remoteip=localsubnet enable=yes");
                 RunNetsh("advfirewall firewall add rule name=\"" + RuleNameUdp
                     + "\" dir=in action=allow protocol=UDP localport=" + port
-                    + " profile=any enable=yes");
+                    + " profile=domain,private remoteip=localsubnet enable=yes");
                 var ok = IsPortAllowed(port);
                 return new Result
                 {
