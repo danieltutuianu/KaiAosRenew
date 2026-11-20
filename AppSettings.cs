@@ -104,9 +104,9 @@ namespace KaiAosRenew
         public bool FirebasePushPullOnly { get; set; }
         /// <summary>Legacy poll flag; migrated into FirebasePushSyncMode.</summary>
         public bool FirebasePushUsePolling { get; set; }
-        /// <summary>ondemand (default, zero idle) / poll / sse.</summary>
+        /// <summary>ondemand (default, zero idle) / poll (on-demand triggers + periodic poll) / sse (legacy).</summary>
         public string FirebasePushSyncMode { get; set; }
-        /// <summary>Poll interval in minutes when sync mode is poll (default 360 = 6h).</summary>
+        /// <summary>Poll interval in minutes when sync mode is poll hybrid (default 360 = 6h).</summary>
         public int FirebasePushPollMinutes { get; set; }
         /// <summary>SHA-256 hex of last published/applied email+password (skip identical republish).</summary>
         public string PeerSyncLastCredsHash { get; set; }

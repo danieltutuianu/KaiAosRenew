@@ -4,6 +4,10 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.32] - 2026-11-20
+
+- Firebase sync: rename Poll every to On-demand + Poll every; document hybrid as on-demand triggers plus periodic poll (EN/RO, server + client)
+
 ## [1.2.31] - 2026-11-20
 
 - VIN tips: queue non-VIN tips behind sticky Copy VIN; drain FIFO on dismiss; auto Copy VIN when text contains a VIN

@@ -52,6 +52,7 @@ namespace KaiAosRenew
 
         private bool IsFirebasePushPollingMode()
         {
+            // "poll" = hybrid: on-demand triggers + periodic PollSeqThenSnapshotAsync.
             return string.Equals(GetFirebasePushSyncMode(), PeerSyncLogic.SyncModePoll, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -63,6 +64,14 @@ namespace KaiAosRenew
         private bool IsFirebasePushOnDemandMode()
         {
             return string.Equals(GetFirebasePushSyncMode(), PeerSyncLogic.SyncModeOnDemand, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Sync now / Push / auth-fail pull / empty-local bootstrap — available in pure on-demand and in hybrid poll.
+        /// </summary>
+        private bool UsesFirebaseOnDemandTriggers()
+        {
+            return IsFirebasePushOnDemandMode() || IsFirebasePushPollingMode();
         }
 
         private bool TryGetActivePeerRelay(out string url, out string secret, out string serverName)
@@ -163,18 +172,20 @@ namespace KaiAosRenew
                 return;
             ResetFirebaseEtagsIfScopeChanged(url, secret);
 
-            // Empty AOS email/password: offer to pull from Firebase, confirm, force Register, then save.
+            // On-demand triggers (both pure on-demand and hybrid poll): empty-local bootstrap.
+            // Sync now / Push / auth-fail pull are wired elsewhere via UsesFirebaseOnDemandTriggers().
             if (IsLocalAosCredentialsIncomplete())
                 Forget(TryBootstrapAosCredsFromFirebaseAsync(), "FirebaseBootstrapAos");
 
             if (IsFirebasePushOnDemandMode())
             {
-                // Zero idle traffic — only Sync now / Publish / auth-fail pull / empty-local bootstrap.
+                // Pure on-demand: zero idle traffic — no timer / SSE.
                 return;
             }
 
             if (IsFirebasePushPollingMode())
             {
+                // Hybrid: on-demand triggers + periodic poll every FirebasePushPollMinutes.
                 var mins = PeerSyncLogic.ClampPollMinutes(_settings.FirebasePushPollMinutes);
                 _firebaseSafetyTimer.Interval = TimeSpan.FromMinutes(mins);
                 _firebaseSafetyTimer.Start();
@@ -183,7 +194,7 @@ namespace KaiAosRenew
                 return;
             }
 
-            // SSE mode
+            // SSE mode (legacy / unreachable from UI normalize)
             _firebaseSafetyTimer.Interval = TimeSpan.FromMinutes(FirebaseSafetyPollMinutes);
             _firebaseSafetyTimer.Start();
             StartFirebaseListen();
@@ -434,7 +445,7 @@ namespace KaiAosRenew
                 return;
             }
             ClearFirebaseEtagsPersistent();
-            if (IsFirebasePushPollingMode() || IsFirebasePushOnDemandMode())
+            if (UsesFirebaseOnDemandTriggers())
                 await PollSeqThenSnapshotAsync(true).ConfigureAwait(true);
             else
                 await BeginPeerSyncPollAsync(true);
