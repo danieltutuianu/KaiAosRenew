@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -20,15 +22,56 @@ namespace KaiAosRenew
     /// </summary>
     internal sealed class TrayTipWindow : Window
     {
+        private const int MaxPendingTips = 8;
+        private static readonly Regex VinRegex = new Regex(
+            @"\b([A-HJ-NPR-Z0-9]{17})\b",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Queue<PendingTip> PendingTips = new Queue<PendingTip>();
         private static TrayTipWindow _current;
+        private static bool _suppressQueueDrain;
+
+        /// <summary>Localized Copy VIN button label (set from ApplyLanguage).</summary>
+        public static string CopyVinLabel = "Copy VIN";
+
         private readonly DispatcherTimer _closeTimer;
         private readonly bool _sticky;
         private readonly bool _hasAction;
         private readonly bool _hasBodyActivate;
+        private readonly string _associatedVin;
         private Action _action;
         private Action _onBodyActivate;
         private int _remainingSeconds;
         private TextBlock _countdownText;
+        private TextBlock _bodyText;
+
+        private sealed class PendingTip
+        {
+            public string Title;
+            public string Text;
+            public TrayTipLevel Level;
+            public string ActionLabel;
+            public Action Action;
+            public int DurationSeconds;
+            public Action OnBodyActivate;
+            public string AssociatedVin;
+        }
+
+        /// <summary>Sticky tip with a Copy action (VIN tip) — protected from non-VIN overlays.</summary>
+        private bool IsStickyVinActionTip
+        {
+            get { return _sticky && _hasAction; }
+        }
+
+        /// <summary>VIN of the current sticky Copy tip, or null.</summary>
+        public static string CurrentStickyVin
+        {
+            get
+            {
+                if (_current == null || !_current.IsStickyVinActionTip)
+                    return null;
+                return string.IsNullOrEmpty(_current._associatedVin) ? null : _current._associatedVin;
+            }
+        }
 
         private TrayTipWindow(
             string title,
@@ -37,7 +80,8 @@ namespace KaiAosRenew
             string actionLabel,
             Action action,
             int durationSeconds,
-            Action onBodyActivate)
+            Action onBodyActivate,
+            string associatedVin)
         {
             Title = title;
             Width = 360;
@@ -53,6 +97,7 @@ namespace KaiAosRenew
 
             _action = action;
             _onBodyActivate = onBodyActivate;
+            _associatedVin = associatedVin ?? "";
             _sticky = durationSeconds < 0;
             _hasAction = !string.IsNullOrEmpty(actionLabel) && action != null;
             _hasBodyActivate = onBodyActivate != null;
@@ -168,14 +213,15 @@ namespace KaiAosRenew
                 titleRow.Children.Add(countdownBadge);
             }
             textPanel.Children.Add(titleRow);
-            textPanel.Children.Add(new TextBlock
+            _bodyText = new TextBlock
             {
                 Text = text ?? "",
                 FontSize = 12,
                 Margin = new Thickness(0, 4, 0, 0),
                 Foreground = new SolidColorBrush(bodyFg),
                 TextWrapping = TextWrapping.Wrap
-            });
+            };
+            textPanel.Children.Add(_bodyText);
 
             if (_hasAction)
             {
@@ -330,6 +376,14 @@ namespace KaiAosRenew
             if (ReferenceEquals(_current, this))
                 _current = null;
             base.OnClosed(e);
+            if (!_suppressQueueDrain)
+            {
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(ShowNextPending), DispatcherPriority.Normal);
+                }
+                catch { }
+            }
         }
 
         private void PositionNearTray()
@@ -358,9 +412,34 @@ namespace KaiAosRenew
             _current = null;
         }
 
+        /// <summary>Close the sticky VIN tip only if it matches <paramref name="vin"/>.</summary>
+        public static bool CloseIfVin(string vin)
+        {
+            if (string.IsNullOrEmpty(vin) || _current == null || !_current.IsStickyVinActionTip)
+                return false;
+            if (!string.Equals(_current._associatedVin, vin, StringComparison.OrdinalIgnoreCase))
+                return false;
+            CloseCurrent();
+            return true;
+        }
+
+        /// <summary>
+        /// If the current tip is a sticky Copy tip for the same VIN, update its body text in place.
+        /// </summary>
+        public static bool TryUpdateStickyVinTip(string vin, string text)
+        {
+            if (string.IsNullOrEmpty(vin) || _current == null || !_current.IsStickyVinActionTip)
+                return false;
+            if (!string.Equals(_current._associatedVin, vin, StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (_current._bodyText != null)
+                _current._bodyText.Text = text ?? "";
+            return true;
+        }
+
         public static void ShowTip(string title, string text, TrayTipLevel level)
         {
-            ShowTip(title, text, level, null, null, 0, null);
+            ShowTip(title, text, level, null, null, 0, null, null);
         }
 
         public static void ShowTip(
@@ -370,7 +449,7 @@ namespace KaiAosRenew
             string actionLabel,
             Action action)
         {
-            ShowTip(title, text, level, actionLabel, action, 0, null);
+            ShowTip(title, text, level, actionLabel, action, 0, null, null);
         }
 
         /// <summary>String-level overload (client notify messages: info/warning/error).</summary>
@@ -382,7 +461,7 @@ namespace KaiAosRenew
             Action action,
             int durationSeconds)
         {
-            ShowTip(title, text, ParseLevel(level), actionLabel, action, durationSeconds, null);
+            ShowTip(title, text, ParseLevel(level), actionLabel, action, durationSeconds, null, null);
         }
 
         public static void ShowTip(
@@ -394,13 +473,26 @@ namespace KaiAosRenew
             int durationSeconds,
             Action onBodyActivate)
         {
-            ShowTip(title, text, ParseLevel(level), actionLabel, action, durationSeconds, onBodyActivate);
+            ShowTip(title, text, ParseLevel(level), actionLabel, action, durationSeconds, onBodyActivate, null);
+        }
+
+        public static void ShowTip(
+            string title,
+            string text,
+            string level,
+            string actionLabel,
+            Action action,
+            int durationSeconds,
+            Action onBodyActivate,
+            string associatedVin)
+        {
+            ShowTip(title, text, ParseLevel(level), actionLabel, action, durationSeconds, onBodyActivate, associatedVin);
         }
 
         /// <summary>Sticky tip: stays until the user clicks Close (no auto-close).</summary>
         public static void ShowSticky(string title, string text, TrayTipLevel level)
         {
-            ShowTip(title, text, level, null, null, -1, null);
+            ShowTip(title, text, level, null, null, -1, null, null);
         }
 
         public static void ShowSticky(string title, string text, string level)
@@ -417,16 +509,169 @@ namespace KaiAosRenew
             int durationSeconds,
             Action onBodyActivate)
         {
+            ShowTip(title, text, level, actionLabel, action, durationSeconds, onBodyActivate, null);
+        }
+
+        public static void ShowTip(
+            string title,
+            string text,
+            TrayTipLevel level,
+            string actionLabel,
+            Action action,
+            int durationSeconds,
+            Action onBodyActivate,
+            string associatedVin)
+        {
+            // While a sticky VIN tip is up, non-explicit tips are queued (before auto-inject Copy).
+            var hasExplicitVin = !string.IsNullOrEmpty(associatedVin);
+            if (_current != null && _current.IsStickyVinActionTip && !hasExplicitVin)
+            {
+                EnqueuePending(title, text, level, actionLabel, action, durationSeconds, onBodyActivate, associatedVin);
+                return;
+            }
+
+            EnsureCopyVinAction(ref actionLabel, ref action, ref associatedVin, text);
+
             if (_current != null)
             {
-                try { _current.Close(); }
-                catch { }
+                _suppressQueueDrain = true;
+                try
+                {
+                    try { _current.Close(); }
+                    catch { }
+                }
+                finally
+                {
+                    _suppressQueueDrain = false;
+                }
                 _current = null;
             }
+
+            PresentTip(title, text, level, actionLabel, action, durationSeconds, onBodyActivate, associatedVin);
+        }
+
+        private static void PresentTip(
+            string title,
+            string text,
+            TrayTipLevel level,
+            string actionLabel,
+            Action action,
+            int durationSeconds,
+            Action onBodyActivate,
+            string associatedVin)
+        {
             var win = new TrayTipWindow(
-                title, text, level, actionLabel, action, durationSeconds, onBodyActivate);
+                title, text, level, actionLabel, action, durationSeconds, onBodyActivate, associatedVin);
             _current = win;
             win.Show();
+        }
+
+        private static void EnqueuePending(
+            string title,
+            string text,
+            TrayTipLevel level,
+            string actionLabel,
+            Action action,
+            int durationSeconds,
+            Action onBodyActivate,
+            string associatedVin)
+        {
+            if (PendingTips.Count > 0)
+            {
+                var last = default(PendingTip);
+                foreach (var tip in PendingTips)
+                    last = tip;
+                if (last != null
+                    && last.Level == level
+                    && string.Equals(last.Text ?? "", text ?? "", StringComparison.Ordinal))
+                    return;
+            }
+
+            while (PendingTips.Count >= MaxPendingTips)
+                PendingTips.Dequeue();
+
+            PendingTips.Enqueue(new PendingTip
+            {
+                Title = title,
+                Text = text,
+                Level = level,
+                ActionLabel = actionLabel,
+                Action = action,
+                DurationSeconds = durationSeconds,
+                OnBodyActivate = onBodyActivate,
+                AssociatedVin = associatedVin
+            });
+        }
+
+        private static void ShowNextPending()
+        {
+            if (_current != null || PendingTips.Count == 0)
+                return;
+
+            var next = PendingTips.Dequeue();
+            var actionLabel = next.ActionLabel;
+            var action = next.Action;
+            var associatedVin = next.AssociatedVin;
+            EnsureCopyVinAction(ref actionLabel, ref action, ref associatedVin, next.Text);
+            PresentTip(
+                next.Title,
+                next.Text,
+                next.Level,
+                actionLabel,
+                action,
+                next.DurationSeconds,
+                next.OnBodyActivate,
+                associatedVin);
+        }
+
+        /// <summary>
+        /// If the tip has no action but a VIN is known (associated or in text), add Copy VIN.
+        /// </summary>
+        private static void EnsureCopyVinAction(
+            ref string actionLabel,
+            ref Action action,
+            ref string associatedVin,
+            string text)
+        {
+            if (!string.IsNullOrEmpty(actionLabel) && action != null)
+                return;
+
+            var vin = associatedVin;
+            if (string.IsNullOrEmpty(vin))
+                vin = TryExtractVin(text);
+            if (string.IsNullOrEmpty(vin))
+                return;
+
+            associatedVin = vin;
+            var copyVin = vin;
+            actionLabel = string.IsNullOrEmpty(CopyVinLabel) ? "Copy VIN" : CopyVinLabel;
+            action = delegate { TryCopyText(copyVin); };
+        }
+
+        private static string TryExtractVin(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return null;
+            var m = VinRegex.Match(text);
+            if (!m.Success || m.Groups.Count < 2)
+                return null;
+            return m.Groups[1].Value.ToUpperInvariant();
+        }
+
+        private static void TryCopyText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            try
+            {
+                Clipboard.SetDataObject(text, true);
+                return;
+            }
+            catch { }
+            try
+            {
+                System.Windows.Forms.Clipboard.SetText(text);
+            }
+            catch { }
         }
     }
 }

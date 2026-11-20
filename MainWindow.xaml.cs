@@ -230,6 +230,8 @@ namespace KaiAosRenew
         private string _pending403RetryVin;
         private string _pending403RetryReaderId;
         private bool _keysRetryBusy;
+        private bool _simUpdateBanner;
+        private bool _simMockRetryBin;
         private bool _registerStrikeNotedThisRun;
         private static readonly SolidColorBrush KeysSearchHitBrush =
             new SolidColorBrush(Color.FromArgb(0xFF, 0xF9, 0xE2, 0xA8));
@@ -1017,6 +1019,8 @@ namespace KaiAosRenew
                 KeysColBin.Width = _debugMode ? 36 : 0;
             if (KeysColBinPad != null)
                 KeysColBinPad.Width = _debugMode ? 18 : 0;
+            if (SettingsSimulationGroup != null)
+                SettingsSimulationGroup.Visibility = _debugMode ? Visibility.Visible : Visibility.Collapsed;
             ShowPendingUpdate(_pendingUpdate);
             RefreshTrayIcon();
         }
@@ -1098,6 +1102,13 @@ namespace KaiAosRenew
                 return;
             }
 
+            ForceShowClipboardPassBanner(clip);
+        }
+
+        private void ForceShowClipboardPassBanner(string clip)
+        {
+            if (ClipboardPassBanner == null || string.IsNullOrEmpty(clip)) return;
+            var current = GetPasswordUi() ?? "";
             _clipboardPassCandidate = clip;
             if (ClipboardPassHeaderText != null)
                 ClipboardPassHeaderText.Text = UiStrings.T("ClipboardPassHeader");

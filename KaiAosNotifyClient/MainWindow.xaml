@@ -1318,6 +1318,66 @@
                 </StackPanel>
               </GroupBox>
 
+              <GroupBox x:Name="ClientSimulationGroup" Header="Simulation" Style="{DynamicResource KaiGroupBox}"
+                        Visibility="Collapsed">
+                <WrapPanel>
+                  <Button x:Name="SimBmwFailBtn" Content="BMW upload fail" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimBmwUploadFail_Click" />
+                  <Button x:Name="SimBmwFailAgainBtn" Content="BMW upload fail again" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimBmwUploadFailAgain_Click" />
+                  <Button x:Name="SimBmwOkBtn" Content="BMW upload OK" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimBmwUploadOk_Click" />
+                  <Button x:Name="SimVinReadBtn" Content="VIN read" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimVinRead_Click" />
+                  <Button x:Name="SimVinStickyBtn" Content="VIN sticky" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimVinSticky_Click" />
+                  <Button x:Name="SimAltVinFailBtn" Content="Alt VIN fail" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimAltVinFail_Click" />
+                  <Button x:Name="SimWarningOverStickyBtn" Content="Warning over sticky" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimWarningOverSticky_Click" />
+                  <Button x:Name="Sim403StillFailBtn" Content="403 still-fail" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="Sim403StillFail_Click" />
+                  <Button x:Name="SimLocalOkBtn" Content="Local OK row" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimLocalOkRow_Click" />
+                  <Button x:Name="SimBmwUploadedRowBtn" Content="BmwUploaded row" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimBmwUploadedRow_Click" />
+                  <Button x:Name="SimRetryBusyBtn" Content="Retry BMW busy" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimRetryBmwBusy_Click" />
+                  <Button x:Name="SimStallFailOnlyBtn" Content="Stall fail-only" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimStallFailOnly_Click" />
+                  <Button x:Name="SimStallBtn" Content="Stall alert" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimStallAlert_Click" />
+                  <Button x:Name="SimToastInfoBtn" Content="Toast Info" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimToastInfo_Click" />
+                  <Button x:Name="SimToastWarningBtn" Content="Toast Warning" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimToastWarning_Click" />
+                  <Button x:Name="SimToastErrorBtn" Content="Toast Error" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimToastError_Click" />
+                  <Button x:Name="SimServerOfflineBtn" Content="Server offline" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimServerOffline_Click" />
+                  <Button x:Name="SimAuthCooldownBtn" Content="Auth cooldown" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimAuthCooldown_Click" />
+                  <Button x:Name="SimRegisterBlockedBtn" Content="Register blocked" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimRegisterBlocked_Click" />
+                  <Button x:Name="SimClipboardPassBtn" Content="Clipboard password" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimClipboardPass_Click" />
+                  <Button x:Name="SimServicesProblemBtn" Content="BMW services problem" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimServicesProblem_Click" />
+                  <Button x:Name="SimUpdateAvailableBtn" Content="Update available" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimUpdateAvailable_Click" />
+                  <Button x:Name="SimPeerConflictBtn" Content="Peer sync conflict" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimPeerConflict_Click" />
+                  <Button x:Name="SimBinAvailableBtn" Content="Bin / Retry ready" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimBinAvailable_Click" />
+                  <Button x:Name="SimRegisterOkBtn" Content="Register OK" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimRegisterOk_Click" />
+                  <Button x:Name="SimRegisterFailBtn" Content="Register Fail" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimRegisterFail_Click" />
+                  <Button x:Name="SimCloseTipBtn" Content="Close tip" Style="{DynamicResource BeigeButton}"
+                          Margin="0,0,8,6" Padding="10,4" MinWidth="140" Click="SimCloseTip_Click" />
+                </WrapPanel>
+              </GroupBox>
+
               <GroupBox x:Name="AuthGroup" Header="Auth" Style="{DynamicResource KaiGroupBox}">
                 <CheckBox x:Name="BrowserPassHintCheck"
                           Content="On auth failure, remind to match browser password"

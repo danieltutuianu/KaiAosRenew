@@ -374,6 +374,16 @@ namespace KaiAosRenew
         private async System.Threading.Tasks.Task RetryBmwUploadAsync(KeyActivityEvent ev, bool from403Auto)
         {
             if (_keysRetryBusy || _keyMonitor == null) return;
+            if (_simMockRetryBin
+                && ev != null
+                && string.Equals(ev.Vin, SimTestVin, StringComparison.OrdinalIgnoreCase))
+            {
+                _simMockRetryBin = false;
+                AppendLog(UiStrings.T("SimRetryMockLog"), LogLevel.Info);
+                TrayTipWindow.ShowTip("KAI - AOS Renew", UiStrings.T("SimRetryMockLog"), TrayTipLevel.Info);
+                UpdateKeysRetryButton();
+                return;
+            }
             if (!_keyMonitor.CanRetryBmwUpload(ev))
             {
                 AppendLog(UiStrings.T("KeysRetryBmwNoBin"), LogLevel.Warning);
@@ -479,17 +489,11 @@ namespace KaiAosRenew
 
         private void ShowBmw403StillFailTip(string vin)
         {
-            var msg = string.Format(UiStrings.T("KeysBmw403StillFail"),
-                string.IsNullOrEmpty(vin) ? "?" : vin);
+            var capture = string.IsNullOrEmpty(vin) ? "?" : vin;
+            var msg = string.Format(UiStrings.T("KeysBmw403StillFail"), capture);
             AppendLog(msg, LogLevel.Warning);
-            try
-            {
-                TrayTipWindow.ShowSticky("KAI - AOS Renew", msg, TrayTipLevel.Warning);
-            }
-            catch
-            {
-                ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(msg));
-            }
+            // Sticky VIN tip with Copy — same style as BMW-fail tip (not a Warning overlay).
+            ShowVinInfoBalloon(capture, msg, true, true, true);
         }
 
         private void KeysFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1705,6 +1709,7 @@ namespace KaiAosRenew
             // VIN tips: local balloon is optional; remote clients always get the broadcast.
             MaybeShowVinInfoBalloons(snap);
             MaybeShowVinBmwFailTips(snap);
+            MaybeDismissStickyVinTipOnBmwOk(snap);
             var balloonOn = _settings.KeysBalloonEnabled;
             var remediating = IsKeysBmwRemediationActive();
             if (_settings.KeysStallAlertEnabled && snap.StallEvents != null)
@@ -1725,7 +1730,8 @@ namespace KaiAosRenew
                     var stallMin = _settings.KeysStallMinutes < 1 ? 2 : _settings.KeysStallMinutes;
                     var msg = string.Format(UiStrings.T("KeysStallBalloon"), vin, stallMin);
                     AppendLog(msg, LogLevel.Warning);
-                    if (balloonOn)
+                    // Fail-only VIN tip already covers BMW upload failure — do not overlay Warning.
+                    if (balloonOn && !_settings.KeysVinTipBmwFailOnly)
                         ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(msg));
                 }
             }
@@ -1894,21 +1900,77 @@ namespace KaiAosRenew
                     for (var i = 0; i < drop.Count; i++)
                         _bmwFailVinTipKeys.Remove(drop[i]);
                 }
-                var msg = string.Format(UiStrings.T("KeysVinBmwFailTip"), ev.Vin);
+                var baseMsg = string.Format(UiStrings.T("KeysVinBmwFailTip"), ev.Vin);
+                var at = now.ToString("HH:mm:ss");
+                var msg = string.Format(UiStrings.T("KeysVinBmwFailTipAt"), baseMsg, at);
                 AppendLog(msg, LogLevel.Warning);
-                ShowVinInfoBalloon(ev.Vin, msg, true);
+                // Same VIN: update sticky tip in place; otherwise show a new sticky tip.
+                if (TrayTipWindow.TryUpdateStickyVinTip(ev.Vin, TruncateBalloon(msg)))
+                    BroadcastVinFailTip(ev.Vin, msg);
+                else
+                    ShowVinInfoBalloon(ev.Vin, msg, true, true, true);
             }
         }
 
-        private void ShowVinInfoBalloon(string vin, string message, bool showLocalTip = true)
+        private void MaybeDismissStickyVinTipOnBmwOk(KeyActivitySnapshot snap)
+        {
+            var vin = TrayTipWindow.CurrentStickyVin;
+            if (string.IsNullOrEmpty(vin)) return;
+            var events = snap != null ? snap.Events : null;
+            if (events == null && _keysAllEvents != null)
+                events = _keysAllEvents;
+            if (!KeyActivityMonitor.VinHasBmwUploaded(events, vin))
+                return;
+            if (!TrayTipWindow.CloseIfVin(vin))
+                return;
+            BroadcastNotify(new NotifyMessage
+            {
+                Kind = "vindismiss",
+                Level = "info",
+                Title = "KAI - AOS Renew",
+                Text = "",
+                Vin = vin,
+                Seconds = 0
+            });
+        }
+
+        private void BroadcastVinFailTip(string vin, string message)
+        {
+            var text = TruncateBalloon(message);
+            var capture = vin;
+            var msg = new NotifyMessage
+            {
+                Kind = "vin",
+                Level = "info",
+                Title = "KAI - AOS Renew",
+                Text = text,
+                Vin = capture,
+                Action = "copyVin",
+                Seconds = 0
+            };
+            var ev = FindKeyEventByVin(capture);
+            if (ev != null)
+                NotifyKeySync.ApplyKeyEventFields(msg, ev);
+            else
+            {
+                msg.At = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
+                msg.Status = "Failed";
+                msg.Local = 0;
+                msg.Bmw = 0;
+                msg.Failed = 1;
+            }
+            BroadcastNotify(msg);
+        }
+
+        private void ShowVinInfoBalloon(string vin, string message, bool showLocalTip = true, bool forceSticky = false, bool markFailed = false)
         {
             if (!Dispatcher.CheckAccess())
             {
-                Dispatcher.BeginInvoke(new Action(() => ShowVinInfoBalloon(vin, message, showLocalTip)));
+                Dispatcher.BeginInvoke(new Action(() => ShowVinInfoBalloon(vin, message, showLocalTip, forceSticky, markFailed)));
                 return;
             }
             var text = TruncateBalloon(message);
-            var tipSec = _settings != null ? _settings.KeysVinTipSeconds : 10;
+            var tipSec = forceSticky ? 0 : (_settings != null ? _settings.KeysVinTipSeconds : 10);
             var showSec = tipSec;
             if (tipSec == 0)
                 showSec = -1;
@@ -1928,7 +1990,8 @@ namespace KaiAosRenew
                     UiStrings.T("KeysCopyVin"),
                     () => CopyVinToClipboard(capture),
                     showSec,
-                    () => ShowKeysTabAndSelectVin(capture));
+                    () => ShowKeysTabAndSelectVin(capture),
+                    showSec < 0 ? capture : null);
             }
             var msg = new NotifyMessage
             {
@@ -1946,10 +2009,16 @@ namespace KaiAosRenew
             else
             {
                 msg.At = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
-                msg.Status = "Waiting";
+                msg.Status = markFailed ? "Failed" : "Waiting";
                 msg.Local = 0;
                 msg.Bmw = 0;
-                msg.Failed = 0;
+                msg.Failed = markFailed ? 1 : 0;
+            }
+            if (markFailed)
+            {
+                msg.Failed = 1;
+                if (string.IsNullOrEmpty(msg.Status) || msg.Status == "Waiting")
+                    msg.Status = "Failed";
             }
             BroadcastNotify(msg);
         }
@@ -2307,6 +2376,290 @@ namespace KaiAosRenew
             }
         }
 
+        private const string SimTestVin = "WBATESTVXN0000001";
+        private const string SimTestVinB = "WBATESTVXN0000002";
+
+        private string BuildSimBmwFailTipText(string vin)
+        {
+            var baseMsg = string.Format(UiStrings.T("KeysVinBmwFailTip"), vin);
+            var at = DateTime.Now.ToString("HH:mm:ss");
+            return string.Format(UiStrings.T("KeysVinBmwFailTipAt"), baseMsg, at);
+        }
+
+        private void ShowSimBmwFailTip(string vin)
+        {
+            var msg = BuildSimBmwFailTipText(vin);
+            AppendLog("Sim: " + msg, LogLevel.Warning);
+            if (TrayTipWindow.TryUpdateStickyVinTip(vin, TruncateBalloon(msg)))
+            {
+                BroadcastVinFailTip(vin, msg);
+                return;
+            }
+            ShowVinInfoBalloon(vin, msg, true, true, true);
+        }
+
+        private void SimBmwUploadFail_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            ShowSimBmwFailTip(SimTestVin);
+        }
+
+        private void SimBmwUploadFailAgain_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            ShowSimBmwFailTip(SimTestVin);
+        }
+
+        private void SimBmwUploadOk_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            AppendLog("Sim: BMW upload OK for " + SimTestVin, LogLevel.Success);
+            TrayTipWindow.CloseIfVin(SimTestVin);
+            TrayTipWindow.CloseIfVin(SimTestVinB);
+            BroadcastNotify(new NotifyMessage
+            {
+                Kind = "vindismiss",
+                Level = "info",
+                Title = "KAI - AOS Renew",
+                Text = "",
+                Vin = SimTestVin,
+                Seconds = 0
+            });
+        }
+
+        private void SimVinRead_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            var msg = string.Format(UiStrings.T("KeysNewKeyBalloon"), SimTestVin);
+            AppendLog("Sim: " + msg, LogLevel.Info);
+            ShowVinInfoBalloon(SimTestVin, msg, true, false, false);
+        }
+
+        private void SimVinSticky_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            var msg = string.Format(UiStrings.T("KeysNewKeyBalloon"), SimTestVin);
+            AppendLog("Sim sticky: " + msg, LogLevel.Info);
+            ShowVinInfoBalloon(SimTestVin, msg, true, true, false);
+        }
+
+        private void SimAltVinFail_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            ShowSimBmwFailTip(SimTestVinB);
+        }
+
+        private void SimWarningOverSticky_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            var stallMin = _settings != null && _settings.KeysStallMinutes >= 1
+                ? _settings.KeysStallMinutes
+                : 2;
+            var msg = string.Format(UiStrings.T("KeysStallBalloon"), SimTestVin, stallMin);
+            AppendLog("Sim warning over sticky: " + msg, LogLevel.Warning);
+            // No Copy action — sticky VIN tip must remain (TrayTipWindow protection).
+            ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(msg));
+        }
+
+        private void Sim403StillFail_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            ShowBmw403StillFailTip(SimTestVin);
+        }
+
+        private KeyActivityEvent EnsureSimKeyEvent(string vin, bool local, bool bmw, bool failed)
+        {
+            if (_keysAllEvents == null)
+                _keysAllEvents = new List<KeyActivityEvent>();
+            KeyActivityEvent ev = null;
+            foreach (var e in _keysAllEvents)
+            {
+                if (e == null || string.IsNullOrEmpty(e.Vin)) continue;
+                if (string.Equals(e.Vin, vin, StringComparison.OrdinalIgnoreCase))
+                {
+                    ev = e;
+                    break;
+                }
+            }
+            if (ev == null)
+            {
+                ev = new KeyActivityEvent
+                {
+                    Vin = vin,
+                    DetectedLocal = DateTime.Now,
+                    FileId = "sim:" + vin,
+                    Detail = "simulation"
+                };
+                _keysAllEvents.Insert(0, ev);
+            }
+            ev.LocalSent = local;
+            ev.BmwUploaded = bmw;
+            ev.Failed = failed;
+            if (failed) ev.Status = KeyEventStatus.Failed;
+            else if (bmw) ev.Status = KeyEventStatus.BmwOk;
+            else if (local) ev.Status = KeyEventStatus.LocalOk;
+            else ev.Status = KeyEventStatus.Waiting;
+            ev.DetectedLocal = DateTime.Now;
+            return ev;
+        }
+
+        private void SimLocalOkRow_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            EnsureSimKeyEvent(SimTestVin, true, false, false);
+            AppendLog("Sim: Local OK row for " + SimTestVin, LogLevel.Info);
+            ApplyKeysFilter();
+            UpdateKeysRetryButton();
+            MaybeBroadcastKeySync();
+        }
+
+        private void SimBmwUploadedRow_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            EnsureSimKeyEvent(SimTestVin, true, true, false);
+            AppendLog("Sim: BmwUploaded row for " + SimTestVin + " (tip not dismissed)", LogLevel.Success);
+            ApplyKeysFilter();
+            UpdateKeysRetryButton();
+            MaybeBroadcastKeySync();
+        }
+
+        private void SimRetryBmwBusy_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            _keysRetryBusy = true;
+            UpdateKeysRetryButton();
+            AppendLog("Sim: Retry BMW busy (5s)", LogLevel.Info);
+            var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            t.Tick += (s, args) =>
+            {
+                t.Stop();
+                _keysRetryBusy = false;
+                UpdateKeysRetryButton();
+                AppendLog("Sim: Retry BMW busy cleared", LogLevel.Info);
+            };
+            t.Start();
+        }
+
+        private void SimStallFailOnly_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            var stallMin = _settings != null && _settings.KeysStallMinutes >= 1
+                ? _settings.KeysStallMinutes
+                : 2;
+            var msg = string.Format(UiStrings.T("KeysStallBalloon"), SimTestVin, stallMin);
+            // Log only — no balloon (fail-only path).
+            AppendLog("Sim stall fail-only (no balloon): " + msg, LogLevel.Warning);
+        }
+
+        private void SimStallAlert_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            var stallMin = _settings != null && _settings.KeysStallMinutes >= 1
+                ? _settings.KeysStallMinutes
+                : 2;
+            var msg = string.Format(UiStrings.T("KeysStallBalloon"), SimTestVin, stallMin);
+            AppendLog("Sim: " + msg, LogLevel.Warning);
+            ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(msg));
+        }
+
+        private void SimToastInfo_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            TrayTipWindow.ShowTip("KAI - AOS Renew", UiStrings.T("BalloonInfo"), TrayTipLevel.Info);
+            BroadcastNotify(new NotifyMessage
+            {
+                Kind = "info",
+                Level = "info",
+                Title = "KAI - AOS Renew",
+                Text = UiStrings.T("BalloonInfo"),
+                Seconds = 8
+            });
+        }
+
+        private void SimToastWarning_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            ShowBalloon(WinForms.ToolTipIcon.Warning, UiStrings.T("BalloonWarning"));
+        }
+
+        private void SimToastError_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            ShowBalloon(WinForms.ToolTipIcon.Error, UiStrings.T("BalloonError"));
+        }
+
+        private void SimAuthCooldown_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            BeginAuthCooldown();
+        }
+
+        private void SimRegisterBlocked_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            SetAuthRegisterBlocked(true);
+            RefreshAuthCooldownBanner();
+            QueueFooterPublish();
+            BroadcastServerSettings();
+            AppendLog("Sim: Register blocked ON", LogLevel.Warning);
+        }
+
+        private void SimClipboardPass_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            ForceShowClipboardPassBanner("sim-pass");
+        }
+
+        private void SimServicesProblem_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            UpdateServicesFooter(false);
+            var msg = string.Format(UiStrings.T("KaiServicesProblem"), "simulation");
+            AppendLog("Sim: " + msg, LogLevel.Warning);
+            ShowBalloon(WinForms.ToolTipIcon.Warning, TruncateBalloon(msg));
+        }
+
+        private void SimUpdateAvailable_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            ShowSimUpdateBanner();
+        }
+
+        private void SimBinAvailable_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            EnsureSimKeyEvent(SimTestVin, true, false, true);
+            _simMockRetryBin = true;
+            ApplyKeysFilter();
+            UpdateKeysRetryButton();
+            MaybeBroadcastKeySync();
+            AppendLog("Sim: Bin / Retry ready for " + SimTestVin, LogLevel.Info);
+        }
+
+        private void SimRegisterOk_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            var text = "OK: Registration OK (simulation)";
+            AppendLog(text, LogLevel.Success);
+            MaybeAppendRegisterHistory(text, DateTime.Now);
+            TrayTipWindow.ShowTip("KAI - AOS Renew", text, TrayTipLevel.Info);
+        }
+
+        private void SimRegisterFail_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            var text = "FAIL: Register failed (simulation)";
+            AppendLog(text, LogLevel.Error);
+            MaybeAppendRegisterHistory(text, DateTime.Now);
+            ShowBalloon(WinForms.ToolTipIcon.Error, TruncateBalloon(text));
+        }
+
+        private void SimCloseTip_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_debugMode) return;
+            TrayTipWindow.CloseCurrent();
+        }
+
         private void NotifyTestVin_Click(object sender, RoutedEventArgs e)
         {
             SetNotifyTestResult(UiStrings.T("NotifyTestSending"), false);
@@ -2321,8 +2674,8 @@ namespace KaiAosRenew
                 Kind = "vin",
                 Level = "info",
                 Title = "KAI - AOS Renew",
-                Text = "Test VIN WBATESTVIN0000001",
-                Vin = "WBATESTVIN0000001",
+                Text = "Test VIN WBATESTVXN0000001",
+                Vin = "WBATESTVXN0000001",
                 Action = "copyVin",
                 Seconds = tipSec
             }, "VIN");

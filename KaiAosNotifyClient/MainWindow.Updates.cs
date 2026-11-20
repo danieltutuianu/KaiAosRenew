@@ -149,16 +149,20 @@ namespace KaiAosNotifyClient
             _pendingUpdate = update;
             if (update == null)
             {
-                if (UpdateAvailableText != null)
-                    UpdateAvailableText.Visibility = Visibility.Collapsed;
-                if (FooterUpdateBtn != null)
+                if (!_simUpdateBanner)
                 {
-                    FooterUpdateBtn.Visibility = Visibility.Collapsed;
-                    FooterUpdateBtn.ToolTip = null;
+                    if (UpdateAvailableText != null)
+                        UpdateAvailableText.Visibility = Visibility.Collapsed;
+                    if (FooterUpdateBtn != null)
+                    {
+                        FooterUpdateBtn.Visibility = Visibility.Collapsed;
+                        FooterUpdateBtn.ToolTip = null;
+                    }
                 }
                 RefreshTrayOutdatedIcon();
                 return;
             }
+            _simUpdateBanner = false;
             var ver = UpdateService.FormatUpdateVersion(update);
             if (UpdateAvailableText != null)
             {
@@ -177,6 +181,21 @@ namespace KaiAosNotifyClient
 
         private async void FooterUpdate_Click(object sender, RoutedEventArgs e)
         {
+            if (_simUpdateBanner)
+            {
+                MessageBox.Show(this, ClientUiStrings.T("SimUpdateClickMsg"),
+                    ClientUiStrings.T("SimUpdateAvailable"), MessageBoxButton.OK, MessageBoxImage.Information);
+                _simUpdateBanner = false;
+                if (_pendingUpdate == null && FooterUpdateBtn != null)
+                {
+                    FooterUpdateBtn.Visibility = Visibility.Collapsed;
+                    FooterUpdateBtn.ToolTip = null;
+                }
+                else if (_pendingUpdate != null)
+                    ShowPendingUpdate(_pendingUpdate);
+                RefreshTrayOutdatedIcon();
+                return;
+            }
             if (_clientUpdateBusy) return;
             var update = _pendingUpdate;
             if (update == null)
@@ -607,6 +626,11 @@ namespace KaiAosNotifyClient
         private void UpdateKeysRetryButton()
         {
             if (KeysRetryBmwBtn == null) return;
+            if (_simRetryBusy)
+            {
+                KeysRetryBmwBtn.IsEnabled = false;
+                return;
+            }
             var on = _client != null && _client.IsConnected;
             var newest = _keyAllRows.Count > 0 ? _keyAllRows[0] : null;
             var failed = newest != null && string.Equals(newest.Status, "Failed", StringComparison.OrdinalIgnoreCase);

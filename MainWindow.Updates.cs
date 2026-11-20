@@ -49,6 +49,15 @@ namespace KaiAosRenew
                 return;
             }
             var newest = KeyActivityMonitor.GetNewestEvent(_keysAllEvents);
+            if (_simMockRetryBin
+                && newest != null
+                && newest.Failed
+                && !newest.BmwUploaded
+                && string.Equals(newest.Vin, SimTestVin, StringComparison.OrdinalIgnoreCase))
+            {
+                KeysRetryBmwBtn.IsEnabled = true;
+                return;
+            }
             KeysRetryBmwBtn.IsEnabled = _keyMonitor != null && _keyMonitor.CanRetryBmwUpload(newest);
         }
 
@@ -307,16 +316,20 @@ namespace KaiAosRenew
             _pendingUpdate = update;
             if (update == null)
             {
-                if (UpdateAvailableText != null)
-                    UpdateAvailableText.Visibility = Visibility.Collapsed;
-                if (FooterUpdateBtn != null)
+                if (!_simUpdateBanner)
                 {
-                    FooterUpdateBtn.Visibility = Visibility.Collapsed;
-                    FooterUpdateBtn.ToolTip = null;
+                    if (UpdateAvailableText != null)
+                        UpdateAvailableText.Visibility = Visibility.Collapsed;
+                    if (FooterUpdateBtn != null)
+                    {
+                        FooterUpdateBtn.Visibility = Visibility.Collapsed;
+                        FooterUpdateBtn.ToolTip = null;
+                    }
                 }
                 RefreshTrayIcon();
                 return;
             }
+            _simUpdateBanner = false;
             var ver = UpdateService.FormatUpdateVersion(update);
             if (UpdateAvailableText != null)
             {
@@ -333,8 +346,37 @@ namespace KaiAosRenew
             RefreshTrayIcon();
         }
 
+        private void ShowSimUpdateBanner()
+        {
+            _simUpdateBanner = true;
+            if (FooterUpdateBtn != null)
+            {
+                FooterUpdateBtn.Content = string.Format(UiStrings.T("SimUpdateBanner"), "99.0.0-sim");
+                FooterUpdateBtn.ToolTip = UiStrings.T("SimUpdateClickMsg");
+                FooterUpdateBtn.Visibility = Visibility.Visible;
+                FooterUpdateBtn.IsEnabled = true;
+            }
+            AppendLog("Sim: update banner shown", LogLevel.Info);
+            RefreshTrayIcon();
+        }
+
         private async void FooterUpdate_Click(object sender, RoutedEventArgs e)
         {
+            if (_simUpdateBanner)
+            {
+                MessageBox.Show(this, UiStrings.T("SimUpdateClickMsg"),
+                    UiStrings.T("SimUpdateAvailable"), MessageBoxButton.OK, MessageBoxImage.Information);
+                _simUpdateBanner = false;
+                if (_pendingUpdate == null && FooterUpdateBtn != null)
+                {
+                    FooterUpdateBtn.Visibility = Visibility.Collapsed;
+                    FooterUpdateBtn.ToolTip = null;
+                }
+                else if (_pendingUpdate != null)
+                    ShowPendingUpdate(_pendingUpdate);
+                RefreshTrayIcon();
+                return;
+            }
             if (FooterUpdateBtn != null) FooterUpdateBtn.IsEnabled = false;
             try
             {

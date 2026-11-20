@@ -1398,8 +1398,8 @@ namespace KaiAosRenew
                             Kind = "vin",
                             Level = "info",
                             Title = "KAI - AOS Renew",
-                            Text = "Test VIN WBATESTVIN0000001",
-                            Vin = "WBATESTVIN0000001",
+                            Text = "Test VIN WBATESTVXN0000001",
+                            Vin = "WBATESTVXN0000001",
                             Action = "copyVin",
                             Seconds = tipSec
                         };

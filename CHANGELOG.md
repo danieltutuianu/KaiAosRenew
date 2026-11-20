@@ -4,6 +4,12 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.31] - 2026-11-20
+
+- VIN tips: queue non-VIN tips behind sticky Copy VIN; drain FIFO on dismiss; auto Copy VIN when text contains a VIN
+- Debug Mode: Simulation panel (BMW fail/OK, stall, toast, auth, register, bin/retry mock) on server + client
+- RO: polish UI strings (tab Chei, Simulare, tipuri balon); keep intentional product terms in EN
+
 ## [1.2.30] - 2026-11-20
 
 - AOS: when browser password looks newer than last renew and Firebase is on, auto-pull latestCreds and force Register; hide banner on success (server + client)

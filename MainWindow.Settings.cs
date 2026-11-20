@@ -242,6 +242,33 @@ namespace KaiAosRenew
                 SettingsPathsGroup.Header = UiStrings.T("SettingsPaths");
             if (SettingsKeysGroup != null)
                 SettingsKeysGroup.Header = UiStrings.T("SettingsKeys");
+            if (SettingsSimulationGroup != null)
+                SettingsSimulationGroup.Header = UiStrings.T("SimGroup");
+            if (SimBmwFailBtn != null) SimBmwFailBtn.Content = UiStrings.T("SimBmwFail");
+            if (SimBmwFailAgainBtn != null) SimBmwFailAgainBtn.Content = UiStrings.T("SimBmwFailAgain");
+            if (SimBmwOkBtn != null) SimBmwOkBtn.Content = UiStrings.T("SimBmwOk");
+            if (SimVinReadBtn != null) SimVinReadBtn.Content = UiStrings.T("SimVinRead");
+            if (SimVinStickyBtn != null) SimVinStickyBtn.Content = UiStrings.T("SimVinSticky");
+            if (SimAltVinFailBtn != null) SimAltVinFailBtn.Content = UiStrings.T("SimAltVinFail");
+            if (SimWarningOverStickyBtn != null) SimWarningOverStickyBtn.Content = UiStrings.T("SimWarningOverSticky");
+            if (Sim403StillFailBtn != null) Sim403StillFailBtn.Content = UiStrings.T("Sim403StillFail");
+            if (SimLocalOkBtn != null) SimLocalOkBtn.Content = UiStrings.T("SimLocalOkRow");
+            if (SimBmwUploadedRowBtn != null) SimBmwUploadedRowBtn.Content = UiStrings.T("SimBmwUploadedRow");
+            if (SimRetryBusyBtn != null) SimRetryBusyBtn.Content = UiStrings.T("SimRetryBusy");
+            if (SimStallFailOnlyBtn != null) SimStallFailOnlyBtn.Content = UiStrings.T("SimStallFailOnly");
+            if (SimStallBtn != null) SimStallBtn.Content = UiStrings.T("SimStall");
+            if (SimToastInfoBtn != null) SimToastInfoBtn.Content = UiStrings.T("SimToastInfo");
+            if (SimToastWarningBtn != null) SimToastWarningBtn.Content = UiStrings.T("SimToastWarning");
+            if (SimToastErrorBtn != null) SimToastErrorBtn.Content = UiStrings.T("SimToastError");
+            if (SimAuthCooldownBtn != null) SimAuthCooldownBtn.Content = UiStrings.T("SimAuthCooldown");
+            if (SimRegisterBlockedBtn != null) SimRegisterBlockedBtn.Content = UiStrings.T("SimRegisterBlocked");
+            if (SimClipboardPassBtn != null) SimClipboardPassBtn.Content = UiStrings.T("SimClipboardPass");
+            if (SimServicesProblemBtn != null) SimServicesProblemBtn.Content = UiStrings.T("SimServicesProblem");
+            if (SimUpdateAvailableBtn != null) SimUpdateAvailableBtn.Content = UiStrings.T("SimUpdateAvailable");
+            if (SimBinAvailableBtn != null) SimBinAvailableBtn.Content = UiStrings.T("SimBinAvailable");
+            if (SimRegisterOkBtn != null) SimRegisterOkBtn.Content = UiStrings.T("SimRegisterOk");
+            if (SimRegisterFailBtn != null) SimRegisterFailBtn.Content = UiStrings.T("SimRegisterFail");
+            if (SimCloseTipBtn != null) SimCloseTipBtn.Content = UiStrings.T("SimCloseTip");
             if (SettingsNotifyGroup != null)
                 SettingsNotifyGroup.Header = UiStrings.T("SettingsNotifyGroup");
             if (NotifyServerEnableCheck != null)
@@ -351,6 +378,7 @@ namespace KaiAosRenew
             StartTimerBtn.Content = UiStrings.T("StartTimer");
             StopTimerBtn.Content = UiStrings.T("StopTimer");
             VersionText.Text = string.Format(UiStrings.T("Version"), AppVersionDisplay);
+            TrayTipWindow.CopyVinLabel = UiStrings.T("KeysCopyVin");
             RefreshStatusBadge();
             UpdateNextLabel();
             UpdateTokenAgeText();
