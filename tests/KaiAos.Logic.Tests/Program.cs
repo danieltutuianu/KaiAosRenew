@@ -226,6 +226,11 @@ namespace KaiAos.Logic.Tests
 
             AssertTrue(PeerSyncLogic.CredentialsDiffer("a@b.c", "1", "a@b.c", "2"), "pass change");
             AssertTrue(!PeerSyncLogic.CredentialsDiffer("A@B.C", "x", "a@b.c", "x"), "same creds");
+            AssertTrue(!PeerSyncLogic.ResolveForceRegisterOnApply(true, false), "same creds ignore client force");
+            AssertTrue(!PeerSyncLogic.ResolveForceRegisterOnApply(null, false), "same creds ignore null force");
+            AssertTrue(PeerSyncLogic.ResolveForceRegisterOnApply(true, true), "differ + force");
+            AssertTrue(PeerSyncLogic.ResolveForceRegisterOnApply(null, true), "differ + null force");
+            AssertTrue(!PeerSyncLogic.ResolveForceRegisterOnApply(false, true), "differ but user declined");
 
             AssertEqual(1, PeerSyncLogic.ClampPollMinutes(0), "poll min");
             AssertEqual(1440, PeerSyncLogic.ClampPollMinutes(9999), "poll max");

@@ -186,7 +186,7 @@ namespace KaiAosRenew
                     return Fail("Health failed (DNS/network): " + healthMsg);
                 }
                 if (forceRegister)
-                    Log("Credentials changed — forcing Register (skip Health short-circuit)...");
+                    Log("Force Register — skip Health short-circuit...");
                 else
                     Log("Health check failed: " + healthMsg + " — running Register...");
                 if (File.Exists(propsPath))

@@ -706,7 +706,7 @@ namespace KaiAosRenew
         private void CaptureAosSavedCredentials()
         {
             _aosSavedEmail = EmailBox != null ? (EmailBox.Text ?? "").Trim() : "";
-            _aosSavedPass = (PeekPasswordUi() ?? "").Trim();
+            _aosSavedPass = (GetPasswordUi() ?? "").Trim();
         }
 
         private void StartTimer_Click(object sender, RoutedEventArgs e)

@@ -386,9 +386,11 @@ namespace KaiAosNotifyClient
             }
             else if (explicitSave)
             {
-                var credsChanged =
-                    !string.Equals(email, _lastSyncedEmail ?? "", StringComparison.OrdinalIgnoreCase)
-                    || !string.Equals(pass, _lastSyncedPass ?? "", StringComparison.Ordinal);
+                // Empty baseline (not yet synced) must not look like a password change.
+                var hasSyncBaseline = !string.IsNullOrEmpty(_lastSyncedEmail)
+                    || !string.IsNullOrEmpty(_lastSyncedPass);
+                var credsChanged = hasSyncBaseline
+                    && PeerSyncLogic.CredentialsDiffer(email, pass, _lastSyncedEmail, _lastSyncedPass);
                 if (credsChanged)
                 {
                     var confirm = MessageBox.Show(

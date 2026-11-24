@@ -1250,9 +1250,7 @@ namespace KaiAosRenew
         private bool CredentialsWouldChange(string newPassword)
         {
             var email = EmailBox != null ? EmailBox.Text.Trim() : "";
-            if (!string.Equals(email, _aosSavedEmail ?? "", StringComparison.OrdinalIgnoreCase))
-                return true;
-            return !string.Equals((newPassword ?? "").Trim(), _aosSavedPass ?? "", StringComparison.Ordinal);
+            return AosCredentialsDifferFromStored(email, newPassword);
         }
 
 
@@ -2725,10 +2723,21 @@ namespace KaiAosRenew
         private bool CredentialsChangedInUi()
         {
             var email = EmailBox != null ? EmailBox.Text.Trim() : "";
-            if (!string.Equals(email, _aosSavedEmail ?? "", StringComparison.OrdinalIgnoreCase))
-                return true;
-            var newPass = (PeekPasswordUi() ?? "").Trim();
-            return !string.Equals(newPass, _aosSavedPass ?? "", StringComparison.Ordinal);
+            var newPass = (GetPasswordUi() ?? "").Trim();
+            return AosCredentialsDifferFromStored(email, newPass);
+        }
+
+        /// <summary>Compare UI/candidate creds to persisted settings (not the UI snapshot baseline).</summary>
+        private bool AosCredentialsDifferFromStored(string email, string password)
+        {
+            var storedEmail = _settings != null ? (_settings.Email ?? "") : (_aosSavedEmail ?? "");
+            string storedPass = _aosSavedPass ?? "";
+            if (_settings != null)
+            {
+                try { storedPass = _settings.GetPassword() ?? ""; }
+                catch { storedPass = _aosSavedPass ?? ""; }
+            }
+            return PeerSyncLogic.CredentialsDiffer(email, password, storedEmail, storedPass);
         }
 
         /// <summary>Read visible password without syncing the sibling box (avoids re-entrant dirty refresh).</summary>

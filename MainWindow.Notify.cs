@@ -951,6 +951,13 @@ namespace KaiAosRenew
             }
             try
             {
+                string storedPass = "";
+                try { storedPass = _settings != null ? (_settings.GetPassword() ?? "") : ""; }
+                catch { storedPass = ""; }
+                var storedEmail = _settings != null ? (_settings.Email ?? "") : "";
+                var credsDiffer = PeerSyncLogic.CredentialsDiffer(email, password, storedEmail, storedPass);
+                var forceRegister = PeerSyncLogic.ResolveForceRegisterOnApply(forceRegisterOpt, credsDiffer);
+
                 if (EmailBox != null) EmailBox.Text = email;
                 SetPasswordUi(password);
                 if (IntervalBox != null) IntervalBox.Text = hours.ToString();
@@ -963,9 +970,6 @@ namespace KaiAosRenew
                     if (AuthRegisterBlockAfterBox != null)
                         AuthRegisterBlockAfterBox.Text = n.ToString();
                 }
-                var forceRegister = forceRegisterOpt.HasValue
-                    ? forceRegisterOpt.Value
-                    : CredentialsChangedInUi();
                 SaveFromUi(true);
                 string fail;
                 if (!TrySavePreflight(out fail, false))

@@ -47,6 +47,17 @@ namespace KaiAosRenew
             return !string.Equals((passA ?? "").Trim(), (passB ?? "").Trim(), StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// Force Register on aosApply/Save only when email/password actually differ.
+        /// Same credentials never force (client false "changed" / Firebase re-push).
+        /// forceRegisterOpt: true/null → force when differ; false → save only (user declined).
+        /// </summary>
+        public static bool ResolveForceRegisterOnApply(bool? forceRegisterOpt, bool credsDiffer)
+        {
+            if (!credsDiffer) return false;
+            return forceRegisterOpt != false;
+        }
+
         /// <summary>SHA-256 hex of normalized email + newline + password (for skip-identical publish).</summary>
         public static string ComputeCredsHash(string email, string password)
         {

@@ -4,6 +4,12 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.33] - 2026-11-24
+
+- AOS: Force Register on Save/aosApply only when email/password actually differ from stored settings (stops false “credentials changed” Register when password unchanged)
+- Client: empty notify sync baseline no longer treated as a password change
+- UX: Force Register start log no longer claims credentials changed (EN/RO)
+
 ## [1.2.32] - 2026-11-20
 
 - Firebase sync: rename Poll every to On-demand + Poll every; document hybrid as on-demand triggers plus periodic poll (EN/RO, server + client)
