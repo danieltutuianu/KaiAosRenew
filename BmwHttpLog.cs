@@ -79,6 +79,13 @@ namespace KaiAosRenew
             return sb.ToString().TrimEnd();
         }
 
+        /// <summary>Emit probe payload fields to Activity before UploadKeyData runs.</summary>
+        public static void LogProbeRequest(string requestDump)
+        {
+            var req = string.IsNullOrEmpty(requestDump) ? "(no request dump)" : requestDump;
+            Emit("Probe KeyUpload REQUEST:\n" + req);
+        }
+
         public static string FormatWebEamRequest(string url, string clientId)
         {
             var sb = new StringBuilder();

@@ -96,18 +96,31 @@ namespace KaiAosRenew
                 var bin = File.ReadAllBytes(KeyActivityMonitor.TransferredBin);
                 var readerId = string.IsNullOrWhiteSpace(readerIdHint) ? "unknown" : readerIdHint.Trim();
                 var hwId = ResolveHardwareId(hardwareIdHint, readerId, settings);
+                if (string.IsNullOrWhiteSpace(hwId))
+                    hwId = readerId;
                 var kd = new KaiZentralKeyData();
                 kd.Language = "en";
                 kd.KeyDataFile = "K " + Convert.ToBase64String(bin);
                 kd.KeyReadDate = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
                 kd.KeyReaderId = readerId;
                 kd.KeyReaderHardwareId = hwId;
-                kd.OriginCodeType = "KIS";
+                // BMW validates originCodeType against regex [KIS] (single char: K|I|S). KeyReader = K.
+                // Never send "KIS", "KeyReaderPlus", or empty — those fail #CKKPTB9009.
+                kd.OriginCodeType = "K";
+                if (string.IsNullOrWhiteSpace(kd.OriginCodeType)
+                    || kd.OriginCodeType.Trim().Length != 1
+                    || "KIS".IndexOf(kd.OriginCodeType.Trim(), StringComparison.OrdinalIgnoreCase) < 0)
+                    kd.OriginCodeType = "K";
+                if (string.IsNullOrWhiteSpace(kd.KeyReaderHardwareId))
+                    kd.KeyReaderHardwareId = readerId;
 
                 requestDump = BmwHttpLog.FormatKeyUploadRequest(
                     "POST", uploadUrl, kd.OriginCodeType, kd.KeyReaderId, kd.KeyReaderHardwareId,
                     kd.KeyReadDate, kd.Language, bin.Length);
                 result.RequestDump = requestDump;
+                // Emit REQUEST before UploadKeyData so Activity always shows payload fields
+                // (even when the invoke throws and the response path is thin).
+                BmwHttpLog.LogProbeRequest(requestDump);
 
                 AppDomain.CurrentDomain.AssemblyResolve -= ResolveKaiAsm;
                 AppDomain.CurrentDomain.AssemblyResolve += ResolveKaiAsm;

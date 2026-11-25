@@ -4,6 +4,12 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.34] - 2026-11-25
+
+- Keys: KeyUploadProbe sends OriginCodeType=`K` (BMW `[KIS]` single-char) and never-empty KeyReaderHardwareId — fixes probe `#CKKPTB9009` INVALID_INPUT after 403 retry
+- Keys: log probe REQUEST payload to Activity before UploadKeyData
+- Keys: AOS-password still-fail tip only when probe returns HTTP 403 (not 400 INVALID_INPUT)
+
 ## [1.2.33] - 2026-11-24
 
 - AOS: Force Register on Save/aosApply only when email/password actually differ from stored settings (stops false “credentials changed” Register when password unchanged)

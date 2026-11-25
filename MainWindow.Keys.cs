@@ -470,8 +470,8 @@ namespace KaiAosRenew
                 else
                 {
                     AppendLog(UiStrings.T("KeysRetryBmwPending"), LogLevel.Warning);
-                    // Final fail tip only after Register/Firebase + probe + short KAI verify window.
-                    if (from403Auto)
+                    // Password tip only for auth-style 403 — not probe INVALID_INPUT / #CKKPTB9009 (400).
+                    if (from403Auto && probe != null && probe.HttpStatus == 403)
                         ShowBmw403StillFailTip(vin);
                 }
                 RefreshKeysTab(true);
