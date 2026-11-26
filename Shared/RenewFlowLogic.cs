@@ -260,4 +260,24 @@ namespace KaiAosRenew
             return password.Substring(0, 1) + new string('\u2022', n);
         }
     }
+
+    /// <summary>Auto-Register cooldown + DNS Health retry scheduling (no UI).</summary>
+    public static class DnsHealthRetryLogic
+    {
+        /// <summary>Stamp 12h auto-Register cooldown only when Register API was actually invoked.</summary>
+        public static bool ShouldStampAutoRegisterCooldown(bool registerAttempted)
+        {
+            return registerAttempted;
+        }
+
+        /// <summary>
+        /// Minutes until next Health after consecutive DNS fails (1→5, 2→10, 3+→15).
+        /// </summary>
+        public static int NextRetryMinutes(int consecutiveDnsFails)
+        {
+            if (consecutiveDnsFails <= 1) return 5;
+            if (consecutiveDnsFails == 2) return 10;
+            return 15;
+        }
+    }
 }

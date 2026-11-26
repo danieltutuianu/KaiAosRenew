@@ -4,6 +4,12 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.35] - 2026-11-26
+
+- AOS: DNS-only Health failures no longer consume the 12h Auto Register cooldown (stamp only when Register API runs)
+- AOS: after DNS Health fail, retry in 5→10→15 min instead of waiting 1h; NetworkChange debounce re-probes when link returns
+- AOS: longer WebEAM Health backoff on transient DNS/connect + best-effort DNS warm-up before retry
+
 ## [1.2.34] - 2026-11-25
 
 - Keys: KeyUploadProbe sends OriginCodeType=`K` (BMW `[KIS]` single-char) and never-empty KeyReaderHardwareId — fixes probe `#CKKPTB9009` INVALID_INPUT after 403 retry

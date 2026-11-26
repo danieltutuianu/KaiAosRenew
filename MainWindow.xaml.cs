@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Diagnostics;
 using System.IO;
+using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -103,6 +104,10 @@ namespace KaiAosRenew
         private DateTime _nextDueUtc = DateTime.MaxValue;
         private DateTime _nextHealthUtc = DateTime.MaxValue;
         private DateTime _nextServiceCheckUtc = DateTime.MaxValue;
+        /// <summary>Consecutive DNS Health fails — drives 5/10/15 min retry backoff.</summary>
+        private int _dnsHealthRetryStreak;
+        private bool _networkEventsHooked;
+        private DispatcherTimer _networkDebounceTimer;
         private bool _busy;
         /// <summary>True while busy with a force-Register style run (status: Registering…).</summary>
         private bool _busyExpectRegister;
@@ -303,6 +308,7 @@ namespace KaiAosRenew
             ApplyTabLayoutVisibility();
             LoadAboutChangelog();
             HookPowerEvents();
+            HookNetworkEvents();
             ApplyKeysMonitorSettings();
             NotifyServer.Instance.ClientConnected += OnNotifyClientConnected;
             NotifyServer.Instance.ClientDisconnected += OnNotifyClientDisconnected;
@@ -447,6 +453,79 @@ namespace KaiAosRenew
             try { SystemEvents.PowerModeChanged -= OnPowerModeChanged; }
             catch { }
             _powerEventsHooked = false;
+        }
+
+        private void HookNetworkEvents()
+        {
+            if (_networkEventsHooked) return;
+            try
+            {
+                NetworkChange.NetworkAvailabilityChanged += OnNetworkChanged;
+                NetworkChange.NetworkAddressChanged += OnNetworkChanged;
+                _networkEventsHooked = true;
+            }
+            catch { }
+        }
+
+        private void UnhookNetworkEvents()
+        {
+            if (!_networkEventsHooked) return;
+            try
+            {
+                NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
+                NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
+            }
+            catch { }
+            _networkEventsHooked = false;
+            try
+            {
+                if (_networkDebounceTimer != null)
+                {
+                    _networkDebounceTimer.Stop();
+                    _networkDebounceTimer = null;
+                }
+            }
+            catch { }
+        }
+
+        private void OnNetworkChanged(object sender, EventArgs e)
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(ScheduleNetworkHealthProbe));
+            }
+            catch { }
+        }
+
+        private void ScheduleNetworkHealthProbe()
+        {
+            if (_networkDebounceTimer == null)
+            {
+                _networkDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                _networkDebounceTimer.Tick += NetworkDebounceTimer_Tick;
+            }
+            _networkDebounceTimer.Stop();
+            _networkDebounceTimer.Start();
+        }
+
+        private void NetworkDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            try { _networkDebounceTimer.Stop(); }
+            catch { }
+            OnNetworkRecoveredProbe();
+        }
+
+        private void OnNetworkRecoveredProbe()
+        {
+            if (_busy || _settings == null || !_timerActive) return;
+            if (string.IsNullOrEmpty(_settings.Email)) return;
+            try
+            {
+                if (string.IsNullOrEmpty(_settings.GetPassword())) return;
+            }
+            catch { return; }
+            AppendLog(UiStrings.T("NetworkHealth"), LogLevel.Info);
+            Forget(RunAutoHealthWithLimitedRegister(), "NetworkAutoHealth");
         }
 
         private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
@@ -1999,6 +2078,8 @@ namespace KaiAosRenew
             catch { }
             try { NotifyServer.Instance.Dispose(); }
             catch { }
+            try { UnhookNetworkEvents(); }
+            catch { }
             if (_tray != null)
             {
                 try { _tray.Visible = false; }
@@ -3511,6 +3592,7 @@ namespace KaiAosRenew
         protected override void OnClosed(EventArgs e)
         {
             UnhookPowerEvents();
+            UnhookNetworkEvents();
             if (_hwndSource != null)
             {
                 _hwndSource.RemoveHook(WndProcHook);

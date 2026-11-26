@@ -1867,6 +1867,8 @@ namespace KaiAosRenew
                     _settings.Save();
                     ClearFailureAlert();
                     _retrySchedule = false;
+                    if (!result.RegisterSkippedDueToDns)
+                        _dnsHealthRetryStreak = 0;
                     ScheduleNext(true);
                     UpdateTokenAgeText();
                     if (result.RegisterAuthRejected)
@@ -2034,6 +2036,7 @@ namespace KaiAosRenew
             _busyExpectRegister = false;
             SetBusy(true);
             var needAutoRegister = false;
+            var dnsOnlyFail = false;
             try
             {
                 SaveFromUi(false);
@@ -2051,6 +2054,7 @@ namespace KaiAosRenew
                 RenewEngine.Log(result.Message);
                 if (result.Ok)
                 {
+                    _dnsHealthRetryStreak = 0;
                     AppendLog("OK: " + result.Message, LogLevel.Verbose, true);
                     if (settings.LastTokenExpiresInSeconds > 0)
                     {
@@ -2070,7 +2074,10 @@ namespace KaiAosRenew
                     return;
                 }
 
+                dnsOnlyFail = RenewEngine.IsTransientDnsFailure(result.Message);
                 AppendLog("FAIL: " + result.Message, LogLevel.Error);
+                if (dnsOnlyFail)
+                    AppendLog(UiStrings.T("HealthDnsNetworkHint"), LogLevel.Info);
                 if (LooksLikeAuthFailure(result.Message))
                     TrySilentBrowserPassRefresh(true);
                 ApplyFailureAlert(result.Message);
@@ -2078,6 +2085,8 @@ namespace KaiAosRenew
 
                 if (IsAuthRegisterBlocked())
                 {
+                    if (dnsOnlyFail && _timerActive)
+                        ScheduleDnsHealthRetry();
                     AppendLog(UiStrings.T("AuthRegisterBlockedHealthOnly"), LogLevel.Info);
                     RefreshStatusBadge();
                     return;
@@ -2086,15 +2095,15 @@ namespace KaiAosRenew
                 if (_settings.LastAutoRegisterUtc.HasValue
                     && (DateTime.UtcNow - _settings.LastAutoRegisterUtc.Value).TotalHours < AutoRegisterMinHours)
                 {
+                    if (dnsOnlyFail && _timerActive)
+                        ScheduleDnsHealthRetry();
                     var next = _settings.LastAutoRegisterUtc.Value.AddHours(AutoRegisterMinHours).ToLocalTime().ToString("g");
                     AppendLog("Auto Register skipped (max 1 per 12h). Next allowed after " + next + ".", LogLevel.Info);
                     RefreshStatusBadge();
                     return;
                 }
 
-                _settings.LastAutoRegisterUtc = DateTime.UtcNow;
-                try { _settings.Save(); }
-                catch { }
+                // Do NOT stamp LastAutoRegisterUtc yet — only after Register API actually runs.
                 AppendLog("Health failed — auto Register (max 1 per 12h)...", LogLevel.Info);
                 RefreshStatusBadge();
                 needAutoRegister = true;
@@ -2103,9 +2112,48 @@ namespace KaiAosRenew
             {
                 SetBusy(false);
             }
-            // forceRegister=false: engine Registers because Health already failed.
-            if (needAutoRegister)
-                Forget(RunNowAsync(false, false), "AutoRegisterAfterHealthFail");
+
+            if (!needAutoRegister)
+                return;
+
+            // forceRegister=false: engine Registers because Health already failed (unless DNS skip / Health recovers).
+            RenewResult runResult = null;
+            try
+            {
+                runResult = await RunNowAsync(false, false);
+            }
+            catch (Exception ex)
+            {
+                AppendLog("Auto Register error: " + ex.Message, LogLevel.Error);
+            }
+
+            if (DnsHealthRetryLogic.ShouldStampAutoRegisterCooldown(
+                runResult != null && runResult.RegisterAttempted))
+            {
+                _settings.LastAutoRegisterUtc = DateTime.UtcNow;
+                try { _settings.Save(); }
+                catch { }
+            }
+            else
+            {
+                AppendLog(UiStrings.T("AutoRegisterCooldownNotConsumed"), LogLevel.Info);
+                var stillDns = runResult == null
+                    || runResult.RegisterSkippedDueToDns
+                    || RenewEngine.IsTransientDnsFailure(runResult.Message);
+                if (_timerActive && stillDns)
+                    ScheduleDnsHealthRetry();
+            }
+        }
+
+        /// <summary>Pull next Health forward after DNS fail (5→10→15 min), not +1h.</summary>
+        private void ScheduleDnsHealthRetry()
+        {
+            _dnsHealthRetryStreak++;
+            var minutes = DnsHealthRetryLogic.NextRetryMinutes(_dnsHealthRetryStreak);
+            _nextHealthUtc = DateTime.UtcNow.AddMinutes(minutes);
+            AppendLog(string.Format(UiStrings.T("HealthDnsRetryScheduled"), minutes), LogLevel.Info);
+            UpdateNextLabel();
+            UpdateTrayTooltip();
         }
 
         private async Task RunHealthOnlyAsync(bool interactive = true)
@@ -2131,6 +2179,7 @@ namespace KaiAosRenew
                 RenewEngine.Log(result.Message);
                 if (result.Ok)
                 {
+                    _dnsHealthRetryStreak = 0;
                     if (interactive)
                     {
                         AppendLog("OK: " + result.Message, LogLevel.Success);
@@ -2158,6 +2207,12 @@ namespace KaiAosRenew
                 else
                 {
                     AppendLog("FAIL: " + result.Message, LogLevel.Error);
+                    if (RenewEngine.IsTransientDnsFailure(result.Message))
+                    {
+                        AppendLog(UiStrings.T("HealthDnsNetworkHint"), LogLevel.Info);
+                        if (_timerActive)
+                            ScheduleDnsHealthRetry();
+                    }
                     if (LooksLikeAuthFailure(result.Message))
                         TrySilentBrowserPassRefresh(true);
                     ApplyFailureAlert(result.Message);

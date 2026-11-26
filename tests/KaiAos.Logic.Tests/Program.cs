@@ -1142,8 +1142,18 @@ namespace KaiAos.Logic.Tests
             AssertTrue(RenewEngine.IsTransientDnsFailure(
                 "The remote name could not be resolved: 'auth.bmwgroup.com'"), "dns message");
             AssertTrue(RenewEngine.IsTransientDnsFailure("No such host is known"), "no such host");
+            AssertTrue(RenewEngine.IsTransientDnsFailure(
+                "Health failed (no Register): The remote name could not be resolved: 'auth.bmwgroup.com'"),
+                "health wrapper dns");
             AssertTrue(!RenewEngine.IsTransientDnsFailure("HTTP 401 unauthorized"), "auth not dns");
             AssertTrue(!RenewEngine.IsTransientDnsFailure(null), "null not dns");
+
+            AssertTrue(!DnsHealthRetryLogic.ShouldStampAutoRegisterCooldown(false), "no stamp without Register");
+            AssertTrue(DnsHealthRetryLogic.ShouldStampAutoRegisterCooldown(true), "stamp when RegisterAttempted");
+            AssertTrue(DnsHealthRetryLogic.NextRetryMinutes(1) == 5, "dns retry 1 → 5m");
+            AssertTrue(DnsHealthRetryLogic.NextRetryMinutes(2) == 10, "dns retry 2 → 10m");
+            AssertTrue(DnsHealthRetryLogic.NextRetryMinutes(3) == 15, "dns retry 3 → 15m");
+            AssertTrue(DnsHealthRetryLogic.NextRetryMinutes(9) == 15, "dns retry cap 15m");
 
             var tmpStore = NewTempDir("renew_edge_store");
             var tmpConfig = NewTempDir("renew_edge_cfg");

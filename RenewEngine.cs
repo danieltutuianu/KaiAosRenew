@@ -19,6 +19,8 @@ namespace KaiAosRenew
         public bool RegisterAuthRejected { get; set; }
         /// <summary>True when RegisterWithKaiZentral was invoked (success or fail).</summary>
         public bool RegisterAttempted { get; set; }
+        /// <summary>Health failed only on DNS/network; Register was not called.</summary>
+        public bool RegisterSkippedDueToDns { get; set; }
     }
 
     public static class RenewEngine
@@ -122,7 +124,10 @@ namespace KaiAosRenew
                     ok.Message = healthMsg;
                     return ok;
                 }
-                return Fail("Health failed (no Register): " + healthMsg);
+                var healthFail = Fail("Health failed (no Register): " + healthMsg);
+                if (IsTransientDnsFailure(healthMsg))
+                    healthFail.RegisterSkippedDueToDns = true;
+                return healthFail;
             }
             catch (Exception ex)
             {
@@ -183,7 +188,9 @@ namespace KaiAosRenew
                 if (!forceRegister && IsTransientDnsFailure(healthMsg))
                 {
                     Log("Health DNS/network unresolved — Register skipped: " + healthMsg);
-                    return Fail("Health failed (DNS/network): " + healthMsg);
+                    var dnsFail = Fail("Health failed (DNS/network): " + healthMsg);
+                    dnsFail.RegisterSkippedDueToDns = true;
+                    return dnsFail;
                 }
                 if (forceRegister)
                     Log("Force Register — skip Health short-circuit...");
@@ -345,6 +352,19 @@ namespace KaiAosRenew
                 || m.IndexOf("unknown host", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        /// <summary>Best-effort resolver warm-up before a Health retry (never throws).</summary>
+        private static void TryWarmDns(string tokenUrl)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(tokenUrl)) return;
+                var host = new Uri(tokenUrl).Host;
+                if (string.IsNullOrEmpty(host)) return;
+                Dns.GetHostAddresses(host);
+            }
+            catch { }
+        }
+
         private static bool IsTransientNetworkStatus(WebExceptionStatus status)
         {
             return status == WebExceptionStatus.NameResolutionFailure
@@ -461,7 +481,9 @@ namespace KaiAosRenew
                     {
                         Log("Health transient network error — retry " + (attempt + 1) + "/" + maxAttempts
                             + ": " + message);
-                        Thread.Sleep(1500);
+                        TryWarmDns(tokenUrl);
+                        // Longer backoff than the old fixed 1.5s — DNS blips often clear in a few seconds.
+                        Thread.Sleep(attempt == 1 ? 2000 : 5000);
                         continue;
                     }
                     return false;
