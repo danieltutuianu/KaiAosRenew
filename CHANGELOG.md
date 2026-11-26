@@ -4,6 +4,11 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.37] - 2026-11-26
+
+- AOS: after 3 consecutive Health/renew fails, auto-pull Firebase latestCreds and Force Register if email/password differ
+- AOS: Activity log — Health failed N× — trying Firebase credentials… (EN/RO)
+
 ## [1.2.36] - 2026-11-26
 
 - AOS: Pull from cloud auto-Registers when email/password differ; fields update only after BMW login OK (server + client)

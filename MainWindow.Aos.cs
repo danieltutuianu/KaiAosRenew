@@ -1795,12 +1795,21 @@ namespace KaiAosRenew
                     result = new RenewResult { Ok = false, Message = "failed" };
                 RenewEngine.Log(result.Message);
 
-                // Rare password change on another site: pull Firebase once (also when already in cooldown/block).
+                if (result != null && !result.Ok)
+                    _healthFailStreak++;
+                else if (result != null && result.Ok)
+                    _healthFailStreak = 0;
+
+                // Rare password change on another site: pull Firebase once (also when already in cooldown/block,
+                // or after N consecutive Health/renew fails).
+                var healthStreakPull = result != null && !result.Ok
+                    && DnsHealthRetryLogic.ShouldTryFirebasePullOnHealthStreak(_healthFailStreak);
                 if (result != null
                     && IsFirebasePushActive()
                     && (!allowRegister
                         || (result.Ok && result.RegisterAuthRejected)
-                        || (!result.Ok && LooksLikeAuthFailure(result.Message ?? ""))))
+                        || (!result.Ok && LooksLikeAuthFailure(result.Message ?? ""))
+                        || healthStreakPull))
                 {
                     var emailTry = settings != null ? (settings.Email ?? "") : (_settings != null ? (_settings.Email ?? "") : "");
                     var passTry = password ?? "";
@@ -1811,8 +1820,12 @@ namespace KaiAosRenew
                     }
                     try
                     {
+                        if (healthStreakPull)
+                            AppendLog(string.Format(UiStrings.T("HealthFailStreakFirebasePull"), _healthFailStreak),
+                                LogLevel.Info);
                         if (await TryPullNewerPeerCredsOnAuthFailAsync(emailTry, passTry).ConfigureAwait(true))
                         {
+                            _healthFailStreak = 0;
                             result = new RenewResult
                             {
                                 Ok = true,
@@ -1867,6 +1880,7 @@ namespace KaiAosRenew
                     _settings.Save();
                     ClearFailureAlert();
                     _retrySchedule = false;
+                    _healthFailStreak = 0;
                     if (!result.RegisterSkippedDueToDns)
                         _dnsHealthRetryStreak = 0;
                     ScheduleNext(true);
@@ -2055,6 +2069,7 @@ namespace KaiAosRenew
                 if (result.Ok)
                 {
                     _dnsHealthRetryStreak = 0;
+                    _healthFailStreak = 0;
                     AppendLog("OK: " + result.Message, LogLevel.Verbose, true);
                     if (settings.LastTokenExpiresInSeconds > 0)
                     {
@@ -2074,6 +2089,7 @@ namespace KaiAosRenew
                     return;
                 }
 
+                _healthFailStreak++;
                 dnsOnlyFail = RenewEngine.IsTransientDnsFailure(result.Message);
                 AppendLog("FAIL: " + result.Message, LogLevel.Error);
                 if (dnsOnlyFail)
@@ -2082,6 +2098,36 @@ namespace KaiAosRenew
                     TrySilentBrowserPassRefresh(true);
                 ApplyFailureAlert(result.Message);
                 SetTokenFooter(false);
+
+                // After N consecutive Health fails, try newer Firebase credentials (even if Register is blocked/cooldown).
+                if (IsFirebasePushActive()
+                    && DnsHealthRetryLogic.ShouldTryFirebasePullOnHealthStreak(_healthFailStreak))
+                {
+                    AppendLog(string.Format(UiStrings.T("HealthFailStreakFirebasePull"), _healthFailStreak),
+                        LogLevel.Info);
+                    string emailTry = _settings != null ? (_settings.Email ?? "") : "";
+                    string passTry = "";
+                    try { passTry = _settings != null ? (_settings.GetPassword() ?? "") : ""; }
+                    catch { passTry = ""; }
+                    try
+                    {
+                        if (await TryPullNewerPeerCredsOnAuthFailAsync(emailTry, passTry).ConfigureAwait(true))
+                        {
+                            _healthFailStreak = 0;
+                            _dnsHealthRetryStreak = 0;
+                            ClearFailureAlert();
+                            SetTokenFooter(true);
+                            if (_timerActive)
+                                _nextHealthUtc = DateTime.UtcNow.AddHours(1);
+                            ApplyPreventiveRenewClamp();
+                            UpdateNextLabel();
+                            UpdateTrayTooltip();
+                            RefreshStatusBadge();
+                            return;
+                        }
+                    }
+                    catch { }
+                }
 
                 if (IsAuthRegisterBlocked())
                 {
@@ -2180,6 +2226,7 @@ namespace KaiAosRenew
                 if (result.Ok)
                 {
                     _dnsHealthRetryStreak = 0;
+                    _healthFailStreak = 0;
                     if (interactive)
                     {
                         AppendLog("OK: " + result.Message, LogLevel.Success);

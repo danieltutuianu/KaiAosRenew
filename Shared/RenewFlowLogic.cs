@@ -279,5 +279,17 @@ namespace KaiAosRenew
             if (consecutiveDnsFails == 2) return 10;
             return 15;
         }
+
+        /// <summary>Default consecutive Health/renew fails before trying Firebase latestCreds.</summary>
+        public const int FirebasePullHealthFailThreshold = 3;
+
+        /// <summary>True when consecutive Health/renew fails reach the Firebase pull threshold.</summary>
+        public static bool ShouldTryFirebasePullOnHealthStreak(
+            int healthFailStreak,
+            int threshold = FirebasePullHealthFailThreshold)
+        {
+            if (threshold < 1) threshold = FirebasePullHealthFailThreshold;
+            return healthFailStreak >= threshold;
+        }
     }
 }

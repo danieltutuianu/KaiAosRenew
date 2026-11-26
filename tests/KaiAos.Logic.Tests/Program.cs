@@ -1154,6 +1154,11 @@ namespace KaiAos.Logic.Tests
             AssertTrue(DnsHealthRetryLogic.NextRetryMinutes(2) == 10, "dns retry 2 → 10m");
             AssertTrue(DnsHealthRetryLogic.NextRetryMinutes(3) == 15, "dns retry 3 → 15m");
             AssertTrue(DnsHealthRetryLogic.NextRetryMinutes(9) == 15, "dns retry cap 15m");
+            AssertTrue(!DnsHealthRetryLogic.ShouldTryFirebasePullOnHealthStreak(0), "streak 0 no pull");
+            AssertTrue(!DnsHealthRetryLogic.ShouldTryFirebasePullOnHealthStreak(2), "streak 2 no pull");
+            AssertTrue(DnsHealthRetryLogic.ShouldTryFirebasePullOnHealthStreak(3), "streak 3 pull");
+            AssertTrue(DnsHealthRetryLogic.ShouldTryFirebasePullOnHealthStreak(9), "streak 9 pull");
+            AssertTrue(DnsHealthRetryLogic.ShouldTryFirebasePullOnHealthStreak(2, 2), "custom threshold 2");
 
             var tmpStore = NewTempDir("renew_edge_store");
             var tmpConfig = NewTempDir("renew_edge_cfg");

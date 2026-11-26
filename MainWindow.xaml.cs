@@ -106,6 +106,8 @@ namespace KaiAosRenew
         private DateTime _nextServiceCheckUtc = DateTime.MaxValue;
         /// <summary>Consecutive DNS Health fails — drives 5/10/15 min retry backoff.</summary>
         private int _dnsHealthRetryStreak;
+        /// <summary>Consecutive Health/renew fails; at 3+ may pull Firebase credentials.</summary>
+        private int _healthFailStreak;
         private bool _networkEventsHooked;
         private DispatcherTimer _networkDebounceTimer;
         private bool _busy;
