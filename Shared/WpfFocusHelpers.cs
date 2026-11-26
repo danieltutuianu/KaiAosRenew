@@ -22,5 +22,20 @@ namespace KaiAosRenew
             }
             return false;
         }
+
+        /// <summary>Centers a window on the primary work area (DIP). Skips minimized windows.</summary>
+        public static void CenterOnScreen(Window window)
+        {
+            if (window == null) return;
+            if (window.WindowState == WindowState.Minimized) return;
+
+            var w = window.ActualWidth > 0 ? window.ActualWidth : window.Width;
+            var h = window.ActualHeight > 0 ? window.ActualHeight : window.Height;
+            if (double.IsNaN(w) || double.IsNaN(h) || w <= 0 || h <= 0) return;
+
+            var work = SystemParameters.WorkArea;
+            window.Left = work.Left + (work.Width - w) / 2;
+            window.Top = work.Top + (work.Height - h) / 2;
+        }
     }
 }

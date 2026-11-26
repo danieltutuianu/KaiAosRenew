@@ -269,6 +269,9 @@ namespace KaiAosNotifyClient
             // AOS Access
             CancelAosAckWait();
             _awaitingBrowserPassFirebaseAuto = false;
+            _awaitingPullCloudAuto = false;
+            _pendingPullCloudEmail = "";
+            _pendingPullCloudPass = "";
             _browserPassFirebaseAutoInFlight = false;
             _aosForceRegisterOverride = null;
             _loadingAosUi = true;

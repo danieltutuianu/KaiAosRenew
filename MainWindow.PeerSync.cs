@@ -192,8 +192,9 @@ namespace KaiAosRenew
         }
 
         /// <summary>
-        /// Manual AOS Access pull: fill email/password from Firebase latestCreds.
-        /// Marks dirty only when cloud values differ from the current form.
+        /// Manual AOS Access pull from Firebase latestCreds.
+        /// When cloud values differ: force Register without filling the form first;
+        /// fields update only after BMW login succeeds.
         /// </summary>
         private async Task PullAosCredsFromCloudAsync()
         {
@@ -281,27 +282,110 @@ namespace KaiAosRenew
 
                 var differ = PeerSyncLogic.CredentialsDiffer(localEmail, localPass, remoteEmail, remotePass);
 
-                SetAosPullProgress(UiStrings.T("AosPullProgressApply"), LogLevel.Info);
+                if (!differ)
+                {
+                    SetAosPullProgress(UiStrings.T("AosPullProgressApply"), LogLevel.Info);
+                    _loadingUi = true;
+                    try
+                    {
+                        if (EmailBox != null)
+                            EmailBox.Text = remoteEmail;
+                        SetPasswordUi(remotePass);
+                    }
+                    finally
+                    {
+                        _loadingUi = false;
+                    }
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(UiStrings.T("AosPullFromCloudOk"),
+                            string.IsNullOrEmpty(remoteEmail) ? "—" : remoteEmail),
+                        LogLevel.Success);
+                    return;
+                }
 
-                _loadingUi = true;
+                // Differ: leave form unchanged until BMW Register succeeds.
+                if (_remoteServerUpdateBusy)
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(UiStrings.T("AosSaveUpdating"), LogLevel.Warning);
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(remoteEmail)
+                    || remoteEmail.IndexOf('@') < 0
+                    || remoteEmail.IndexOf(' ') >= 0
+                    || string.IsNullOrEmpty((remotePass ?? "").Trim()))
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(UiStrings.T("AosPullFromCloudFail"), "invalid credentials"),
+                        LogLevel.Warning);
+                    return;
+                }
+
+                var waitUntil = DateTime.UtcNow.AddMinutes(2);
+                while (_busy && DateTime.UtcNow < waitUntil)
+                    await Task.Delay(250).ConfigureAwait(true);
+                if (_busy)
+                {
+                    keepFinalStatus = true;
+                    SetAosPullProgress(UiStrings.T("AosBusyRetry"), LogLevel.Warning);
+                    return;
+                }
+
+                SetAosPullProgress(UiStrings.T("AosPullProgressRegistering"), LogLevel.Info);
+
+                var hours = _settings != null && _settings.IntervalHours >= 1
+                    ? _settings.IntervalHours
+                    : 1;
+                var block = GetAuthRegisterBlockAfter();
+                var candidate = CloneSettingsForPeerRegister(remoteEmail, remotePass, hours, block);
+                RenewResult result = null;
                 try
                 {
-                    if (EmailBox != null)
-                        EmailBox.Text = remoteEmail;
-                    SetPasswordUi(remotePass);
+                    result = await Task.Run(() =>
+                        RenewEngine.Run(candidate, true, remotePass, true, persistSettings: false))
+                        .ConfigureAwait(true);
                 }
-                finally
+                catch (Exception ex)
                 {
-                    _loadingUi = false;
+                    result = new RenewResult { Ok = false, Message = ex.Message, RegisterAttempted = true };
                 }
 
-                if (differ)
-                    _aosCredentialsDirty = true;
+                var commit = PeerSyncLogic.ShouldCommitCredentials(
+                    result != null && result.Ok,
+                    result != null && result.RegisterAttempted,
+                    result != null && result.RegisterAuthRejected,
+                    result != null && result.SkippedRegister);
 
-                var okMsg = string.Format(UiStrings.T("AosPullFromCloudOk"),
-                    string.IsNullOrEmpty(remoteEmail) ? "—" : remoteEmail);
-                keepFinalStatus = !differ;
-                SetAosPullProgress(okMsg, LogLevel.Success);
+                if (commit)
+                {
+                    var commitPayload = new PeerCredsPayload
+                    {
+                        Email = remoteEmail,
+                        Password = remotePass,
+                        IntervalHours = hours,
+                        BlockAfter = block
+                    };
+                    ApplyPeerCredentialsCommit(commitPayload, result);
+                    BroadcastAosSync();
+                    BroadcastServerSettings();
+                    keepFinalStatus = true;
+                    SetAosPullProgress(
+                        string.Format(UiStrings.T("AosPullRegisterOk"),
+                            string.IsNullOrEmpty(remoteEmail) ? "—" : remoteEmail),
+                        LogLevel.Success);
+                    return;
+                }
+
+                keepFinalStatus = true;
+                var failMsg = result != null && !string.IsNullOrEmpty(result.Message)
+                    ? result.Message
+                    : "Register failed";
+                SetAosPullProgress(
+                    string.Format(UiStrings.T("AosPullRegisterFail"), failMsg),
+                    LogLevel.Warning);
             }
             finally
             {

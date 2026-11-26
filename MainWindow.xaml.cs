@@ -1049,6 +1049,10 @@ namespace KaiAosRenew
                 ShowInTaskbar = false;
                 if (IsVisible) Hide();
             }
+            else if (Visibility == Visibility.Visible)
+            {
+                WpfFocusHelpers.CenterOnScreen(this);
+            }
             RunStartupSelfCheck();
             MaybeCheckForUpdatesOnStart();
             UpdateClearButtonsEnabled();
@@ -1991,6 +1995,7 @@ namespace KaiAosRenew
             Visibility = Visibility.Visible;
             Show();
             WindowState = WindowState.Normal;
+            WpfFocusHelpers.CenterOnScreen(this);
             Activate();
             try
             {

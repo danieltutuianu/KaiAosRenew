@@ -4,6 +4,12 @@ Format: Keep a Changelog. GitHub release notes are taken from the matching `## [
 
 ## [Unreleased]
 
+## [1.2.36] - 2026-11-26
+
+- AOS: Pull from cloud auto-Registers when email/password differ; fields update only after BMW login OK (server + client)
+- AOS: distinct pull status — Pulled, registering… / Saved + registered OK / Pulled but BMW login failed — not saved (EN/RO)
+- UX: wider default window; CenterOnScreen when showing from tray (server + client)
+
 ## [1.2.35] - 2026-11-26
 
 - AOS: DNS-only Health failures no longer consume the 12h Auto Register cooldown (stamp only when Register API runs)

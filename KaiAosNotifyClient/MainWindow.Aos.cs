@@ -63,7 +63,8 @@ namespace KaiAosNotifyClient
                 _lastSyncedHours = hours;
                 _lastSyncedEmail = (email ?? "").Trim();
                 _lastSyncedPass = (password ?? "").Trim();
-                if (!_aosDirty)
+                // Defer form fill while pull-cloud auto-Register is in flight.
+                if (!_aosDirty && !_awaitingPullCloudAuto)
                 {
                     if (AosEmailBox != null) AosEmailBox.Text = email ?? "";
                     SetAosPasswordUi(password ?? "");
@@ -99,9 +100,15 @@ namespace KaiAosNotifyClient
             var intervalOnlyAck = _awaitingAosIntervalOnly;
             var wasCredsSave = _awaitingAosCredsSave;
             var wasBrowserPassFirebaseAuto = _awaitingBrowserPassFirebaseAuto;
+            var wasPullCloudAuto = _awaitingPullCloudAuto;
+            var pullEmail = _pendingPullCloudEmail;
+            var pullPass = _pendingPullCloudPass;
             CancelAosAckWait();
             _awaitingAosIntervalOnly = false;
             _awaitingBrowserPassFirebaseAuto = false;
+            _awaitingPullCloudAuto = false;
+            _pendingPullCloudEmail = "";
+            _pendingPullCloudPass = "";
             _browserPassFirebaseAutoInFlight = false;
             SetKaiBusy(false);
             if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = true;
@@ -152,6 +159,18 @@ namespace KaiAosNotifyClient
                     _awaitingServerUpdateReconnect = false;
                     RefreshServerUpdateFromFeed();
                 }
+                if (wasPullCloudAuto)
+                {
+                    // Form was never filled — do not mark dirty.
+                    UpdateAosPullCloudButtonVisibility();
+                    UpdateAosControlsEnabled();
+                    SetAosPullProgress(
+                        string.Format(ClientUiStrings.T("AosPullRegisterFail"),
+                            string.IsNullOrEmpty(text) ? "failed" : text),
+                        "warning");
+                    EndAosPullProgress();
+                    return;
+                }
                 _aosDirty = AosAckDecisionLogic.ResolveDirtyOnAck(_aosDirty, true, wasCredsSave, intervalOnlyAck);
                 UpdateAosSyncStatus();
                 UpdateAosControlsEnabled();
@@ -166,6 +185,32 @@ namespace KaiAosNotifyClient
             }
             if (wasCredsSave && !intervalOnlyAck)
             {
+                if (wasPullCloudAuto)
+                {
+                    _loadingAosUi = true;
+                    try
+                    {
+                        if (AosEmailBox != null) AosEmailBox.Text = pullEmail ?? "";
+                        SetAosPasswordUi(pullPass ?? "");
+                    }
+                    finally
+                    {
+                        _loadingAosUi = false;
+                    }
+                    _aosDirty = false;
+                    _lastSyncedEmail = (pullEmail ?? "").Trim();
+                    _lastSyncedPass = (pullPass ?? "").Trim();
+                    StampClientLastSuccessUtc();
+                    UpdateAosPullCloudButtonVisibility();
+                    UpdateAosControlsEnabled();
+                    RefreshBrowserPassNewerBanner(false);
+                    SetAosPullProgress(
+                        string.Format(ClientUiStrings.T("AosPullRegisterOk"),
+                            string.IsNullOrEmpty(_lastSyncedEmail) ? "—" : _lastSyncedEmail),
+                        "success");
+                    EndAosPullProgress();
+                    return;
+                }
                 _aosDirty = AosAckDecisionLogic.ResolveDirtyOnAck(_aosDirty, false, true, false);
                 _lastSyncedEmail = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
                 _lastSyncedPass = (GetAosPasswordUi() ?? "").Trim();
@@ -202,15 +247,31 @@ namespace KaiAosNotifyClient
             var intervalOnlyAck = _awaitingAosIntervalOnly;
             var wasCredsSave = _awaitingAosCredsSave;
             var wasBrowserPassFirebaseAuto = _awaitingBrowserPassFirebaseAuto;
+            var wasPullCloudAuto = _awaitingPullCloudAuto;
             CancelAosAckWait();
             _awaitingAosIntervalOnly = false;
             _awaitingBrowserPassFirebaseAuto = false;
+            _awaitingPullCloudAuto = false;
+            _pendingPullCloudEmail = "";
+            _pendingPullCloudPass = "";
             _browserPassFirebaseAutoInFlight = false;
             if (wasSettingsApply || wasSettingsImport)
             {
                 if (wasSettingsApply) MarkSrvSettingsDirty(true);
                 SetSrvSettingsStatus(ClientUiStrings.T("AosSyncTimeout"), false);
                 AppendActivityRow(null, "error", "Server Settings: " + ClientUiStrings.T("AosSyncTimeout"));
+                return;
+            }
+            if (wasPullCloudAuto)
+            {
+                if (FooterServerUpdateBtn != null) FooterServerUpdateBtn.IsEnabled = true;
+                UpdateAosPullCloudButtonVisibility();
+                UpdateAosControlsEnabled();
+                SetAosPullProgress(
+                    string.Format(ClientUiStrings.T("AosPullRegisterFail"),
+                        ClientUiStrings.T("AosSyncTimeout")),
+                    "warning");
+                EndAosPullProgress();
                 return;
             }
             _aosDirty = AosAckDecisionLogic.ResolveDirtyOnTimeout(_aosDirty, wasCredsSave, intervalOnlyAck);
@@ -326,11 +387,14 @@ namespace KaiAosNotifyClient
             return true;
         }
 
-        private void SendAosApply()
+        /// <param name="emailOverride">When set (with passwordOverride), send these instead of form fields.</param>
+        /// <param name="passwordOverride">Paired with emailOverride for pull-cloud auto-Save without filling the form.</param>
+        private void SendAosApply(string emailOverride = null, string passwordOverride = null)
         {
             if (_loadingAosUi || _loadingUi) return;
             var explicitSave = _explicitAosSave;
             _explicitAosSave = false;
+            var useOverride = emailOverride != null || passwordOverride != null;
 
             if (_awaitingServerUpdateReconnect || _clientUpdateBusy)
             {
@@ -367,16 +431,32 @@ namespace KaiAosNotifyClient
                 _aosSaveClickUtc = DateTime.UtcNow;
             }
 
-            // LostFocus must never MessageBox — that loops with focus restore.
-            // Explicit Save keeps the modal; auto-apply fails silently if incomplete.
-            if (!ValidateAosCredentials(explicitSave))
-                return;
+            string email;
+            string pass;
             int hours;
-            if (!ValidateInterval(out hours, explicitSave))
-                return;
-
-            var email = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
-            var pass = (GetAosPasswordUi() ?? "").Trim();
+            if (useOverride)
+            {
+                email = (emailOverride ?? "").Trim();
+                pass = (passwordOverride ?? "").Trim();
+                if (string.IsNullOrEmpty(email)
+                    || email.IndexOf('@') < 0
+                    || email.IndexOf(' ') >= 0
+                    || string.IsNullOrEmpty(pass))
+                    return;
+                if (!ValidateInterval(out hours, false))
+                    return;
+            }
+            else
+            {
+                // LostFocus must never MessageBox — that loops with focus restore.
+                // Explicit Save keeps the modal; auto-apply fails silently if incomplete.
+                if (!ValidateAosCredentials(explicitSave))
+                    return;
+                if (!ValidateInterval(out hours, explicitSave))
+                    return;
+                email = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
+                pass = (GetAosPasswordUi() ?? "").Trim();
+            }
 
             bool? forceRegister = null;
             if (_aosForceRegisterOverride.HasValue)
@@ -431,6 +511,17 @@ namespace KaiAosNotifyClient
                         _awaitingBrowserPassFirebaseAuto = false;
                         _browserPassFirebaseAutoInFlight = false;
                         RefreshBrowserPassNewerBanner(false);
+                    }
+                    if (_awaitingPullCloudAuto)
+                    {
+                        _awaitingPullCloudAuto = false;
+                        _pendingPullCloudEmail = "";
+                        _pendingPullCloudPass = "";
+                        SetAosPullProgress(
+                            string.Format(ClientUiStrings.T("AosPullRegisterFail"),
+                                ClientUiStrings.T("AosSyncSendFail")),
+                            "warning");
+                        EndAosPullProgress();
                     }
                     return;
                 }
@@ -587,7 +678,7 @@ namespace KaiAosNotifyClient
             AosPullCloudBtn.Visibility = Visibility.Visible;
             string url, secret;
             var ready = TryGetClientFirebaseRelay(out url, out secret);
-            var busy = _aosPullCloudBusy != 0;
+            var busy = _aosPullCloudBusy != 0 || _awaitingPullCloudAuto || _aosAwaitingAck;
             AosPullCloudBtn.IsEnabled = ready && !busy;
             if (!ready)
                 AosPullCloudBtn.ToolTip = ClientUiStrings.T("TipAosPullCloudConfigure");
@@ -634,23 +725,113 @@ namespace KaiAosNotifyClient
             Forget(PullAosCredsFromCloudAsync(), "AosPullCloud");
         }
 
+        private sealed class PullCloudCoreResult
+        {
+            public bool Ok;
+            public string Email = "";
+            public string Password = "";
+            public bool Differ;
+        }
+
         /// <summary>
-        /// Manual AOS Access pull: fill email/password from Firebase latestCreds
-        /// using Server Settings Firebase URL/secret. Marks dirty only when cloud
-        /// values differ from the current form.
+        /// Manual AOS Access pull from Firebase. When cloud values differ and connected,
+        /// auto-Save without filling the form until BMW Register succeeds.
         /// </summary>
         private async Task PullAosCredsFromCloudAsync()
         {
-            await TryPullAosCredsFromCloudCoreAsync(showUiProgress: true).ConfigureAwait(true);
+            var core = await TryPullAosCredsFromCloudCoreAsync(showUiProgress: true, applyToForm: false)
+                .ConfigureAwait(true);
+            if (core == null || !core.Ok) return;
+
+            var remoteEmail = core.Email ?? "";
+            var remotePass = core.Password ?? "";
+
+            if (!core.Differ)
+            {
+                SetAosPullProgress(ClientUiStrings.T("AosPullProgressApply"), "info");
+                _loadingAosUi = true;
+                try
+                {
+                    if (AosEmailBox != null) AosEmailBox.Text = remoteEmail;
+                    SetAosPasswordUi(remotePass);
+                }
+                finally
+                {
+                    _loadingAosUi = false;
+                }
+                SetAosPullProgress(
+                    string.Format(ClientUiStrings.T("AosPullFromCloudOk"),
+                        string.IsNullOrEmpty(remoteEmail) ? "—" : remoteEmail),
+                    "success");
+                EndAosPullProgress();
+                return;
+            }
+
+            if (_client == null || !_client.IsConnected)
+            {
+                // Offline: fill + dirty (cannot Register).
+                SetAosPullProgress(ClientUiStrings.T("AosPullProgressApply"), "info");
+                _loadingAosUi = true;
+                try
+                {
+                    if (AosEmailBox != null) AosEmailBox.Text = remoteEmail;
+                    SetAosPasswordUi(remotePass);
+                }
+                finally
+                {
+                    _loadingAosUi = false;
+                }
+                _aosDirty = true;
+                SetAosPullProgress(
+                    string.Format(ClientUiStrings.T("AosPullFromCloudOk"),
+                        string.IsNullOrEmpty(remoteEmail) ? "—" : remoteEmail),
+                    "success");
+                EndAosPullProgress();
+                UpdateAosSyncStatus();
+                return;
+            }
+
+            SetAosPullProgress(ClientUiStrings.T("AosPullProgressRegistering"), "info");
+            _awaitingPullCloudAuto = true;
+            _pendingPullCloudEmail = remoteEmail;
+            _pendingPullCloudPass = remotePass;
+            _aosForceRegisterOverride = true;
+            SendAosApply(remoteEmail, remotePass);
+            if (!_aosAwaitingAck)
+            {
+                _aosForceRegisterOverride = null;
+                if (_awaitingPullCloudAuto)
+                {
+                    _awaitingPullCloudAuto = false;
+                    _pendingPullCloudEmail = "";
+                    _pendingPullCloudPass = "";
+                    SetAosPullProgress(
+                        string.Format(ClientUiStrings.T("AosPullRegisterFail"), "apply"),
+                        "warning");
+                    EndAosPullProgress();
+                }
+            }
+            else
+                UpdateAosPullCloudButtonVisibility();
         }
 
-        /// <returns>true if latestCreds were decrypted and applied to the AOS form.</returns>
-        private async Task<bool> TryPullAosCredsFromCloudCoreAsync(bool showUiProgress)
+        /// <returns>Result with Ok=true if latestCreds were decrypted successfully; null if busy.</returns>
+        private async Task<PullCloudCoreResult> TryPullAosCredsFromCloudCoreAsync(bool showUiProgress)
+        {
+            return await TryPullAosCredsFromCloudCoreAsync(showUiProgress, applyToForm: true)
+                .ConfigureAwait(true);
+        }
+
+        /// <returns>Result with Ok=true if latestCreds were decrypted successfully; null if busy.</returns>
+        private async Task<PullCloudCoreResult> TryPullAosCredsFromCloudCoreAsync(
+            bool showUiProgress,
+            bool applyToForm)
         {
             if (Interlocked.CompareExchange(ref _aosPullCloudBusy, 1, 0) != 0)
-                return false;
+                return null;
             var keepFinalStatus = false;
             var applied = false;
+            var result = new PullCloudCoreResult();
             try
             {
                 string url, secret;
@@ -661,7 +842,7 @@ namespace KaiAosNotifyClient
                         SetAosPullProgress(
                             string.Format(ClientUiStrings.T("AosPullFromCloudFail"), "URL/secret"),
                             "warning");
-                    return false;
+                    return result;
                 }
 
                 if (showUiProgress)
@@ -683,7 +864,7 @@ namespace KaiAosNotifyClient
                         SetAosPullProgress(
                             string.Format(ClientUiStrings.T("AosPullFromCloudFail"), ex.Message ?? "snapshot"),
                             "warning");
-                    return false;
+                    return result;
                 }
 
                 if (poll == null || !poll.Ok)
@@ -694,7 +875,7 @@ namespace KaiAosNotifyClient
                             string.Format(ClientUiStrings.T("AosPullFromCloudFail"),
                                 poll != null ? (poll.Error ?? "poll") : "poll"),
                             "warning");
-                    return false;
+                    return result;
                 }
 
                 var ev = poll.LatestCreds;
@@ -705,7 +886,7 @@ namespace KaiAosNotifyClient
                         SetAosPullProgress(
                             string.Format(ClientUiStrings.T("AosPullFromCloudFail"), "no latestCreds"),
                             "warning");
-                    return false;
+                    return result;
                 }
 
                 if (showUiProgress)
@@ -719,19 +900,19 @@ namespace KaiAosNotifyClient
                         SetAosPullProgress(
                             string.Format(ClientUiStrings.T("AosPullFromCloudFail"), "decrypt"),
                             "warning");
-                    return false;
+                    return result;
                 }
 
-                var remoteEmail = (payload.Email ?? "").Trim();
-                var remotePass = payload.Password ?? "";
-                if (string.IsNullOrEmpty(remoteEmail) && string.IsNullOrEmpty(remotePass))
+                result.Email = (payload.Email ?? "").Trim();
+                result.Password = payload.Password ?? "";
+                if (string.IsNullOrEmpty(result.Email) && string.IsNullOrEmpty(result.Password))
                 {
                     keepFinalStatus = true;
                     if (showUiProgress)
                         SetAosPullProgress(
                             string.Format(ClientUiStrings.T("AosPullFromCloudFail"), "empty payload"),
                             "warning");
-                    return false;
+                    return result;
                 }
 
                 var localEmail = AosEmailBox != null ? (AosEmailBox.Text ?? "").Trim() : "";
@@ -739,7 +920,17 @@ namespace KaiAosNotifyClient
                 try { localPass = GetAosPasswordUi() ?? ""; }
                 catch { localPass = ""; }
 
-                var differ = PeerSyncLogic.CredentialsDiffer(localEmail, localPass, remoteEmail, remotePass);
+                result.Differ = PeerSyncLogic.CredentialsDiffer(
+                    localEmail, localPass, result.Email, result.Password);
+
+                if (!applyToForm)
+                {
+                    // Caller decides fill vs auto-Register; keep progress visible.
+                    keepFinalStatus = true;
+                    applied = true;
+                    result.Ok = true;
+                    return result;
+                }
 
                 if (showUiProgress)
                     SetAosPullProgress(ClientUiStrings.T("AosPullProgressApply"), "info");
@@ -748,33 +939,39 @@ namespace KaiAosNotifyClient
                 try
                 {
                     if (AosEmailBox != null)
-                        AosEmailBox.Text = remoteEmail;
-                    SetAosPasswordUi(remotePass);
+                        AosEmailBox.Text = result.Email;
+                    SetAosPasswordUi(result.Password);
                 }
                 finally
                 {
                     _loadingAosUi = false;
                 }
 
-                if (differ)
+                if (result.Differ)
                     _aosDirty = true;
 
                 applied = true;
+                result.Ok = true;
                 var okMsg = string.Format(ClientUiStrings.T("AosPullFromCloudOk"),
-                    string.IsNullOrEmpty(remoteEmail) ? "—" : remoteEmail);
-                keepFinalStatus = showUiProgress && !differ;
+                    string.IsNullOrEmpty(result.Email) ? "—" : result.Email);
+                keepFinalStatus = showUiProgress && !result.Differ;
                 if (showUiProgress)
                     SetAosPullProgress(okMsg, "success");
-                return true;
+                return result;
             }
             finally
             {
                 Interlocked.Exchange(ref _aosPullCloudBusy, 0);
                 if (showUiProgress)
                 {
-                    EndAosPullProgress();
                     if (!keepFinalStatus)
+                    {
+                        EndAosPullProgress();
                         UpdateAosSyncStatus();
+                    }
+                    else if (applyToForm)
+                        EndAosPullProgress();
+                    // applyToForm=false: caller owns EndAosPullProgress / Register status.
                 }
                 else if (applied)
                     UpdateAosSyncStatus();
@@ -875,7 +1072,7 @@ namespace KaiAosNotifyClient
             try
             {
                 var pulled = await TryPullAosCredsFromCloudCoreAsync(showUiProgress: false).ConfigureAwait(true);
-                if (!pulled)
+                if (pulled == null || !pulled.Ok)
                 {
                     _browserPassFirebaseAutoInFlight = false;
                     RefreshBrowserPassNewerBanner(false);

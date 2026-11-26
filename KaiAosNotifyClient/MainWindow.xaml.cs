@@ -134,6 +134,9 @@ namespace KaiAosNotifyClient
         private bool _aosApplyInFlight;
         private bool? _aosForceRegisterOverride;
         private bool _awaitingBrowserPassFirebaseAuto;
+        private bool _awaitingPullCloudAuto;
+        private string _pendingPullCloudEmail = "";
+        private string _pendingPullCloudPass = "";
         private bool _browserPassFirebaseAutoTried;
         private bool _browserPassFirebaseAutoInFlight;
         private string _browserPassFirebaseAutoEmail;
@@ -464,6 +467,10 @@ namespace KaiAosNotifyClient
             {
                 ShowInTaskbar = false;
                 if (IsVisible) Hide();
+            }
+            else if (Visibility == Visibility.Visible)
+            {
+                WpfFocusHelpers.CenterOnScreen(this);
             }
             if (_settings.AutoConnect && !string.IsNullOrWhiteSpace(_settings.Host))
                 DoConnect();
@@ -1006,6 +1013,7 @@ namespace KaiAosNotifyClient
             Visibility = Visibility.Visible;
             Show();
             WindowState = WindowState.Normal;
+            WpfFocusHelpers.CenterOnScreen(this);
             Activate();
         }
 
